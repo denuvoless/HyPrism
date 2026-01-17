@@ -290,11 +290,13 @@ jobs:
           echo "Preparing files..."
           cp /tmp/HyPrism-binary flatpak/HyPrism
           chmod +x flatpak/HyPrism
-          cp build/appicon.png flatpak/dev.hyprism.HyPrism.png
-          
-          # Verify all required files exist
-          echo "Verifying files..."
-          ls -lh flatpak/HyPrism
+      
+      # Resize icon to 512x512 for Flatpak (max allowed size)
+      echo "Resizing icon to 512x512..."
+      convert build/appicon.png -resize 512x512 flatpak/dev.hyprism.HyPrism.png || {
+        echo "ImageMagick not found, trying with sips..."
+        sips -z 512 512 build/appicon.png --out flatpak/dev.hyprism.HyPrism.png
+      }
           ls -lh flatpak/dev.hyprism.HyPrism.png
           ls -lh flatpak/dev.hyprism.HyPrism.desktop
           ls -lh flatpak/dev.hyprism.HyPrism.metainfo.xml
