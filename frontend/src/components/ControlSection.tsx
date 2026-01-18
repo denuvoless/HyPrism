@@ -193,7 +193,7 @@ export const ControlSection: React.FC<ControlSectionProps> = ({
             title="Select Version"
           >
             <span className="text-sm font-medium">
-              {isLoadingVersions ? '...' : currentVersion === 0 ? 'latest' : `v${currentVersion}`}
+              {isLoadingVersions ? '...' : `v${currentVersion}`}
             </span>
             <ChevronDown 
               size={12} 
@@ -222,12 +222,12 @@ export const ControlSection: React.FC<ControlSectionProps> = ({
                           <Check size={14} className="text-[#FFA845]" strokeWidth={3} />
                         )}
                         <span className={currentVersion === version ? '' : 'ml-[22px]'}>
-                          {version === 0 ? 'latest' : `v${version}`}
+                          v{version}
                         </span>
                       </div>
                       {isInstalled && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 font-medium">
-                          {version === 0 ? 'latest' : '✓'}
+                          ✓
                         </span>
                       )}
                     </button>
