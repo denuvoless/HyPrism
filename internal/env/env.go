@@ -40,12 +40,13 @@ func CreateFolders() error {
 		filepath.Join(appDir, "cache"),
 		filepath.Join(appDir, "logs"),
 		filepath.Join(appDir, "crashes"),
-		// Legacy paths for backwards compatibility
-		filepath.Join(appDir, "release"),
-		filepath.Join(appDir, "release", "package"),
-		filepath.Join(appDir, "release", "package", "game"),
-		filepath.Join(appDir, "release", "package", "game", "latest"),
 		filepath.Join(appDir, "UserData"),
+	}
+
+	// Create instances directory in custom location if configured
+	instancesDir := GetInstancesDir()
+	if err := os.MkdirAll(instancesDir, 0755); err != nil {
+		return err
 	}
 
 	for _, folder := range folders {
@@ -77,27 +78,39 @@ func GetButlerDir() string {
 	return filepath.Join(GetDefaultAppDir(), "butler")
 }
 
-// GetUserDataDir returns the user data directory (legacy)
+// GetUserDataDir returns the user data directory (legacy, for migration)
 func GetUserDataDir() string {
 	return filepath.Join(GetDefaultAppDir(), "UserData")
 }
 
-// GetGameDir returns the game directory (legacy)
-func GetGameDir(version string) string {
-	return filepath.Join(GetDefaultAppDir(), "release", "package", "game", version)
-}
-
 // ========== INSTANCE-BASED PATHS ==========
+
+// customInstanceDir stores the custom instance directory path
+var customInstanceDir string
+
+// SetCustomInstanceDir sets a custom directory for instances
+func SetCustomInstanceDir(dir string) {
+	customInstanceDir = dir
+}
 
 // GetInstancesDir returns the instances directory
 func GetInstancesDir() string {
+	if customInstanceDir != "" {
+		return customInstanceDir
+	}
 	return filepath.Join(GetDefaultAppDir(), "instances")
 }
 
 // GetInstanceDir returns the directory for a specific instance
-// Format: instances/{branch}-v{version}
+// Format: instances/{branch}-v{version} or instances/release-latest for auto-updating
 func GetInstanceDir(branch string, version int) string {
-	instanceName := fmt.Sprintf("%s-v%d", branch, version)
+	var instanceName string
+	if version == 0 {
+		// Version 0 means "latest" auto-updating instance
+		instanceName = fmt.Sprintf("%s-latest", branch)
+	} else {
+		instanceName = fmt.Sprintf("%s-v%d", branch, version)
+	}
 	return filepath.Join(GetInstancesDir(), instanceName)
 }
 

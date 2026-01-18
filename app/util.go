@@ -41,7 +41,7 @@ func (a *App) OpenFolder() error {
 // RepairInstallation cleans up corrupted/incomplete installation files
 // This is useful when butler fails with "Access Denied" errors
 func (a *App) RepairInstallation() error {
-	gameDir := env.GetGameDir("latest")
+	gameDir := env.GetInstanceGameDir("release", 0)
 	
 	// Clean staging directory
 	stagingDir := filepath.Join(gameDir, "staging-temp")

@@ -88,3 +88,25 @@ func (a *App) CheckVersionAvailability() VersionCheckInfo {
 		Version:   result.LatestVersion,
 	}
 }
+
+// GetCustomInstanceDir returns the custom instance directory path
+func (a *App) GetCustomInstanceDir() string {
+	return a.cfg.CustomInstanceDir
+}
+
+// SetCustomInstanceDir sets a custom directory for instances
+func (a *App) SetCustomInstanceDir(path string) error {
+	a.cfg.CustomInstanceDir = path
+	return config.Save(a.cfg)
+}
+
+// GetAutoUpdateLatest returns whether the latest instance should auto-update
+func (a *App) GetAutoUpdateLatest() bool {
+	return a.cfg.AutoUpdateLatest
+}
+
+// SetAutoUpdateLatest sets whether the latest instance should auto-update
+func (a *App) SetAutoUpdateLatest(enabled bool) error {
+	a.cfg.AutoUpdateLatest = enabled
+	return config.Save(a.cfg)
+}

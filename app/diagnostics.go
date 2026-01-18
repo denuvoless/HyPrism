@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 )
 
@@ -111,8 +110,8 @@ func checkConnectivity() ConnectivityInfo {
 func checkGameStatus() GameStatusInfo {
 	info := GameStatusInfo{}
 
-	baseDir := env.GetDefaultAppDir()
-	gameDir := filepath.Join(baseDir, "release", "package", "game", "latest")
+	// Check release-latest instance (version 0)
+	gameDir := env.GetInstanceGameDir("release", 0)
 
 	// Check if game is installed
 	clientName := "HytaleClient"
@@ -126,10 +125,9 @@ func checkGameStatus() GameStatusInfo {
 		info.ClientExists = true
 	}
 
-	// Get version
-	versionFile := filepath.Join(baseDir, "version.txt")
-	if data, err := os.ReadFile(versionFile); err == nil {
-		info.Version = strings.TrimSpace(string(data))
+	// Check if any release instance is installed
+	if env.IsVersionInstalled("release", 0) {
+		info.Version = "release-latest"
 	}
 
 	// Check if online fix is applied (Windows only)

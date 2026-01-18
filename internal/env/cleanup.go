@@ -28,8 +28,8 @@ func CleanupIncompleteDownloads() error {
 		return err
 	}
 
-	// Check for incomplete game
-	gameDir := GetGameDir("latest")
+	// Check for incomplete game in release-latest instance
+	gameDir := GetInstanceGameDir("release", 0)
 	if err := cleanIncompleteGame(gameDir); err != nil {
 		return err
 	}

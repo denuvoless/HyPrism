@@ -178,6 +178,16 @@ func DownloadPWR(ctx context.Context, versionType string, fromVer, toVer int, pr
 	arch := getArch()
 	apiVersionType := normalizeVersionType(versionType)
 
+	// If toVer is 0, it means "latest" - fetch the latest version
+	if toVer == 0 {
+		fmt.Println("Version 0 requested, fetching latest version...")
+		toVer = FindLatestVersion(versionType)
+		if toVer == 0 {
+			return "", fmt.Errorf("could not determine latest version for %s", versionType)
+		}
+		fmt.Printf("Latest version is: %d\n", toVer)
+	}
+
 	// Try patch URL - for fresh install always use 0 as fromVer
 	// The Hytale patch server provides full game at /0/{version}.pwr
 	var url string
@@ -419,102 +429,16 @@ type InstalledVersion struct {
 	InstallDate string `json:"installDate"`
 }
 
-// GetInstalledVersions returns all installed game versions
+// GetInstalledVersions is deprecated - use env.GetInstalledVersions(branch) instead
+// This legacy function checked release/package/game which is no longer used
 func GetInstalledVersions() []InstalledVersion {
-	baseDir := env.GetDefaultAppDir()
-	versionsDir := filepath.Join(baseDir, "release", "package", "game")
-	
-	var versions []InstalledVersion
-	
-	entries, err := os.ReadDir(versionsDir)
-	if err != nil {
-		return versions
-	}
-	
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		
-		name := entry.Name()
-		if name == "latest" {
-			continue
-		}
-		
-		// Try to parse version number
-		v, err := strconv.Atoi(name)
-		if err != nil {
-			continue
-		}
-		
-		// Get install date from directory modification time
-		info, err := entry.Info()
-		installDate := ""
-		if err == nil {
-			installDate = info.ModTime().Format("2006-01-02")
-		}
-		
-		versions = append(versions, InstalledVersion{
-			Version:     v,
-			VersionType: "release",
-			InstallDate: installDate,
-		})
-	}
-	
-	// Also add current version if installed as "latest"
-	latestPath := filepath.Join(versionsDir, "latest")
-	if info, err := os.Stat(latestPath); err == nil && info.IsDir() {
-		currentVer := GetLocalVersion()
-		if currentVer != "" && currentVer != "0" {
-			v, err := strconv.Atoi(currentVer)
-			if err == nil {
-				// Check if this version is already in the list
-				found := false
-				for _, iv := range versions {
-					if iv.Version == v {
-						found = true
-						break
-					}
-				}
-				if !found {
-					versions = append(versions, InstalledVersion{
-						Version:     v,
-						VersionType: "release",
-						InstallDate: info.ModTime().Format("2006-01-02"),
-					})
-				}
-			}
-		}
-	}
-	
-	return versions
+	return []InstalledVersion{}
 }
 
-// SwitchVersion switches to a different installed version
+// SwitchVersion is deprecated - use LaunchInstance with specific version instead
+// The new instance system doesn't use symlinks; each version is separate
 func SwitchVersion(version int) error {
-	baseDir := env.GetDefaultAppDir()
-	versionsDir := filepath.Join(baseDir, "release", "package", "game")
-	versionDir := filepath.Join(versionsDir, strconv.Itoa(version))
-	latestDir := filepath.Join(versionsDir, "latest")
-	
-	// Check if version exists
-	if _, err := os.Stat(versionDir); os.IsNotExist(err) {
-		return fmt.Errorf("version %d is not installed", version)
-	}
-	
-	// Remove current latest symlink/directory
-	if err := os.RemoveAll(latestDir); err != nil {
-		return fmt.Errorf("failed to remove current version: %w", err)
-	}
-	
-	// Create symlink to the new version
-	if err := os.Symlink(versionDir, latestDir); err != nil {
-		// If symlink fails (e.g., on Windows without admin), copy instead
-		return copyDir(versionDir, latestDir)
-	}
-	
-	// Update version file
-	return SaveLocalVersion(version)
+	return fmt.Errorf("SwitchVersion is deprecated - use LaunchInstance with specific version")
 }
 
 // copyDir copies a directory recursively

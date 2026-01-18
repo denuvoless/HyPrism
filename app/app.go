@@ -58,6 +58,12 @@ func (a *App) Startup(ctx context.Context) {
 	fmt.Printf("║           Version: %-43s║\n", AppVersion)
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 
+	// Set custom instance directory if configured
+	if a.cfg.CustomInstanceDir != "" {
+		env.SetCustomInstanceDir(a.cfg.CustomInstanceDir)
+		fmt.Printf("Using custom instances directory: %s\n", a.cfg.CustomInstanceDir)
+	}
+
 	// Initialize environment
 	if err := env.CreateFolders(); err != nil {
 		fmt.Printf("Warning: Failed to create folders: %v\n", err)
@@ -315,37 +321,23 @@ func openFolder(path string) error {
 	return cmd.Start()
 }
 
-// OpenGameFolder opens the game folder
+// OpenGameFolder opens the game folder for release-latest instance
 func (a *App) OpenGameFolder() error {
-	gameDir := filepath.Join(env.GetDefaultAppDir(), "release", "package", "game", "latest")
+	gameDir := env.GetInstanceDir("release", 0)
 	if err := os.MkdirAll(gameDir, 0755); err != nil {
 		return err
 	}
 	return openFolder(gameDir)
 }
 
-// GetGamePath returns the game installation path
+// GetGamePath returns the game installation path for release-latest instance
 func (a *App) GetGamePath() string {
-	return filepath.Join(env.GetDefaultAppDir(), "release", "package", "game", "latest")
+	return env.GetInstanceDir("release", 0)
 }
 
-// IsGameInstalled checks if the game is installed
+// IsGameInstalled checks if the game is installed (release-latest instance)
 func (a *App) IsGameInstalled() bool {
-	gameLatestDir := a.GetGamePath()
-	
-	// Determine client path based on OS (matching install.go structure)
-	var clientPath string
-	switch runtime.GOOS {
-	case "darwin":
-		clientPath = filepath.Join(gameLatestDir, "Client", "Hytale.app", "Contents", "MacOS", "HytaleClient")
-	case "windows":
-		clientPath = filepath.Join(gameLatestDir, "Client", "HytaleClient.exe")
-	default:
-		clientPath = filepath.Join(gameLatestDir, "Client", "HytaleClient")
-	}
-	
-	_, err := os.Stat(clientPath)
-	return err == nil
+	return env.IsVersionInstalled("release", 0)
 }
 
 // QuickLaunch launches the game with saved nickname
@@ -464,7 +456,7 @@ func (a *App) DownloadVersion(versionType string, playerName string) error {
 	// Launch the game
 	a.progressCallback("launch", 100, "Launching game...", "", "", 0, 0)
 
-	if err := game.Launch(playerName, "latest"); err != nil {
+	if err := game.LaunchInstance(playerName, versionType, 0); err != nil {
 		wrappedErr := GameError("Failed to launch game", err)
 		a.emitError(wrappedErr)
 		return wrappedErr

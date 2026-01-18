@@ -13,196 +13,7 @@ import (
 	"HyPrism/internal/env"
 )
 
-// Launch launches the game with the given player name
-// Uses a shell script that exactly matches TEMPLATE.sh since that's proven to work
-func Launch(playerName string, version string) error {
-	baseDir := env.GetDefaultAppDir()
-	
-	// The actual game files are in release/package/game/{version}
-	actualGameDir := filepath.Join(baseDir, "release", "package", "game", version)
-	
-	// Create symlink: baseDir/game -> release/package/game/latest
-	gameDir := filepath.Join(baseDir, "game")
-	
-	// Remove existing symlink/folder and recreate
-	os.Remove(gameDir)
-	os.RemoveAll(gameDir)
-	
-	// Create symlink
-	if err := os.Symlink(actualGameDir, gameDir); err != nil {
-		fmt.Printf("Warning: Could not create symlink: %v\n", err)
-		gameDir = actualGameDir
-	}
-
-	// Verify client exists
-	var clientPath string
-	switch runtime.GOOS {
-	case "darwin":
-		clientPath = filepath.Join(gameDir, "Client", "Hytale.app", "Contents", "MacOS", "HytaleClient")
-	case "windows":
-		clientPath = filepath.Join(gameDir, "Client", "HytaleClient.exe")
-	default:
-		clientPath = filepath.Join(gameDir, "Client", "HytaleClient")
-	}
-
-	if _, err := os.Stat(clientPath); err != nil {
-		return fmt.Errorf("game client not found at %s: %w", clientPath, err)
-	}
-
-	// Create UserData directory
-	userDataDir := filepath.Join(baseDir, "UserData")
-	_ = os.MkdirAll(userDataDir, 0755)
-
-	// Set up Java path based on OS
-	var jrePath string
-	jreDir := filepath.Join(baseDir, "jre")
-	
-	switch runtime.GOOS {
-	case "darwin":
-		// macOS: Create symlink structure matching working installation
-		// Working installation has: java/Contents/Home/bin/java
-		javaDir := filepath.Join(baseDir, "java")
-		javaHomeBin := filepath.Join(javaDir, "Contents", "Home", "bin")
-		
-		if _, err := os.Stat(javaHomeBin); err != nil {
-			os.RemoveAll(javaDir)
-			os.MkdirAll(filepath.Join(javaDir, "Contents", "Home"), 0755)
-			os.Symlink(filepath.Join(jreDir, "bin"), filepath.Join(javaDir, "Contents", "Home", "bin"))
-			os.Symlink(filepath.Join(jreDir, "lib"), filepath.Join(javaDir, "Contents", "Home", "lib"))
-		}
-		jrePath = filepath.Join(baseDir, "java", "Contents", "Home", "bin", "java")
-	case "windows":
-		// Windows: Use direct path to java.exe in jre directory
-		jrePath = filepath.Join(jreDir, "bin", "java.exe")
-	default:
-		// Linux: Use direct path to java in jre directory
-		jrePath = filepath.Join(jreDir, "bin", "java")
-	}
-
-	// Verify Java exists
-	if _, err := os.Stat(jrePath); err != nil {
-		return fmt.Errorf("Java not found at %s: %w", jrePath, err)
-	}
-
-	// Create and run a shell script - this is PROVEN to work
-	scriptPath := filepath.Join(baseDir, "launch.sh")
-	
-	var scriptContent string
-	if runtime.GOOS == "darwin" {
-		scriptContent = fmt.Sprintf(`#!/bin/bash
-"%s" \
-    --app-dir "%s" \
-    --user-dir "%s" \
-    --java-exec "%s" \
-    --auth-mode offline \
-    --uuid 00000000-1337-1337-1337-000000000000 \
-    --name "%s"
-`, clientPath, gameDir, userDataDir, jrePath, playerName)
-	} else if runtime.GOOS == "windows" {
-		scriptContent = fmt.Sprintf(`@echo off
-"%s" ^
-    --app-dir "%s" ^
-    --user-dir "%s" ^
-    --java-exec "%s" ^
-    --auth-mode offline ^
-    --uuid 00000000-1337-1337-1337-000000000000 ^
-    --name "%s"
-`, clientPath, gameDir, userDataDir, jrePath, playerName)
-		scriptPath = filepath.Join(baseDir, "launch.bat")
-	} else {
-		// Linux
-		clientDir := filepath.Join(gameDir, "Client")
-		scriptContent = fmt.Sprintf(`#!/bin/bash
-export LD_LIBRARY_PATH="%s:$LD_LIBRARY_PATH"
-"%s" \
-    --app-dir "%s" \
-    --user-dir "%s" \
-    --java-exec "%s" \
-    --auth-mode offline \
-    --uuid 00000000-1337-1337-1337-000000000000 \
-    --name "%s"
-`, clientDir, clientPath, gameDir, userDataDir, jrePath, playerName)
-	}
-
-	// Write the script
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
-		return fmt.Errorf("failed to create launch script: %w", err)
-	}
-
-	fmt.Printf("=== LAUNCH DEBUG ===\n")
-	fmt.Printf("Script path: %s\n", scriptPath)
-	fmt.Printf("Base dir: %s\n", baseDir)
-	fmt.Printf("Player: %s\n", playerName)
-	fmt.Printf("==================\n")
-
-	// On macOS, use 'open' command to launch the .app bundle properly
-	// This ensures the app launches with the correct environment and frameworks
-	var cmd *exec.Cmd
-	if runtime.GOOS == "darwin" {
-		// Get the .app bundle path
-		appBundlePath := filepath.Join(gameDir, "Client", "Hytale.app")
-		
-		// Use open command with arguments
-		cmd = exec.Command("open", appBundlePath, 
-			"--args",
-			"--app-dir", gameDir,
-			"--user-dir", userDataDir,
-			"--java-exec", jrePath,
-			"--auth-mode", "offline",
-			"--uuid", "00000000-1337-1337-1337-000000000000",
-			"--name", playerName,
-		)
-	} else if runtime.GOOS == "windows" {
-		// Windows: Launch the executable directly without cmd wrapper
-		cmd = exec.Command(clientPath,
-			"--app-dir", gameDir,
-			"--user-dir", userDataDir,
-			"--java-exec", jrePath,
-			"--auth-mode", "offline",
-			"--uuid", "00000000-1337-1337-1337-000000000000",
-			"--name", playerName,
-		)
-		// Detach the process so it runs independently
-		cmd.SysProcAttr = getWindowsSysProcAttr()
-	} else {
-		// Linux: Launch directly with LD_LIBRARY_PATH set
-		clientDir := filepath.Join(gameDir, "Client")
-		cmd = exec.Command(clientPath,
-			"--app-dir", gameDir,
-			"--user-dir", userDataDir,
-			"--java-exec", jrePath,
-			"--auth-mode", "offline",
-			"--uuid", "00000000-1337-1337-1337-000000000000",
-			"--name", playerName,
-		)
-		// Set LD_LIBRARY_PATH for Linux
-		cmd.Env = append(os.Environ(), fmt.Sprintf("LD_LIBRARY_PATH=%s:%s", clientDir, os.Getenv("LD_LIBRARY_PATH")))
-	}
-	
-	cmd.Dir = baseDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	
-	// Set up environment - inherit current environment
-	cmd.Env = os.Environ()
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start game: %w", err)
-	}
-
-	// Store the process for later termination
-	gameProcess = cmd.Process
-	gameRunning = true
-	
-	// Let the process run independently
-	go func() {
-		cmd.Wait()
-		gameProcess = nil
-		gameRunning = false
-	}()
-
-	return nil
-}
+// Legacy Launch() removed - use LaunchInstance() instead
 
 // LaunchInstance launches a specific branch/version instance
 func LaunchInstance(playerName string, branch string, version int) error {
@@ -408,10 +219,10 @@ func GetGameLogs() (string, error) {
 		filepath.Join(baseDir, "UserData", "logs", "latest.log"),
 		filepath.Join(baseDir, "UserData", "logs", "game.log"),
 		filepath.Join(baseDir, "UserData", "logs", "client.log"),
-		// Game directory logs
-		filepath.Join(baseDir, "release", "package", "game", "latest", "logs", "latest.log"),
-		filepath.Join(baseDir, "release", "package", "game", "latest", "logs", "game.log"),
-		filepath.Join(baseDir, "release", "package", "game", "latest", "Client", "logs", "latest.log"),
+		// Instance logs (release-latest)
+		filepath.Join(env.GetInstanceGameDir("release", 0), "logs", "latest.log"),
+		filepath.Join(env.GetInstanceGameDir("release", 0), "logs", "game.log"),
+		filepath.Join(env.GetInstanceGameDir("release", 0), "Client", "logs", "latest.log"),
 		// HyPrism specific log
 		filepath.Join(baseDir, "logs", "game.log"),
 	}
@@ -445,8 +256,8 @@ func GetGameLogs() (string, error) {
 	checkDirs := []string{
 		filepath.Join(baseDir, "UserData"),
 		filepath.Join(baseDir, "UserData", "logs"),
-		filepath.Join(baseDir, "release", "package", "game", "latest"),
-		filepath.Join(baseDir, "release", "package", "game", "latest", "logs"),
+		env.GetInstanceDir("release", 0),
+		filepath.Join(env.GetInstanceGameDir("release", 0), "logs"),
 	}
 	
 	for _, dir := range checkDirs {
