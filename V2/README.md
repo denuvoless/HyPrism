@@ -1,53 +1,49 @@
-<p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="/program_info/org.prismlauncher.PrismLauncher.logo-darkmode.svg">
-  <source media="(prefers-color-scheme: light)" srcset="/program_info/org.prismlauncher.PrismLauncher.logo.svg">
-  <img alt="Prism Launcher" src="/program_info/org.prismlauncher.PrismLauncher.logo.svg" width="40%">
-</picture>
-</p>
+# HyPrism Launcher
 
-<p align="center">
-  Prism Launcher is a custom launcher for Minecraft that allows you to easily manage multiple installations of Minecraft at once.<br />
-  <br />This is a <b>fork</b> of the MultiMC Launcher and is <b>not</b> endorsed by it.
-</p>
+**HyPrism** is a custom launcher for **Hytale** forked from Prism Launcher. It allows you to easily manage multiple game versions, mods, and instances of Hytale.
+
+> This is a **fork** of Prism Launcher, adapted specifically for Hytale instead of Minecraft.
+
+## Features
+
+- 🎮 **Multiple Instances** - Create and manage multiple Hytale installations
+- 📦 **Mod Support** - Browse and install mods from CurseForge (Hytale mods)
+- 🔄 **Version Management** - Support for both release and pre-release versions
+- 💾 **World Management** - Backup and manage your Hytale worlds
+- ⚙️ **Instance Settings** - Customize Java settings, memory allocation, and more per-instance
 
 ## Installation
 
-<a href="https://repology.org/project/prismlauncher/versions">
-    <img src="https://repology.org/badge/vertical-allrepos/prismlauncher.svg" alt="Packaging status" align="right">
-</a>
+This launcher is currently in development (v2.0). Build instructions coming soon.
 
-- All downloads and instructions for Prism Launcher can be found on our [Website](https://prismlauncher.org/download).
-- Last build status can be found in the [GitHub Actions](https://github.com/PrismLauncher/PrismLauncher/actions) tab (this also includes the pull requests status).
+### Building from Source
 
-### Development Builds
+Requirements:
+- CMake 3.22+
+- Qt 6
+- C++20 compatible compiler
 
-Please understand that these builds are not intended for most users. There may be bugs, and other instabilities. You have been warned.
+```bash
+cd V2
+cmake -B build -S .
+cmake --build build
+```
 
-There are development builds available through:
+## About This Fork
 
-- [GitHub Actions](https://github.com/PrismLauncher/PrismLauncher/actions) (includes builds from pull requests opened by contributors)
-- [nightly.link](https://nightly.link/PrismLauncher/PrismLauncher/workflows/build/develop) (this will always point only to the latest version of develop)
+HyPrism is based on Prism Launcher's excellent architecture but adapted for Hytale:
+- Replaced Minecraft version detection with Hytale's PWR patching system
+- Integrated with CurseForge for Hytale mods (Game ID: 70216)
+- Modified game launching to work with Hytale's client
+- Adapted the UI for Hytale-specific features
 
-These have debug information in the binaries, so their file sizes are relatively larger.
+## Credits
 
-Prebuilt Development builds are provided for **Linux**, **Windows** and **macOS**.
+- **Prism Launcher** - Original launcher framework
+- **MultiMC** - Foundation of the launcher architecture
+- All Prism Launcher and MultiMC contributors
 
-For **Arch**, **Debian**, **Fedora**, **OpenSUSE (Tumbleweed)** and **Gentoo**, respectively, you can use these packages for the latest development versions:
-
-[![prismlauncher-git](https://img.shields.io/badge/aur-prismlauncher--git-1793D1?label=AUR&logo=archlinux&logoColor=white)](https://aur.archlinux.org/packages/prismlauncher-git) [![prismlauncher-git](https://img.shields.io/badge/mpr-prismlauncher--git-A80030?label=MPR&logo=debian&logoColor=white)](https://mpr.makedeb.org/packages/prismlauncher-git)<br />[![prismlauncher-nightly](https://img.shields.io/badge/copr-prismlauncher--nightly-51A2DA?label=COPR&logo=fedora&logoColor=white)](https://copr.fedorainfracloud.org/coprs/g3tchoo/prismlauncher/) [![prismlauncher-nightly](https://img.shields.io/badge/OBS-prismlauncher--nightly-3AB6A9?logo=opensuse&logoColor=white)](https://build.opensuse.org/project/show/home:getchoo) [![prismlauncher-9999](https://img.shields.io/badge/gentoo-prismlauncher--9999-4D4270?label=Gentoo&logo=gentoo&logoColor=white)](https://packages.gentoo.org/packages/games-action/prismlauncher)
-
-These packages are also available to all the distributions based on the ones mentioned above.
-
-## Community & Support
-
-Feel free to create a GitHub issue if you find a bug or want to suggest a new feature. We have multiple community spaces where other community members can help you:
-
-- **Our Discord server:**
-
-[![Prism Launcher Discord server](https://discordapp.com/api/guilds/1031648380885147709/widget.png?style=banner3)](https://prismlauncher.org/discord)
-
-- **Our Matrix space:**
+## License
 
 [![Prism Launcher Space](https://img.shields.io/matrix/prismlauncher:matrix.org?style=for-the-badge&label=Matrix%20Space&logo=matrix&color=purple)](https://prismlauncher.org/matrix)
 
