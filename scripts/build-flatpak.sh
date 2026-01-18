@@ -23,8 +23,30 @@ flatpak install -y flathub org.gnome.Platform//46 org.gnome.Sdk//46 || true
 flatpak install -y flathub org.freedesktop.Sdk.Extension.golang//23.08 || true
 flatpak install -y flathub org.freedesktop.Sdk.Extension.node18//23.08 || true
 
-# Build the Flatpak
+# Build the Wails binary first
 cd "$PROJECT_DIR"
+echo "Building HyPrism binary with Wails..."
+if ! command -v wails &> /dev/null; then
+    echo "Error: wails is not installed"
+    echo "Install with: go install github.com/wailsapp/wails/v2/cmd/wails@latest"
+    exit 1
+fi
+
+wails build -clean -tags webkit2_41
+
+# Prepare files for Flatpak
+echo "Preparing Flatpak assets..."
+cp build/bin/HyPrism flatpak/HyPrism
+chmod +x flatpak/HyPrism
+
+# Resize icon to 512x512 if ImageMagick is available
+if command -v convert &> /dev/null; then
+    convert build/appicon.png -resize 512x512 flatpak/dev.hyprism.HyPrism.png
+else
+    cp build/appicon.png flatpak/dev.hyprism.HyPrism.png
+fi
+
+# Build the Flatpak
 flatpak-builder \
     --force-clean \
     --repo=flatpak-repo \
@@ -35,6 +57,10 @@ flatpak-builder \
 # Create a bundle for distribution
 echo "Creating Flatpak bundle..."
 flatpak build-bundle flatpak-repo HyPrism.flatpak dev.hyprism.HyPrism
+
+# Clean up temporary files
+echo "Cleaning up..."
+rm -f flatpak/HyPrism flatpak/dev.hyprism.HyPrism.png
 
 echo ""
 echo "Build complete!"

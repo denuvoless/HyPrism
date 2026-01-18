@@ -39,3 +39,9 @@ build/bin/
 wails.json.bak
 frontend/src/assets/background.mp4
 HyPrism
+
+# Flatpak build artifacts
+flatpak-repo/
+flatpak-build/
+.flatpak-builder/
+*.flatpak
