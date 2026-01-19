@@ -205,9 +205,34 @@ const App: React.FC = () => {
         const installed = await GetInstalledVersionsForBranch(branch);
         setInstalledVersions(installed);
 
-        // Always start with "latest" (version 0) when launcher opens
-        setCurrentVersion(0);
-        await SetSelectedVersion(0);
+        // Check if "latest" (version 0) is installed first
+        const latestInstalled = await IsVersionInstalled(branch, 0);
+        
+        if (latestInstalled) {
+          // Use latest if installed
+          setCurrentVersion(0);
+          await SetSelectedVersion(0);
+          setIsVersionInstalled(true);
+        } else if (installed && installed.length > 0) {
+          // If latest not installed but other versions exist, select the highest installed version
+          const highestInstalled = Math.max(...installed.filter(v => v > 0));
+          if (highestInstalled > 0) {
+            setCurrentVersion(highestInstalled);
+            await SetSelectedVersion(highestInstalled);
+            setIsVersionInstalled(true);
+          } else {
+            // Only version 0 in the list but not actually installed
+            setCurrentVersion(0);
+            await SetSelectedVersion(0);
+            setIsVersionInstalled(false);
+          }
+        } else {
+          // No versions installed, default to latest
+          setCurrentVersion(0);
+          await SetSelectedVersion(0);
+          setIsVersionInstalled(false);
+        }
+        
         setIsLoadingVersions(false);
       } catch (e) {
         console.error('Failed to load settings:', e);

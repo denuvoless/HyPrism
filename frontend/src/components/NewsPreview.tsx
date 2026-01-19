@@ -1,5 +1,6 @@
 import { Calendar, RefreshCw, User } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
+import { BrowserOpenURL } from '../../wailsjs/runtime/runtime';
 
 interface NewsItem {
     title: string;
@@ -37,7 +38,7 @@ export const NewsPreview: React.FC<NewsPreviewProps> = ({ getNews }) => {
     }, []);
 
     const openLink = (url: string) => {
-        window.open(url, '_blank');
+        BrowserOpenURL(url);
     };
 
     return (

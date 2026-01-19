@@ -214,7 +214,7 @@ func IsVersionInstalled(branch string, version int) bool {
 }
 
 // GetInstalledVersions returns all installed versions for a specific branch
-// This is optimized for fast checking
+// This verifies that each version directory actually has game files
 func GetInstalledVersions(branch string) []int {
 	instancesDir := GetInstancesDir()
 	prefix := branch + "-v"
@@ -226,10 +226,13 @@ func GetInstalledVersions(branch string) []int {
 	
 	var versions []int
 	
-	// Check for 'latest' directory (version 0)
+	// Check for 'latest' directory (version 0) - verify it's actually installed
 	for _, entry := range entries {
 		if entry.IsDir() && entry.Name() == "latest" {
-			versions = append(versions, 0)
+			// Verify the game is actually installed in "latest"
+			if IsVersionInstalled(branch, 0) {
+				versions = append(versions, 0)
+			}
 			break
 		}
 	}
@@ -238,10 +241,12 @@ func GetInstalledVersions(branch string) []int {
 	for _, entry := range entries {
 		if entry.IsDir() && len(entry.Name()) > len(prefix) && entry.Name()[:len(prefix)] == prefix {
 			versionStr := entry.Name()[len(prefix):]
-			if version, err := fmt.Sscanf(versionStr, "%d", new(int)); err == nil && version == 1 {
-				var v int
-				fmt.Sscanf(versionStr, "%d", &v)
-				versions = append(versions, v)
+			var v int
+			if _, err := fmt.Sscanf(versionStr, "%d", &v); err == nil && v > 0 {
+				// Verify the game is actually installed in this version
+				if IsVersionInstalled(branch, v) {
+					versions = append(versions, v)
+				}
 			}
 		}
 	}
