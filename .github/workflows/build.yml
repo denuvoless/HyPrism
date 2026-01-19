@@ -80,12 +80,13 @@ jobs:
           
           # On Linux, also build with webkit2gtk-4.0 for Flatpak (older distros like PopOS 22.04)
           if [[ "${{ matrix.platform }}" == "linux" ]]; then
-            mv build/bin/HyPrism build/bin/HyPrism-webkit41
+            # Save webkit41 binary before building webkit40 (which uses -clean)
+            cp build/bin/HyPrism /tmp/HyPrism-webkit41
             echo "Building legacy version with webkit2gtk-4.0 for Flatpak..."
             wails build -clean -ldflags "-X 'HyPrism/app.AppVersion=$VERSION' -X 'HyPrism/app.AppTitle=$APP_TITLE'"
             mv build/bin/HyPrism build/bin/HyPrism-webkit40
             # Restore webkit41 as main binary for AppImage
-            mv build/bin/HyPrism-webkit41 build/bin/HyPrism
+            mv /tmp/HyPrism-webkit41 build/bin/HyPrism
           fi
       
       - name: Create DMG (macOS)
