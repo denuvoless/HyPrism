@@ -34,23 +34,28 @@ interface Mod {
 }
 
 interface CurseForgeMod {
-  id: number;
+  id: number | string;
   name: string;
   slug: string;
   summary: string;
   downloadCount: number;
   logo?: { thumbnailUrl: string; url: string };
+  iconUrl?: string;
+  thumbnailUrl?: string;
+  author?: string;
   screenshots?: { id: number; title: string; thumbnailUrl: string; url: string }[];
-  authors: { name: string }[];
-  categories: { id: number; name: string }[];
+  authors?: { name: string }[];
+  categories: (string | { id: number; name: string })[];
   dateModified?: string;
   dateReleased?: string;
+  dateUpdated?: string;
   latestFiles?: ModFile[];
+  latestFileId?: string;
 }
 
 interface ModFile {
-  id: number;
-  modId: number;
+  id: number | string;
+  modId: number | string;
   displayName: string;
   fileName: string;
   fileLength: number;
@@ -70,6 +75,14 @@ interface ModManagerProps {
   currentVersion: number;
   initialSearchQuery?: string;
 }
+
+type DownloadJobStatus = {
+  id: string | number;
+  name: string;
+  status: 'pending' | 'running' | 'success' | 'error';
+  attempts: number;
+  error?: string;
+};
 
 // Confirmation Modal
 const ConfirmModal: React.FC<{
@@ -151,31 +164,34 @@ export const ModManager: React.FC<ModManagerProps> = ({
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
-  const [selectedBrowseMods, setSelectedBrowseMods] = useState<Set<number>>(new Set());
-  const [highlightedBrowseMods, setHighlightedBrowseMods] = useState<Set<number>>(new Set());
+  const [selectedBrowseMods, setSelectedBrowseMods] = useState<Set<number | string>>(new Set());
+  const [highlightedBrowseMods, setHighlightedBrowseMods] = useState<Set<number | string>>(new Set());
 
   // Mod files cache and selection
-  const [modFilesCache, setModFilesCache] = useState<Map<number, ModFile[]>>(new Map());
-  const [, setLoadingModFiles] = useState<Set<number>>(new Set());
-  const [selectedVersions, setSelectedVersions] = useState<Map<number, number>>(new Map());
+  const [modFilesCache, setModFilesCache] = useState<Map<number | string, ModFile[]>>(new Map());
+  const [, setLoadingModFiles] = useState<Set<number | string>>(new Set());
+  const [selectedVersions, setSelectedVersions] = useState<Map<string, number | string>>(new Map());
+
+  const normalizeModKey = (id: number | string | undefined | null) => String(id ?? '');
 
   // Detail panel - shown in split view
   const [selectedMod, setSelectedMod] = useState<CurseForgeMod | Mod | null>(null);
   const [selectedModFiles, setSelectedModFiles] = useState<ModFile[]>([]);
   const [isLoadingModFiles, setIsLoadingModFilesState] = useState(false);
-  const [detailSelectedFileId, setDetailSelectedFileId] = useState<number | undefined>();
+  const [detailSelectedFileId, setDetailSelectedFileId] = useState<number | string | undefined>();
   const [activeScreenshot, setActiveScreenshot] = useState(0);
   const [fullscreenImage, setFullscreenImage] = useState<{ url: string; title: string } | null>(null);
 
   // Actions
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number; currentMod: string } | null>(null);
+  const [downloadJobs, setDownloadJobs] = useState<DownloadJobStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // Confirmation modals
   const [confirmModal, setConfirmModal] = useState<{
     type: 'download' | 'delete';
-    items: Array<{ id: string | number; name: string; fileId?: number }>;
+    items: Array<{ id: string | number; name: string; fileId?: number | string }>;
   } | null>(null);
 
   // Multi-select tracking
@@ -186,7 +202,12 @@ export const ModManager: React.FC<ModManagerProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
 
-  const instanceName = `${currentBranch === GameBranch.RELEASE ? t('Release') : t('Pre-Release')} ${currentVersion === 0 ? t('latest') : `v${currentVersion}`}`;
+  const instanceBranchLabel = currentBranch === GameBranch.RELEASE
+    ? t('Release')
+    : currentBranch === GameBranch.PRE_RELEASE
+      ? t('Pre-Release')
+      : t('Release');
+  const instanceName = currentVersion === 0 ? t('latest') : `${instanceBranchLabel} v${currentVersion}`;
 
   // Filter installed mods by search
   const filteredInstalledMods = useMemo(() => {
@@ -198,12 +219,41 @@ export const ModManager: React.FC<ModManagerProps> = ({
     );
   }, [installedMods, installedSearchQuery]);
 
+  // Normalize backend payload casing and defaults
+  const normalizeInstalledMods = (mods: any[]): Mod[] => {
+    return (mods || []).map((m: any) => {
+      const curseForgeId = m.curseForgeId || m.CurseForgeId || (typeof m.id === 'string' && m.id.startsWith('cf-') ? m.id.replace('cf-', '') : m.id);
+      return {
+        ...m,
+        id: m.id,
+        curseForgeId,
+        iconUrl: m.iconUrl || m.IconUrl || m.iconURL || '',
+        description: m.description || m.Description || m.summary || '',
+        screenshots: m.screenshots || m.Screenshots || [],
+      } as Mod;
+    });
+  };
+
   // Load installed mods
   const loadInstalledMods = useCallback(async () => {
     setIsLoadingInstalled(true);
     try {
       const mods = await GetInstanceInstalledMods(currentBranch, currentVersion);
-      setInstalledMods(mods || []);
+      const normalized = normalizeInstalledMods(mods || []);
+      setInstalledMods(normalized);
+
+      // Seed selected versions from manifest when present so re-download works without reselecting
+      setSelectedVersions((prev) => {
+        const next = new Map(prev);
+        normalized.forEach((m) => {
+          const modKey = normalizeModKey(m.curseForgeId || m.id);
+          const manifestFileId = (m as any).fileId || (m as any).FileId || m.latestFileId;
+          if (modKey && manifestFileId && !next.has(modKey)) {
+            next.set(modKey, String(manifestFileId));
+          }
+        });
+        return next;
+      });
     } catch (err) {
       console.error('Failed to load installed mods:', err);
       setInstalledMods([]);
@@ -248,16 +298,20 @@ export const ModManager: React.FC<ModManagerProps> = ({
       }
 
       try {
-        const categoryId = selectedCategory === 0 ? 0 : selectedCategory;
-        const result = await SearchMods(searchQuery, categoryId, resetResults ? 0 : currentPage);
-        const mods = result?.mods || [];
+        const pageNum = resetResults ? 0 : currentPage;
+        const pageSize = 20;
+        // Categories as string array (empty if "all")
+        const categoryFilter = selectedCategory === 0 ? [] : [selectedCategory.toString()];
+        // sortField: 2=Popularity, sortOrder: 2=desc
+        const result: any = await SearchMods(searchQuery, pageNum, pageSize, categoryFilter, 2, 2);
+        const mods = result?.Mods ?? result?.mods ?? [];
 
         if (resetResults) {
           setSearchResults(mods);
         } else {
           setSearchResults((prev) => [...prev, ...mods]);
         }
-        setHasMore(mods.length >= 20);
+        setHasMore(mods.length >= pageSize);
       } catch (err: any) {
         setError(err.message || 'Failed to search mods');
         if (resetResults) setSearchResults([]);
@@ -316,18 +370,22 @@ export const ModManager: React.FC<ModManagerProps> = ({
   }, [activeTab]);
 
   // Load mod files
-  const loadModFiles = async (modId: number): Promise<ModFile[]> => {
-    if (modFilesCache.has(modId)) {
-      return modFilesCache.get(modId) || [];
+  const loadModFiles = async (modId: number | string): Promise<ModFile[]> => {
+    // Use the modId directly as key - can be either string or number
+    const cacheKey = modId;
+    if (modFilesCache.has(cacheKey)) {
+      return modFilesCache.get(cacheKey) || [];
     }
 
-    setLoadingModFiles((prev) => new Set(prev).add(modId));
+    setLoadingModFiles((prev) => new Set(prev).add(cacheKey));
     try {
-      const files = await GetModFiles(modId);
+      const result: any = await GetModFiles(String(modId), 0, 50);
+      // Handle both array response and object with Files property
+      const files = Array.isArray(result) ? result : (result?.Files ?? result?.files ?? []);
       files.sort((a: ModFile, b: ModFile) => new Date(b.fileDate).getTime() - new Date(a.fileDate).getTime());
-      setModFilesCache((prev) => new Map(prev).set(modId, files));
-      if (files.length > 0 && !selectedVersions.has(modId)) {
-        setSelectedVersions((prev) => new Map(prev).set(modId, files[0].id));
+      setModFilesCache((prev) => new Map(prev).set(cacheKey, files));
+      if (files.length > 0 && !selectedVersions.has(cacheKey)) {
+        setSelectedVersions((prev) => new Map(prev).set(cacheKey, files[0].id));
       }
       return files;
     } catch (err) {
@@ -336,7 +394,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
     } finally {
       setLoadingModFiles((prev) => {
         const next = new Set(prev);
-        next.delete(modId);
+        next.delete(cacheKey);
         return next;
       });
     }
@@ -425,10 +483,11 @@ export const ModManager: React.FC<ModManagerProps> = ({
     setIsLoadingModFilesState(true);
 
     const modId = 'curseForgeId' in mod ? mod.curseForgeId : 'id' in mod && typeof mod.id === 'number' ? mod.id : undefined;
+    const modKey = normalizeModKey(modId);
     if (modId) {
       const files = await loadModFiles(modId);
       setSelectedModFiles(files);
-      setDetailSelectedFileId(selectedVersions.get(modId) || files[0]?.id);
+      setDetailSelectedFileId(selectedVersions.get(modKey) || files[0]?.id);
     } else {
       setSelectedModFiles([]);
     }
@@ -436,37 +495,52 @@ export const ModManager: React.FC<ModManagerProps> = ({
   };
 
   // Is mod installed check
-  const isModInstalled = (cfModId: number) => {
+  const isModInstalled = (cfModId: number | string) => {
     return installedMods.some((m) => m.id === `cf-${cfModId}`);
   };
 
   // Show download confirmation
-  const showDownloadConfirmation = () => {
-    let items: Array<{ id: string | number; name: string; fileId?: number }> = [];
+  const showDownloadConfirmation = async () => {
+    let items: Array<{ id: string | number; name: string; fileId?: number | string }> = [];
 
     if (activeTab === 'browse' && selectedBrowseMods.size > 0) {
-      items = Array.from(selectedBrowseMods)
-        .map((modId) => {
+      const selected = Array.from(selectedBrowseMods);
+      const resolved = await Promise.all(
+        selected.map(async (modId) => {
           const mod = searchResults.find((m) => m.id === modId);
-          const fileId = selectedVersions.get(modId);
-          return { id: modId, name: mod?.name || 'Unknown', fileId };
+          const modKey = normalizeModKey(modId);
+          let fileId = selectedVersions.get(modKey);
+
+          if (!fileId) {
+            const files = await loadModFiles(modId);
+            fileId = selectedVersions.get(modKey) || files?.[0]?.id;
+          }
+
+          if (!fileId) return null;
+          return { id: modId, name: mod?.name || 'Unknown', fileId } as { id: string | number; name: string; fileId: string | number };
         })
-        .filter((item) => item.fileId);
+      );
+
+      items = resolved.filter((x): x is { id: string | number; name: string; fileId: string | number } => x !== null);
     } else if (activeTab === 'installed' && selectedInstalledMods.size > 0) {
       const installedItems = Array.from(selectedInstalledMods)
         .map((modId) => {
           const mod = installedMods.find((m) => m.id === modId);
           if (!mod?.curseForgeId) return null;
-          const fileId = selectedVersions.get(mod.curseForgeId);
+          const modKey = normalizeModKey(mod.curseForgeId);
+          const fallbackFileId = (mod as any).fileId || (mod as any).FileId || mod.latestFileId;
+          const fileId = selectedVersions.get(modKey) || fallbackFileId;
           if (!fileId) return null;
-          return { id: mod.curseForgeId, name: mod?.name || 'Unknown', fileId };
+          return { id: mod.curseForgeId, name: mod?.name || 'Unknown', fileId } as { id: string | number; name: string; fileId?: string | number };
         })
-        .filter((item): item is { id: number; name: string; fileId: number } => item !== null);
+        .filter((item): item is { id: string | number; name: string; fileId?: string | number } => item !== null);
       items = installedItems;
     }
 
     if (items.length > 0) {
       setConfirmModal({ type: 'download', items });
+    } else {
+      setError(t('No downloadable files found for the selected mods.'));
     }
   };
 
@@ -484,29 +558,71 @@ export const ModManager: React.FC<ModManagerProps> = ({
     setConfirmModal({ type: 'delete', items });
   };
 
+  const runDownloadQueue = async (items: Array<{ id: string | number; name: string; fileId: string | number }>) => {
+    const maxConcurrency = 3;
+    const maxRetries = 2;
+
+    setIsDownloading(true);
+    setDownloadProgress({ current: 0, total: items.length, currentMod: '' });
+    setDownloadJobs(items.map((item) => ({ id: item.id, name: item.name, status: 'pending', attempts: 0 })));
+
+    let completed = 0;
+    const queue = [...items];
+
+    const runJob = async (item: { id: string | number; name: string; fileId: string | number }) => {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        setDownloadJobs((prev) => prev.map((j) => j.id === item.id ? { ...j, status: 'running', attempts: attempt } : j));
+        try {
+          const ok = await InstallModFileToInstance(String(item.id), String(item.fileId), currentBranch, currentVersion);
+          if (!ok) {
+            throw new Error(t('Backend refused to install this mod. Make sure the game is installed.'));
+          }
+          setDownloadJobs((prev) => prev.map((j) => j.id === item.id ? { ...j, status: 'success', attempts: attempt } : j));
+          return;
+        } catch (err: any) {
+          const isLast = attempt === maxRetries;
+          setDownloadJobs((prev) => prev.map((j) => j.id === item.id ? { ...j, status: isLast ? 'error' : 'pending', attempts: attempt, error: err?.message } : j));
+          if (isLast) {
+            throw err;
+          }
+        }
+      }
+    };
+
+    const worker = async () => {
+      while (true) {
+        const next = queue.shift();
+        if (!next) break;
+        try {
+          await runJob(next);
+        } finally {
+          completed += 1;
+          setDownloadProgress({ current: completed, total: items.length, currentMod: next.name });
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(maxConcurrency, items.length) }, () => worker()));
+  };
+
   // Handle confirm download
   const handleConfirmDownload = async () => {
     if (!confirmModal || confirmModal.type !== 'download') return;
 
-    const items = confirmModal.items;
+    const items = confirmModal.items.filter((i) => i.fileId);
     setConfirmModal(null);
-    setIsDownloading(true);
-    setDownloadProgress({ current: 0, total: items.length, currentMod: '' });
     const errors: string[] = [];
 
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (!item.fileId) continue;
-      setDownloadProgress({ current: i + 1, total: items.length, currentMod: item.name });
-      try {
-        await InstallModFileToInstance(item.id as number, item.fileId, currentBranch, currentVersion);
-      } catch (err: any) {
-        errors.push(`${item.name}: ${err.message || 'Failed'}`);
-      }
+    try {
+      // No need to check if game is installed - mods can be downloaded anytime
+      await runDownloadQueue(items as Array<{ id: string | number; name: string; fileId: string | number }>);
+    } catch (err: any) {
+      errors.push(err?.message || 'Failed to download one or more mods');
     }
 
     setIsDownloading(false);
     setDownloadProgress(null);
+    setDownloadJobs([]);
     setSelectedBrowseMods(new Set());
     setSelectedInstalledMods(new Set());
     await loadInstalledMods();
@@ -555,24 +671,20 @@ export const ModManager: React.FC<ModManagerProps> = ({
     setShowUpdatesModal(false);
     if (modsToUpdate.length === 0) return;
 
-    setIsDownloading(true);
-    setDownloadProgress({ current: 0, total: modsToUpdate.length, currentMod: '' });
+    const items = modsToUpdate
+      .filter((mod) => mod.latestFileId && mod.curseForgeId)
+      .map((mod) => ({ id: mod.curseForgeId!, name: mod.name, fileId: mod.latestFileId! }));
+
     const errors: string[] = [];
-
-    for (let i = 0; i < modsToUpdate.length; i++) {
-      const mod = modsToUpdate[i];
-      if (!mod.latestFileId || !mod.curseForgeId) continue;
-
-      setDownloadProgress({ current: i + 1, total: modsToUpdate.length, currentMod: mod.name });
-      try {
-        await InstallModFileToInstance(mod.curseForgeId, mod.latestFileId, currentBranch, currentVersion);
-      } catch (err: any) {
-        errors.push(`${mod.name}: ${err.message || 'Failed'}`);
-      }
+    try {
+      await runDownloadQueue(items);
+    } catch (err: any) {
+      errors.push(err?.message || 'Failed to update one or more mods');
     }
 
     setIsDownloading(false);
     setDownloadProgress(null);
+    setDownloadJobs([]);
     await loadInstalledMods();
 
     if (errors.length > 0) {
@@ -597,7 +709,9 @@ export const ModManager: React.FC<ModManagerProps> = ({
 
   // Get screenshots for selected mod - check both browse mods and installed mods
   const screenshots = selectedMod ? (
-    'screenshots' in selectedMod && selectedMod.screenshots ? selectedMod.screenshots : []
+    // Support backend PascalCase payloads
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (selectedMod as any).screenshots || (selectedMod as any).Screenshots || []
   ) : [];
 
   return (
@@ -992,8 +1106,8 @@ export const ModManager: React.FC<ModManagerProps> = ({
 
                           {/* Logo */}
                           <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
-                            {mod.logo?.thumbnailUrl ? (
-                              <img loading="lazy" src={mod.logo.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                            {(mod.iconUrl || mod.logo?.thumbnailUrl) ? (
+                              <img loading="lazy" src={mod.iconUrl || mod.logo?.thumbnailUrl} alt="" className="w-full h-full object-cover" />
                             ) : (
                               <Package size={18} className="text-white/40" />
                             )}
@@ -1020,7 +1134,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
                               )}
                             </div>
                             <div className="flex items-center gap-2 text-white/50 text-xs">
-                              <span>{mod.authors?.[0]?.name || t('Unknown')}</span>
+                              <span>{mod.author || mod.authors?.[0]?.name || t('Unknown')}</span>
                               <span>•</span>
                               <span>
                                 <Download size={10} className="inline mr-1" />
@@ -1152,13 +1266,14 @@ export const ModManager: React.FC<ModManagerProps> = ({
                         <select
                           value={detailSelectedFileId || ''}
                           onChange={(e) => {
-                            const fileId = Number(e.target.value);
+                            const fileId = e.target.value;
                             setDetailSelectedFileId(fileId);
                             const modId = 'enabled' in selectedMod
                               ? (selectedMod as Mod).curseForgeId
                               : (selectedMod as CurseForgeMod).id;
-                            if (modId) {
-                              setSelectedVersions((prev) => new Map(prev).set(modId, fileId));
+                            const modKey = normalizeModKey(modId);
+                            if (modKey) {
+                              setSelectedVersions((prev) => new Map(prev).set(modKey, fileId));
                             }
                           }}
                           className="w-full px-4 py-3 rounded-xl bg-white/10 text-white text-sm font-medium appearance-none cursor-pointer focus:outline-none border border-white/20"
@@ -1486,10 +1601,26 @@ export const ModManager: React.FC<ModManagerProps> = ({
               />
             </div>
 
+
             {/* Current Mod Name */}
             <p className="text-white/80 text-sm truncate">
               {downloadProgress.currentMod}
             </p>
+
+            {/* Per-mod status list */}
+            <div className="mt-4 space-y-2 max-h-52 overflow-y-auto">
+              {downloadJobs.map((job) => (
+                <div key={String(job.id)} className="flex items-center gap-2 text-white/80 text-sm bg-white/5 rounded-lg px-3 py-2">
+                  {job.status === 'success' && <Check size={14} className="text-green-400" />}
+                  {job.status === 'running' && <Loader2 size={14} className="animate-spin text-[#FFA845]" />}
+                  {job.status === 'pending' && <RefreshCw size={14} className="text-white/50" />}
+                  {job.status === 'error' && <AlertCircle size={14} className="text-red-400" />}
+                  <div className="flex-1 truncate">{job.name}</div>
+                  <span className="text-white/40 text-xs">{job.status}</span>
+                  {job.attempts > 0 && <span className="text-white/30 text-xs">x{job.attempts}</span>}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -1506,18 +1637,22 @@ export const ModManager: React.FC<ModManagerProps> = ({
           >
             <X size={24} />
           </button>
-          {fullscreenImage.title && (
-            <div className="absolute top-4 left-4 px-4 py-2 bg-black/60 rounded-xl">
-              <p className="text-white font-medium">{fullscreenImage.title}</p>
+            <img
+              src={fullscreenImage.url}
+              alt={fullscreenImage.title}
+              className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="absolute bottom-4 left-4 flex flex-col gap-1 items-start text-left">
+              {fullscreenImage.title && (
+                <span className="px-3 py-1 rounded-lg bg-black/60 text-white font-medium shadow-lg shadow-black/30">
+                  {fullscreenImage.title}
+                </span>
+              )}
+              <span className="px-3 py-1 rounded-lg bg-black/40 text-white/70 text-sm shadow-md shadow-black/30">
+                {t('Click anywhere to close')}
+              </span>
             </div>
-          )}
-          <img
-            src={fullscreenImage.url}
-            alt={fullscreenImage.title}
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <p className="absolute bottom-4 text-white/50 text-sm">{t('Click anywhere to close')}</p>
         </div>
       )}
     </div>

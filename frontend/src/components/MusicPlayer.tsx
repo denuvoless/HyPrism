@@ -1,9 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Volume2, VolumeX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { GetMusicEnabled, SetMusicEnabled } from '../../wailsjs/go/app/App';
 
-// Import all music tracks
+// Import music tracks
 import menu01 from '../assets/menu_01.ogg';
 import menu02 from '../assets/menu_02.ogg';
 import menu03 from '../assets/menu_03.ogg';
@@ -20,6 +19,26 @@ const musicTracks = [
   menu06, menu07, menu08, menu09, menu10
 ];
 
+// Backend functions - import dynamically to handle both Wails and Photino
+let GetMusicEnabled: (() => Promise<boolean>) | null = null;
+let SetMusicEnabled: ((enabled: boolean) => Promise<boolean>) | null = null;
+
+// Lazy load backend functions
+const loadBackendFunctions = async () => {
+  if (GetMusicEnabled !== null) return;
+  
+  try {
+    // For Wails
+    const backend = await import('../../wailsjs/go/app/App');
+    GetMusicEnabled = backend.GetMusicEnabled;
+    SetMusicEnabled = backend.SetMusicEnabled as unknown as (enabled: boolean) => Promise<boolean>;
+  } catch {
+    // Fallback for Photino or when backend is not available
+    GetMusicEnabled = async () => true;
+    SetMusicEnabled = async () => true;
+  }
+};
+
 interface MusicPlayerProps {
   className?: string;
   forceMuted?: boolean;
@@ -27,33 +46,47 @@ interface MusicPlayerProps {
 
 export const MusicPlayer: React.FC<MusicPlayerProps> = ({ className = '', forceMuted = false }) => {
   const { t } = useTranslation();
-  // Start with music disabled until we load the saved preference
   const [isMuted, setIsMuted] = useState(true);
   const [configLoaded, setConfigLoaded] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [currentTrack, setCurrentTrack] = useState(0);
+  const [currentTrack, setCurrentTrack] = useState(() => 
+    Math.floor(Math.random() * musicTracks.length)
+  );
   const [isFading, setIsFading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fadeIntervalRef = useRef<number | null>(null);
   const targetVolumeRef = useRef(0.3);
 
+  // Get a random track different from the current one
+  const getNextRandomTrack = useCallback((current: number) => {
+    if (musicTracks.length <= 1) return 0;
+    let next = current;
+    while (next === current) {
+      next = Math.floor(Math.random() * musicTracks.length);
+    }
+    return next;
+  }, []);
+
   // Load saved music preference from backend config on mount
   useEffect(() => {
-    GetMusicEnabled().then((enabled) => {
-      // If music is enabled in config, we should NOT be muted
-      setIsMuted(!enabled);
-      setConfigLoaded(true);
-    }).catch(() => {
-      // Default to music enabled if config fails to load
-      setIsMuted(false);
-      setConfigLoaded(true);
+    loadBackendFunctions().then(() => {
+      if (GetMusicEnabled) {
+        GetMusicEnabled().then((enabled) => {
+          setIsMuted(!enabled);
+          setConfigLoaded(true);
+        }).catch(() => {
+          setIsMuted(false);
+          setConfigLoaded(true);
+        });
+      } else {
+        setIsMuted(false);
+        setConfigLoaded(true);
+      }
     });
   }, []);
 
   // Save mute preference to backend when it changes (after initial load)
   useEffect(() => {
-    if (configLoaded) {
-      // Save to backend: musicEnabled = !isMuted
+    if (configLoaded && SetMusicEnabled) {
       SetMusicEnabled(!isMuted).catch(console.error);
     }
   }, [isMuted, configLoaded]);
@@ -62,14 +95,12 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ className = '', forceM
   useEffect(() => {
     if (!audioRef.current) return;
 
-    // Clear any existing fade
     if (fadeIntervalRef.current) {
       clearInterval(fadeIntervalRef.current);
       fadeIntervalRef.current = null;
     }
 
     if (forceMuted && !isFading) {
-      // Fade out and pause over 1 second
       setIsFading(true);
       const startVolume = audioRef.current.volume;
       const steps = 20;
@@ -77,7 +108,7 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ className = '', forceM
       const volumeStep = startVolume / steps;
       let currentStep = 0;
 
-      fadeIntervalRef.current = setInterval(() => {
+      fadeIntervalRef.current = window.setInterval(() => {
         currentStep++;
         if (audioRef.current) {
           audioRef.current.volume = Math.max(0, startVolume - (volumeStep * currentStep));
@@ -85,19 +116,17 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ className = '', forceM
         if (currentStep >= steps) {
           if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
           if (audioRef.current) {
-            audioRef.current.pause(); // Pause instead of just muting
-            audioRef.current.currentTime = 0; // Reset to beginning
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
           }
           setIsFading(false);
         }
       }, stepTime);
-    } else if (!forceMuted && audioRef.current.paused) {
-      // Fade in and resume playing over 1 second
+    } else if (!forceMuted && audioRef.current.paused && !isMuted) {
       setIsFading(true);
       const targetVolume = targetVolumeRef.current;
       audioRef.current.volume = 0;
 
-      // Resume playback
       audioRef.current.play().catch(err => {
         console.log('Failed to resume audio:', err);
         setIsFading(false);
@@ -109,7 +138,7 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ className = '', forceM
       const volumeStep = targetVolume / steps;
       let currentStep = 0;
 
-      fadeIntervalRef.current = setInterval(() => {
+      fadeIntervalRef.current = window.setInterval(() => {
         currentStep++;
         if (audioRef.current) {
           audioRef.current.volume = Math.min(targetVolume, volumeStep * currentStep);
@@ -124,87 +153,63 @@ export const MusicPlayer: React.FC<MusicPlayerProps> = ({ className = '', forceM
     return () => {
       if (fadeIntervalRef.current) clearInterval(fadeIntervalRef.current);
     };
-  }, [forceMuted]);
+  }, [forceMuted, isMuted]);
 
-  useEffect(() => {
-    // Select a random track on mount
-    const randomIndex = Math.floor(Math.random() * musicTracks.length);
-    setCurrentTrack(randomIndex);
-    setIsLoaded(true);
-  }, []);
+  // Handle track ending - play next random track
+  const handleEnded = useCallback(() => {
+    const nextTrack = getNextRandomTrack(currentTrack);
+    setCurrentTrack(nextTrack);
+  }, [currentTrack, getNextRandomTrack]);
 
+  // Play audio when track changes or config loads
   useEffect(() => {
-    // Wait for both track to be loaded AND config to be loaded
-    if (!isLoaded || !configLoaded || !audioRef.current) return;
+    if (!configLoaded || !audioRef.current) return;
 
     const audio = audioRef.current;
-    audio.volume = 0.3; // 30% volume
-    audio.muted = isMuted; // Apply initial mute state from config
+    audio.volume = targetVolumeRef.current;
 
-    // Only auto-play if music is enabled (not muted)
-    if (!isMuted) {
-      const playAudio = async () => {
-        try {
-          await audio.play();
-        } catch (err) {
-          // Auto-play was prevented, user needs to interact first
-          console.log('Auto-play blocked, waiting for user interaction');
+    // Play if not muted and not force muted
+    if (!isMuted && !forceMuted) {
+      audio.play().catch(err => {
+        console.log('Auto-play blocked:', err);
+        
+        const handleUserInteraction = async () => {
+          try {
+            await audio.play();
+            document.removeEventListener('click', handleUserInteraction);
+            document.removeEventListener('keydown', handleUserInteraction);
+          } catch {}
+        };
 
-          const handleUserInteraction = async () => {
-            try {
-              await audio.play();
-              document.removeEventListener('click', handleUserInteraction);
-              document.removeEventListener('keydown', handleUserInteraction);
-            } catch (e) {
-              // Still blocked
-            }
-          };
-
-          document.addEventListener('click', handleUserInteraction);
-          document.addEventListener('keydown', handleUserInteraction);
-        }
-      };
-
-      playAudio();
+        document.addEventListener('click', handleUserInteraction);
+        document.addEventListener('keydown', handleUserInteraction);
+      });
     }
-
-    // Handle track ending - play next random track
-    const handleEnded = () => {
-      const nextIndex = Math.floor(Math.random() * musicTracks.length);
-      setCurrentTrack(nextIndex);
-    };
-
-    audio.addEventListener('ended', handleEnded);
-
-    return () => {
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, [isLoaded, configLoaded, currentTrack]);
+  }, [currentTrack, configLoaded, isMuted, forceMuted]);
 
   const toggleMute = () => {
     if (audioRef.current) {
       const newMutedState = !isMuted;
-      audioRef.current.muted = newMutedState;
       setIsMuted(newMutedState);
-      // Ensure audio continues playing when unmuting
+      
       if (!newMutedState && audioRef.current.paused) {
         audioRef.current.play().catch(() => {
           console.log('Auto-play prevented after unmute');
         });
+      } else if (newMutedState && !audioRef.current.paused) {
+        audioRef.current.pause();
       }
     }
   };
 
   return (
     <>
-      {isLoaded && (
-        <audio
-          ref={audioRef}
-          src={musicTracks[currentTrack]}
-          loop={false}
-          preload="auto"
-        />
-      )}
+      <audio
+        ref={audioRef}
+        src={musicTracks[currentTrack]}
+        onEnded={handleEnded}
+        preload="auto"
+      />
       <button
         onClick={toggleMute}
         disabled={forceMuted}

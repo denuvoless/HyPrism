@@ -68,4 +68,10 @@ export const LANGUAGE_CONFIG: Record<Language, LanguageMetadata> = {
         code: Language.KOREAN,
         searchQuery: 'Korean Translation',
     },
+    [Language.UKRAINIAN]: {
+        name: 'Ukrainian',
+        nativeName: 'Українська',
+        code: Language.UKRAINIAN,
+        searchQuery: 'Ukrainian Translation (UA)',
+    },
 };

@@ -1,16 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Play, Package, Square, Github, Bug, GitBranch, Loader2, Download, ChevronDown, HardDrive, Check, Coffee } from 'lucide-react';
+import { FolderOpen, Play, Package, Square, Github, Bug, GitBranch, Loader2, Download, ChevronDown, HardDrive, Check, Coffee, X } from 'lucide-react';
 import { BrowserOpenURL } from '../../wailsjs/runtime/runtime';
 import { GameBranch } from '../constants/enums';
+
 import { LanguageSelector } from './LanguageSelector';
-import { OnlineToggle } from './OnlineToggle';
 
 interface ControlSectionProps {
   onPlay: () => void;
   onDownload?: () => void;
   onExit?: () => void;
+  onCancelDownload?: () => void;
   isDownloading: boolean;
+  downloadState?: 'downloading' | 'extracting' | 'launching';
+  canCancel?: boolean;
   isGameRunning: boolean;
   isVersionInstalled: boolean;
   latestNeedsUpdate?: boolean;
@@ -36,7 +39,7 @@ interface ControlSectionProps {
 const NavBtn: React.FC<{ onClick?: () => void; icon: React.ReactNode; tooltip?: string }> = ({ onClick, icon, tooltip }) => (
   <button
     onClick={onClick}
-    className="w-12 h-12 rounded-xl glass border border-white/5 flex items-center justify-center text-white/60 hover:text-[#FFA845] hover:bg-[#FFA845]/10 active:scale-95 transition-all duration-150 relative group"
+    className="w-12 h-12 rounded-xl glass border border-white/5 flex items-center justify-center text-white/60 hover:text-[#FFA845] hover:bg-[#FFA845]/10 active:scale-95 transition-all duration-150 relative group flex-shrink-0"
 
   >
     {icon}
@@ -48,25 +51,20 @@ const NavBtn: React.FC<{ onClick?: () => void; icon: React.ReactNode; tooltip?: 
   </button>
 );
 
-const formatBytes = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-};
-
 export const ControlSection: React.FC<ControlSectionProps> = ({
   onPlay,
   onDownload,
   onExit,
+  onCancelDownload,
   isDownloading,
+  downloadState = 'downloading',
+  canCancel = true,
   isGameRunning,
   isVersionInstalled,
-  latestNeedsUpdate = false,
+  latestNeedsUpdate: _latestNeedsUpdate = false,
   progress,
-  downloaded,
-  total,
+  downloaded: _downloaded,
+  total: _total,
   currentBranch,
   currentVersion,
   availableVersions,
@@ -80,6 +78,7 @@ export const ControlSection: React.FC<ControlSectionProps> = ({
 }) => {
   const [isBranchOpen, setIsBranchOpen] = useState(false);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
+  const [showCancelButton, setShowCancelButton] = useState(false);
   const branchDropdownRef = useRef<HTMLDivElement>(null);
   const versionDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -129,7 +128,11 @@ export const ControlSection: React.FC<ControlSectionProps> = ({
     setIsVersionOpen(false);
   };
 
-  const branchLabel = currentBranch === GameBranch.RELEASE ? t('Release') : t('Pre-Release');
+  const branchLabel = currentBranch === GameBranch.RELEASE
+    ? t('Release')
+    : currentBranch === GameBranch.PRE_RELEASE
+      ? t('Pre-Release')
+      : t('Release');
 
   // Calculate width to fit content properly
   const selectorWidth = 'w-[290px]';
@@ -177,7 +180,9 @@ export const ControlSection: React.FC<ControlSectionProps> = ({
                     }`}
                 >
                   {currentBranch === branch && <Check size={14} className="text-white" strokeWidth={3} />}
-                  <span className={currentBranch === branch ? '' : 'ml-[22px]'}>{branch === GameBranch.RELEASE ? t('Release') : t('Pre-Release')}</span>
+                  <span className={currentBranch === branch ? '' : 'ml-[22px]'}>
+                    {branch === GameBranch.RELEASE ? t('Release') : t('Pre-Release')}
+                  </span>
                 </button>
               ))}
             </div>
@@ -216,7 +221,7 @@ export const ControlSection: React.FC<ControlSectionProps> = ({
             <div className="absolute bottom-full right-0 mb-2 z-[100] min-w-[120px] max-h-60 overflow-y-auto bg-[#1a1a1a] backdrop-blur-xl border border-white/10 rounded-xl shadow-xl shadow-black/50">
               {availableVersions.length > 0 ? (
                 availableVersions.map((version) => {
-                  const isInstalled = (installedVersions || []).includes(version) || version === 0;
+                  const isInstalled = (installedVersions || []).includes(version);
                   return (
                     <button
                       key={version}
@@ -251,104 +256,102 @@ export const ControlSection: React.FC<ControlSectionProps> = ({
       </div>
 
       {/* Row 2: Nav buttons */}
-      <div className="flex gap-3 items-center">
-        <NavBtn onClick={() => actions.showModManager()} icon={<Package size={20} />} tooltip={t('Mod Manager')} />
-        <NavBtn onClick={actions.openFolder} icon={<FolderOpen size={20} />} tooltip={t('Open Instance Folder')} />
+      <div className="flex gap-2 items-center flex-wrap">
+        <NavBtn onClick={() => actions.showModManager()} icon={<Package size={18} />} tooltip={t('Mod Manager')} />
+        <NavBtn onClick={actions.openFolder} icon={<FolderOpen size={18} />} tooltip={t('Open Instance Folder')} />
         <NavBtn
           onClick={() => {
             if (onCustomDirChange) {
               onCustomDirChange();
             }
           }}
-          icon={<HardDrive size={20} />}
+          icon={<HardDrive size={18} />}
           tooltip={t('Change Instance Location')}
         />
-        <NavBtn onClick={openGitHub} icon={<Github size={20} />} tooltip="GitHub" />
+        <NavBtn onClick={openGitHub} icon={<Github size={18} />} tooltip="GitHub" />
 
-        <NavBtn onClick={openBugReport} icon={<Bug size={20} />} tooltip={t('Report Bug')} />
+        <NavBtn onClick={openBugReport} icon={<Bug size={18} />} tooltip={t('Report Bug')} />
 
         <LanguageSelector
           currentBranch={currentBranch}
           currentVersion={currentVersion}
           onShowModManager={actions.showModManager}
         />
-
-        <OnlineToggle />
-
         <button
           onClick={openCoffee}
-          className="h-12 px-4 rounded-xl glass border border-white/5 flex items-center justify-center gap-2 text-white/60 hover:text-[#FFA845] hover:bg-[#FFA845]/10 active:scale-95 transition-all duration-150 relative group"
-
+          className="h-12 px-4 rounded-xl glass border border-white/5 flex items-center justify-center gap-2 text-white/60 hover:text-[#FFA845] hover:bg-[#FFA845]/10 active:scale-95 transition-all duration-150 relative group whitespace-nowrap"
         >
-          <span className="text-sm font-medium">{t('Buy me a')}</span>
-          <Coffee size={20} />
-          <span className="absolute -top-10 left-1/2 -translate-x-1/2 px-2 py-1 text-xs bg-black/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
-            {t('Buy Me a Coffee')}
-          </span>
+          <span className="text-xs">{t('Buy me a')}</span>
+          <Coffee size={18} />
         </button>
 
         {/* Spacer + Disclaimer in center */}
-        <div className="flex-1 flex justify-center">
-          <p className="text-white/40 text-xs whitespace-nowrap">
+        <div className="flex-1 flex justify-center min-w-0">
+          <p className="text-white/40 text-xs whitespace-nowrap truncate">
             {t('Educational only.')} {t('Like it?')} <button onClick={() => BrowserOpenURL('https://hytale.com')} className="text-[#FFA845] font-semibold hover:underline cursor-pointer">{t('BUY IT')}</button>
           </p>
         </div>
 
-        {/* Play/Download button on right - Fixed width container */}
-        <div className="w-[200px] flex justify-end">
+        {/* Play/Download button on right */}
+        <div className="flex justify-end flex-shrink-0">
           {isGameRunning ? (
             <button
               onClick={onExit}
-              className="h-12 px-8 rounded-xl font-black text-xl tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 to-red-500 text-white hover:shadow-lg hover:shadow-red-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
+              className="h-12 px-6 rounded-xl font-black text-base tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 to-red-500 text-white hover:shadow-lg hover:shadow-red-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
             >
-              <Square size={20} fill="currentColor" />
+              <Square size={16} fill="currentColor" />
               <span>{t('EXIT')}</span>
             </button>
           ) : isDownloading ? (
-            <div className="h-12 px-6 rounded-xl bg-[#151515] border border-white/10 flex items-center justify-center gap-4 relative overflow-hidden min-w-[200px]">
+            <div 
+              className={`h-12 px-3 rounded-xl bg-[#151515] border border-white/10 flex items-center justify-center relative overflow-hidden min-w-[170px] max-w-[190px] group ${canCancel ? 'cursor-pointer' : 'cursor-default'}`}
+              onMouseEnter={() => canCancel && setShowCancelButton(true)}
+              onMouseLeave={() => setShowCancelButton(false)}
+              onClick={() => showCancelButton && canCancel && onCancelDownload?.()}
+            >
               <div
-                className="absolute inset-0 bg-gradient-to-r from-[#FFA845]/30 to-[#FF6B35]/30 transition-all duration-300"
+                className="absolute inset-0 bg-gradient-to-r from-cyan-500/40 to-blue-500/40 transition-all duration-300"
                 style={{ width: `${Math.min(progress, 100)}%` }}
               />
-              <div className="relative z-10 flex items-center gap-3">
-                <span className="text-lg font-bold text-white">{Math.round(progress)}%</span>
-                {total > 0 && (
-                  <span className="text-xs text-gray-400">
-                    {formatBytes(downloaded)} / {formatBytes(total)}
+              {showCancelButton && canCancel && onCancelDownload ? (
+                <div className="relative z-10 flex items-center gap-2 text-red-500 hover:text-red-400 transition-colors">
+                  <X size={16} />
+                  <span className="text-xs font-bold">{t('CANCEL')}</span>
+                </div>
+              ) : (
+                <div className="relative z-10 flex items-center gap-2">
+                  <Loader2 size={14} className="animate-spin text-white flex-shrink-0" />
+                  <span className="text-[10px] font-bold text-white uppercase truncate">
+                    {downloadState === 'downloading' && t('Downloading...')}
+                    {downloadState === 'extracting' && t('Extracting...')}
+                    {downloadState === 'launching' && t('Launching...')}
                   </span>
-                )}
-              </div>
+                  <span className="text-xs font-mono text-white/80 flex-shrink-0">{Math.round(progress)}%</span>
+                </div>
+              )}
             </div>
           ) : isCheckingInstalled ? (
             <button
               disabled
-              className="h-12 px-8 rounded-xl font-black text-xl tracking-tight flex items-center justify-center gap-2 bg-white/10 text-white/50 cursor-not-allowed"
+              className="h-12 px-5 rounded-xl font-black text-base tracking-tight flex items-center justify-center gap-2 bg-white/10 text-white/50 cursor-not-allowed"
             >
-              <Loader2 size={20} className="animate-spin" />
+              <Loader2 size={16} className="animate-spin" />
               <span>{t('CHECKING...')}</span>
-            </button>
-          ) : latestNeedsUpdate && currentVersion === 0 ? (
-            <button
-              onClick={onDownload}
-              className="h-12 px-8 rounded-xl font-black text-xl tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:shadow-lg hover:shadow-blue-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
-            >
-              <Download size={20} />
-              <span>{t('UPDATE')}</span>
             </button>
           ) : isVersionInstalled ? (
             <button
               onClick={onPlay}
-              className="h-12 px-8 rounded-xl font-black text-xl tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-[#FFA845] to-[#FF6B35] text-white hover:shadow-lg hover:shadow-[#FFA845]/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
+              className="h-12 px-6 rounded-xl font-black text-lg tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-[#FFA845] to-[#FF6B35] text-white hover:shadow-lg hover:shadow-[#FFA845]/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
             >
-              <Play size={20} fill="currentColor" />
+              <Play size={18} fill="currentColor" />
               <span>{t('PLAY')}</span>
             </button>
           ) : (
             <button
               onClick={onDownload}
-              className="h-12 px-8 rounded-xl font-black text-xl tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-lg hover:shadow-green-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
+              className="h-12 px-6 rounded-xl font-black text-base tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:shadow-lg hover:shadow-green-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
             >
-              <Download size={20} />
+              <Download size={16} />
               <span>{t('DOWNLOAD')}</span>
             </button>
           )}

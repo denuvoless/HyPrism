@@ -16,7 +16,7 @@ export function CheckUpdate():Promise<updater.Asset>;
 
 export function CheckVersionAvailability():Promise<app.VersionCheckInfo>;
 
-export function DeleteGame():Promise<void>;
+export function DeleteGame(arg1:string,arg2:number):Promise<boolean>;
 
 export function DownloadAndLaunch(arg1:string):Promise<void>;
 
@@ -58,7 +58,7 @@ export function GetModCategories():Promise<Array<mods.ModCategory>>;
 
 export function GetModDetails(arg1:number):Promise<mods.CurseForgeMod>;
 
-export function GetModFiles(arg1:number):Promise<Array<mods.ModFile>>;
+export function GetModFiles(arg1:string,arg2:number,arg3:number):Promise<Array<mods.ModFile>>;
 
 export function GetMusicEnabled():Promise<boolean>;
 
@@ -82,7 +82,7 @@ export function InstallMod(arg1:number):Promise<void>;
 
 export function InstallModFile(arg1:number,arg2:number):Promise<void>;
 
-export function InstallModFileToInstance(arg1:number,arg2:number,arg3:string,arg4:number):Promise<void>;
+export function InstallModFileToInstance(arg1:string,arg2:string,arg3:string,arg4:number):Promise<boolean>;
 
 export function InstallModToInstance(arg1:number,arg2:string,arg3:number):Promise<void>;
 
@@ -110,7 +110,7 @@ export function SaveConfig():Promise<void>;
 
 export function SaveDiagnosticReport():Promise<string>;
 
-export function SearchMods(arg1:string,arg2:number,arg3:number):Promise<mods.SearchResult>;
+export function SearchMods(arg1:string,arg2:number,arg3:number,arg4:Array<string>,arg5:number,arg6:number):Promise<mods.SearchResult>;
 
 export function SelectInstanceDirectory():Promise<string>;
 
@@ -120,7 +120,7 @@ export function SetAutoUpdateLatest(arg1:boolean):Promise<void>;
 
 export function SetCustomInstanceDir(arg1:string):Promise<void>;
 
-export function SetMusicEnabled(arg1:boolean):Promise<void>;
+export function SetMusicEnabled(arg1:boolean):Promise<boolean>;
 
 export function SetNick(arg1:string):Promise<void>;
 
@@ -141,3 +141,5 @@ export function UninstallInstanceMod(arg1:string,arg2:string,arg3:number):Promis
 export function UninstallMod(arg1:string):Promise<void>;
 
 export function Update():Promise<void>;
+
+export function GetRecentLogs(arg1?:number):Promise<Array<string>>;

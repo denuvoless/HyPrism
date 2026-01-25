@@ -2,42 +2,77 @@
 .DS_Store
 .AppleDouble
 .LSOverride
+._*
 
-# Build
-build/bin/
-*.exe
+# .NET / C# Build outputs
+bin/
+obj/
 *.dll
-*.so
-*.dylib
+*.exe
+*.pdb
+*.user
+*.suo
+*.cache
+.vs/
 
-# Logs
-*.log
-
-# Temporary files
-*.tmp
-*.temp
-
-# IDE
-.vscode/
+# Rider IDE
 .idea/
 *.swp
 *.swo
 
-# Node modules (if any)
-node_modules/
+# VS Code
+.vscode/
 
-# Frontend build
-frontend/dist/
+# Frontend Build outputs
 frontend/node_modules/
+frontend/dist/
+wwwroot/
 
-# Go
+# IMPORTANT folder (backup)
+IMPORTANT/
+
+# Frontend lock files
+frontend/package-lock.json
+frontend/yarn.lock
+frontend/pnpm-lock.yaml
+
+# Frontend cache
+frontend/.vite/
+frontend/.turbo/
+
+# Build artifacts
+build/bin/
+build/darwin/
+build/windows/
+release-artifacts/
+
+# Butler
+butler
+butler.exe
+
+# Configuration files with sensitive data
+*.local
+appsettings.Development.json
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+~*
+
+# PWR staging directories
+.staging/
+staging/
+
+# Go (legacy from Wails)
 *.test
 *.out
 
-# Wails
-build/bin/
+# Wails (legacy)
 wails.json.bak
-frontend/src/assets/background.mp4
 HyPrism
 
 # Flatpak build artifacts
@@ -46,3 +81,9 @@ flatpak-build/
 .flatpak-builder/
 *.flatpak
 frontend/package.json.md5
+
+# scripts
+scripts/run.sh
+
+# Build artifacts folder
+artifacts/

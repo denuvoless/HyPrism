@@ -1,242 +1,301 @@
 /*
- _       __      _ __
-| |     / /___ _(_) /____
-| | /| / / __ `/ / / ___/
-| |/ |/ / /_/ / / (__  )
-|__/|__/\__,_/_/_/____/
-The electron alternative for Go
-(c) Lea Anthony 2019-present
+ Photino Bridge - Replaces Wails Runtime
+ This file provides Wails-compatible API calls using Photino's messaging
 */
 
-export function LogPrint(message) {
-    window.runtime.LogPrint(message);
+// RPC system for calling C# backend
+const pendingCalls = new Map();
+let callId = 0;
+
+// Register callback for receiving messages from C# (Photino uses this pattern)
+if (!window._runtimeListenerAdded) {
+    window._runtimeListenerAdded = true;
+
+    const registerExternalListener = () => {
+        try {
+            if (!window.external || typeof window.external.receiveMessage !== 'function') {
+                return false;
+            }
+
+            // Photino sends messages via window.external.receiveMessage callback
+            window.external.receiveMessage((message) => {
+                try {
+                    const data = typeof message === 'string' ? JSON.parse(message) : message;
+
+                    // Handle events from backend
+                    if (data.type === 'progress' || data.type === 'event') {
+                        const eventName = data.eventName || 'progress-update';
+                        const eventData = data.data || data;
+                        console.log('Dispatching event:', eventName, eventData);
+                        window.dispatchEvent(new CustomEvent(eventName, { detail: eventData }));
+                        return;
+                    }
+
+                    // Handle RPC responses
+                    if (data.Id && pendingCalls.has(data.Id)) {
+                        const { resolve, reject } = pendingCalls.get(data.Id);
+                        pendingCalls.delete(data.Id);
+                        if (data.Error) {
+                            reject(new Error(data.Error));
+                        } else {
+                            resolve(data.Result);
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error parsing message:', e);
+                }
+            });
+
+            return true;
+        } catch (e) {
+            console.error('Failed to register external listener:', e);
+            return false;
+        }
+    };
+
+    if (!registerExternalListener()) {
+        // Retry a few times in case the bridge is injected after script load (macOS WebKit)
+        let attempts = 0;
+        const interval = setInterval(() => {
+            attempts += 1;
+            if (registerExternalListener() || attempts >= 20) {
+                clearInterval(interval);
+            }
+        }, 250);
+    }
 }
 
-export function LogTrace(message) {
-    window.runtime.LogTrace(message);
+function callBackend(method, ...args) {
+    return new Promise((resolve, reject) => {
+        const id = `call_${++callId}`;
+        pendingCalls.set(id, { resolve, reject });
+        
+        const message = JSON.stringify({
+            Id: id,
+            Method: method,
+            Args: args
+        });
+        
+        if (window.external?.sendMessage) {
+            window.external.sendMessage(message);
+        } else {
+            console.warn('No native bridge available');
+            reject(new Error('Native bridge not available'));
+        }
+    });
 }
 
-export function LogDebug(message) {
-    window.runtime.LogDebug(message);
-}
-
-export function LogInfo(message) {
-    window.runtime.LogInfo(message);
-}
-
-export function LogWarning(message) {
-    window.runtime.LogWarning(message);
-}
-
-export function LogError(message) {
-    window.runtime.LogError(message);
-}
-
-export function LogFatal(message) {
-    window.runtime.LogFatal(message);
-}
+// Event listeners storage
+const eventListeners = new Map();
 
 export function EventsOnMultiple(eventName, callback, maxCallbacks) {
-    return window.runtime.EventsOnMultiple(eventName, callback, maxCallbacks);
+    if (!eventListeners.has(eventName)) {
+        eventListeners.set(eventName, []);
+    }
+    eventListeners.get(eventName).push({ callback, maxCallbacks, callCount: 0 });
+    
+    const handler = (e) => {
+        const listeners = eventListeners.get(eventName) || [];
+        listeners.forEach((listener, index) => {
+            if (listener.maxCallbacks === -1 || listener.callCount < listener.maxCallbacks) {
+                listener.callback(e.detail);
+                listener.callCount++;
+                if (listener.maxCallbacks !== -1 && listener.callCount >= listener.maxCallbacks) {
+                    listeners.splice(index, 1);
+                }
+            }
+        });
+    };
+    
+    window.addEventListener(eventName, handler);
+    return () => window.removeEventListener(eventName, handler);
 }
 
 export function EventsOn(eventName, callback) {
     return EventsOnMultiple(eventName, callback, -1);
 }
 
-export function EventsOff(eventName, ...additionalEventNames) {
-    return window.runtime.EventsOff(eventName, ...additionalEventNames);
+export function EventsOff(eventName) {
+    eventListeners.delete(eventName);
 }
 
 export function EventsOffAll() {
-  return window.runtime.EventsOffAll();
+    eventListeners.clear();
 }
 
 export function EventsOnce(eventName, callback) {
     return EventsOnMultiple(eventName, callback, 1);
 }
 
-export function EventsEmit(eventName) {
-    let args = [eventName].slice.call(arguments);
-    return window.runtime.EventsEmit.apply(null, args);
+export function EventsEmit(eventName, ...args) {
+    window.dispatchEvent(new CustomEvent(eventName, { detail: args }));
 }
 
-export function WindowReload() {
-    window.runtime.WindowReload();
-}
-
-export function WindowReloadApp() {
-    window.runtime.WindowReloadApp();
-}
-
-export function WindowSetAlwaysOnTop(b) {
-    window.runtime.WindowSetAlwaysOnTop(b);
-}
-
-export function WindowSetSystemDefaultTheme() {
-    window.runtime.WindowSetSystemDefaultTheme();
-}
-
-export function WindowSetLightTheme() {
-    window.runtime.WindowSetLightTheme();
-}
-
-export function WindowSetDarkTheme() {
-    window.runtime.WindowSetDarkTheme();
-}
-
-export function WindowCenter() {
-    window.runtime.WindowCenter();
-}
-
-export function WindowSetTitle(title) {
-    window.runtime.WindowSetTitle(title);
-}
-
-export function WindowFullscreen() {
-    window.runtime.WindowFullscreen();
-}
-
-export function WindowUnfullscreen() {
-    window.runtime.WindowUnfullscreen();
-}
-
-export function WindowIsFullscreen() {
-    return window.runtime.WindowIsFullscreen();
-}
-
-export function WindowGetSize() {
-    return window.runtime.WindowGetSize();
-}
-
-export function WindowSetSize(width, height) {
-    window.runtime.WindowSetSize(width, height);
-}
-
-export function WindowSetMaxSize(width, height) {
-    window.runtime.WindowSetMaxSize(width, height);
-}
-
-export function WindowSetMinSize(width, height) {
-    window.runtime.WindowSetMinSize(width, height);
-}
-
-export function WindowSetPosition(x, y) {
-    window.runtime.WindowSetPosition(x, y);
-}
-
-export function WindowGetPosition() {
-    return window.runtime.WindowGetPosition();
-}
-
-export function WindowHide() {
-    window.runtime.WindowHide();
-}
-
-export function WindowShow() {
-    window.runtime.WindowShow();
+// Window functions
+export function WindowMinimise() {
+    callBackend('WindowMinimize');
 }
 
 export function WindowMaximise() {
-    window.runtime.WindowMaximise();
+    callBackend('WindowMaximize');
 }
 
 export function WindowToggleMaximise() {
-    window.runtime.WindowToggleMaximise();
+    callBackend('WindowMaximize');
 }
 
 export function WindowUnmaximise() {
-    window.runtime.WindowUnmaximise();
-}
-
-export function WindowIsMaximised() {
-    return window.runtime.WindowIsMaximised();
-}
-
-export function WindowMinimise() {
-    window.runtime.WindowMinimise();
+    callBackend('WindowMaximize');
 }
 
 export function WindowUnminimise() {
-    window.runtime.WindowUnminimise();
+    callBackend('WindowRestore');
 }
 
-export function WindowSetBackgroundColour(R, G, B, A) {
-    window.runtime.WindowSetBackgroundColour(R, G, B, A);
+export function WindowFullscreen() {
+    callBackend('WindowFullscreen');
 }
 
-export function ScreenGetAll() {
-    return window.runtime.ScreenGetAll();
+export function WindowUnfullscreen() {
+    callBackend('WindowUnfullscreen');
+}
+
+export function WindowIsFullscreen() {
+    return callBackend('WindowIsFullscreen');
+}
+
+export function WindowIsMaximised() {
+    return callBackend('WindowIsMaximized');
 }
 
 export function WindowIsMinimised() {
-    return window.runtime.WindowIsMinimised();
+    return callBackend('WindowIsMinimized');
 }
 
 export function WindowIsNormal() {
-    return window.runtime.WindowIsNormal();
+    return callBackend('WindowIsNormal');
 }
 
-export function BrowserOpenURL(url) {
-    window.runtime.BrowserOpenURL(url);
+export function WindowCenter() {
+    callBackend('WindowCenter');
 }
 
-export function Environment() {
-    return window.runtime.Environment();
+export function WindowSetTitle(title) {
+    callBackend('WindowSetTitle', title);
 }
+
+export function WindowSetSize(width, height) {
+    callBackend('WindowSetSize', width, height);
+}
+
+export function WindowSetMinSize(width, height) {
+    callBackend('WindowSetMinSize', width, height);
+}
+
+export function WindowSetMaxSize(width, height) {
+    callBackend('WindowSetMaxSize', width, height);
+}
+
+export function WindowSetPosition(x, y) {
+    callBackend('WindowSetPosition', x, y);
+}
+
+export function WindowGetPosition() {
+    return callBackend('WindowGetPosition');
+}
+
+export function WindowGetSize() {
+    return callBackend('WindowGetSize');
+}
+
+export function WindowShow() {
+    // Already visible
+}
+
+export function WindowHide() {
+    callBackend('WindowHide');
+}
+
+export function WindowReload() {
+    window.location.reload();
+}
+
+export function WindowReloadApp() {
+    window.location.reload();
+}
+
+export function WindowSetAlwaysOnTop(b) {
+    callBackend('WindowSetAlwaysOnTop', b);
+}
+
+export function WindowSetBackgroundColour(R, G, B, A) {
+    // Not directly supported
+}
+
+export function WindowSetSystemDefaultTheme() {}
+export function WindowSetLightTheme() {}
+export function WindowSetDarkTheme() {}
 
 export function Quit() {
-    window.runtime.Quit();
+    callBackend('WindowClose');
 }
 
 export function Hide() {
-    window.runtime.Hide();
+    callBackend('WindowHide');
 }
 
 export function Show() {
-    window.runtime.Show();
+    // Already visible
 }
 
+// Browser functions
+export function BrowserOpenURL(url) {
+    callBackend('BrowserOpenURL', url);
+}
+
+// Log functions (just log to console)
+export function LogPrint(message) { console.log(message); }
+export function LogTrace(message) { console.trace(message); }
+export function LogDebug(message) { console.debug(message); }
+export function LogInfo(message) { console.info(message); }
+export function LogWarning(message) { console.warn(message); }
+export function LogError(message) { console.error(message); }
+export function LogFatal(message) { console.error('FATAL:', message); }
+
+// Clipboard functions
 export function ClipboardGetText() {
-    return window.runtime.ClipboardGetText();
+    return navigator.clipboard.readText();
 }
 
 export function ClipboardSetText(text) {
-    return window.runtime.ClipboardSetText(text);
+    return navigator.clipboard.writeText(text);
 }
 
-/**
- * Callback for OnFileDrop returns a slice of file path strings when a drop is finished.
- *
- * @export
- * @callback OnFileDropCallback
- * @param {number} x - x coordinate of the drop
- * @param {number} y - y coordinate of the drop
- * @param {string[]} paths - A list of file paths.
- */
+// Environment
+export function Environment() {
+    return callBackend('Environment');
+}
 
-/**
- * OnFileDrop listens to drag and drop events and calls the callback with the coordinates of the drop and an array of path strings.
- *
- * @export
- * @param {OnFileDropCallback} callback - Callback for OnFileDrop returns a slice of file path strings when a drop is finished.
- * @param {boolean} [useDropTarget=true] - Only call the callback when the drop finished on an element that has the drop target style. (--wails-drop-target)
- */
+// Screen functions
+export function ScreenGetAll() {
+    return Promise.resolve([{
+        width: window.screen.width,
+        height: window.screen.height,
+        isPrimary: true
+    }]);
+}
+
+// File drop (not supported in Photino)
 export function OnFileDrop(callback, useDropTarget) {
-    return window.runtime.OnFileDrop(callback, useDropTarget);
+    return () => {};
 }
 
-/**
- * OnFileDropOff removes the drag and drop listeners and handlers.
- */
-export function OnFileDropOff() {
-    return window.runtime.OnFileDropOff();
-}
+export function OnFileDropOff() {}
 
 export function CanResolveFilePaths() {
-    return window.runtime.CanResolveFilePaths();
+    return false;
 }
 
 export function ResolveFilePaths(files) {
-    return window.runtime.ResolveFilePaths(files);
+    return Promise.resolve([]);
 }

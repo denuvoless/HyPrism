@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { GameBranch } from './constants/enums';
-import { Titlebar } from './components/Titlebar';
 import { BackgroundImage } from './components/BackgroundImage';
 import { ProfileSection } from './components/ProfileSection';
 import { ControlSection } from './components/ControlSection';
@@ -21,6 +20,7 @@ import {
   Update,
   ExitGame,
   IsGameRunning,
+  GetRecentLogs,
   // Version Manager
   GetVersionType,
   SetVersionType,
@@ -36,6 +36,72 @@ import {
 } from '../wailsjs/go/app/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 import { NewsPreview } from './components/NewsPreview';
+import appIcon from './assets/appicon.png';
+
+const withLatest = (versions: number[] | null | undefined): number[] => {
+  const base = Array.isArray(versions) ? versions : [];
+  return base.includes(0) ? base : [0, ...base];
+};
+
+const normalizeBranch = (branch: string | null | undefined): string => {
+  return branch === GameBranch.PRE_RELEASE ? GameBranch.PRE_RELEASE : GameBranch.RELEASE;
+};
+
+const parseDateMs = (dateValue: string | number | Date | undefined): number => {
+  if (!dateValue) return 0;
+  const ms = new Date(dateValue).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+};
+
+const fetchLauncherReleases = async () => {
+  try {
+    const res = await fetch('https://api.github.com/repos/yyyumeniku/HyPrism/releases?per_page=100');
+    if (!res.ok) return [] as Array<{ item: any; dateMs: number }>;
+    const data = await res.json();
+    return (Array.isArray(data) ? data : []).map((r: any) => {
+      const rawName = (r?.name || r?.tag_name || '').toString();
+      const cleaned = rawName.replace(/[()]/g, '').trim();
+      const dateMs = parseDateMs(r?.published_at || r?.created_at);
+      return {
+        item: {
+          title: `Hyprism ${cleaned || 'Release'} release`,
+          excerpt: `Hyprism ${cleaned || 'Release'} release — click to see changelog.`,
+          url: r?.html_url || 'https://github.com/yyyumeniku/HyPrism/releases',
+          date: new Date(dateMs || Date.now()).toLocaleDateString(),
+          author: 'HyPrism',
+          imageUrl: appIcon,
+          source: 'hyprism' as const,
+        },
+        dateMs
+      };
+    });
+  } catch {
+    return [] as Array<{ item: any; dateMs: number }>;
+  }
+};
+
+// Helper to call CancelDownload via RPC
+const CancelDownload = (): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    const id = `call_${Date.now()}_${Math.random()}`;
+    const message = JSON.stringify({
+      method: 'CancelDownload',
+      id: id
+    });
+    
+    const handler = (e: CustomEvent) => {
+      const data = e.detail;
+      if (data.Id === id) {
+        window.removeEventListener(id, handler as EventListener);
+        if (data.Error) reject(new Error(data.Error));
+        else resolve(data.Result);
+      }
+    };
+    
+    window.addEventListener(id, handler as EventListener);
+    (window as any).external?.sendMessage?.(message);
+  });
+};
 
 const App: React.FC = () => {
   const { t } = useTranslation();
@@ -47,6 +113,7 @@ const App: React.FC = () => {
   // Download state
   const [progress, setProgress] = useState<number>(0);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [downloadState, setDownloadState] = useState<'downloading' | 'extracting' | 'launching'>('downloading');
   const [isGameRunning, setIsGameRunning] = useState<boolean>(false);
   const [downloaded, setDownloaded] = useState<number>(0);
   const [total, setTotal] = useState<number>(0);
@@ -61,6 +128,11 @@ const App: React.FC = () => {
   const [showModManager, setShowModManager] = useState<boolean>(false);
   const [modManagerSearchQuery, setModManagerSearchQuery] = useState<string>('');
   const [error, setError] = useState<any>(null);
+  const [launchTimeoutError, setLaunchTimeoutError] = useState<{ message: string; logs: string[] } | null>(null);
+
+  // Game launch tracking
+  const gameLaunchTimeRef = useRef<number | null>(null);
+  const LAUNCH_TIMEOUT_MS = 60000; // 1 minute
 
   // Version state
   const [currentBranch, setCurrentBranch] = useState<string>(GameBranch.RELEASE);
@@ -121,16 +193,19 @@ const App: React.FC = () => {
       setIsLoadingVersions(true);
       try {
         const versions = await GetVersionList(currentBranch);
-        setAvailableVersions(versions || []);
+        setAvailableVersions(withLatest(versions || []));
 
         // Load installed versions
         const installed = await GetInstalledVersionsForBranch(currentBranch);
-        setInstalledVersions(installed || []);
+        const latestInstalled = await IsVersionInstalled(currentBranch, 0);
+        const installedWithLatest = [...(installed || [])];
+        if (latestInstalled && !installedWithLatest.includes(0)) installedWithLatest.unshift(0);
+        setInstalledVersions(installedWithLatest);
 
         // If current version is not valid for this branch, set to latest
-        if (versions && !versions.includes(currentVersion) && versions.length > 0) {
-          setCurrentVersion(versions[0]);
-          await SetSelectedVersion(versions[0]);
+        if (currentVersion !== 0 && versions && !versions.includes(currentVersion) && versions.length > 0) {
+          setCurrentVersion(0);
+          await SetSelectedVersion(0);
         }
       } catch (e) {
         console.error('Failed to load versions:', e);
@@ -151,7 +226,14 @@ const App: React.FC = () => {
     setIsLoadingVersions(true);
     try {
       const versions = await GetVersionList(branch);
-      setAvailableVersions(versions);
+      setAvailableVersions(withLatest(versions));
+
+      const installed = await GetInstalledVersionsForBranch(branch);
+      const latestInstalled = await IsVersionInstalled(branch, 0);
+      const installedWithLatest = [...(installed || [])];
+      if (latestInstalled && !installedWithLatest.includes(0)) installedWithLatest.unshift(0);
+      setInstalledVersions(installedWithLatest);
+
       // Always set to "latest" (version 0) when switching branches
       setCurrentVersion(0);
       await SetSelectedVersion(0);
@@ -167,24 +249,53 @@ const App: React.FC = () => {
     await SetSelectedVersion(version);
   };
 
-  // Game state polling
+  // Game state polling with launch timeout detection
   useEffect(() => {
-    if (!isGameRunning) return;
+    if (!isGameRunning) {
+      gameLaunchTimeRef.current = null;
+      return;
+    }
+
+    // Record when the game was launched
+    if (!gameLaunchTimeRef.current) {
+      gameLaunchTimeRef.current = Date.now();
+    }
 
     const pollInterval = setInterval(async () => {
       try {
         const running = await IsGameRunning();
         if (!running) {
+          // Check if we hit the timeout without the game ever running properly
+          const launchTime = gameLaunchTimeRef.current;
+          const elapsed = launchTime ? Date.now() - launchTime : 0;
+          
+          if (elapsed < LAUNCH_TIMEOUT_MS) {
+            // Game stopped before timeout - likely crashed or failed to launch
+            try {
+              const logs = await GetRecentLogs(10);
+              setLaunchTimeoutError({
+                message: t('Game process exited unexpectedly'),
+                logs: logs || []
+              });
+            } catch {
+              setLaunchTimeoutError({
+                message: t('Game process exited unexpectedly'),
+                logs: []
+              });
+            }
+          }
+          
           setIsGameRunning(false);
           setProgress(0);
+          gameLaunchTimeRef.current = null;
         }
       } catch (e) {
         console.error('Failed to check game state:', e);
       }
-    }, 3000); // Check every 3 seconds (reduced frequency)
+    }, 3000); // Check every 3 seconds
 
     return () => clearInterval(pollInterval);
-  }, [isGameRunning]);
+  }, [isGameRunning, t]);
 
   useEffect(() => {
     // Initialize user settings
@@ -197,20 +308,22 @@ const App: React.FC = () => {
       try {
         // Get saved branch (defaults to "release" in backend if not set)
         const savedBranch = await GetVersionType();
-        const branch = savedBranch || GameBranch.RELEASE;
+        const branch = normalizeBranch(savedBranch || GameBranch.RELEASE);
         setCurrentBranch(branch);
 
         // Load version list for this branch
         setIsLoadingVersions(true);
         const versions = await GetVersionList(branch);
-        setAvailableVersions(versions);
+        setAvailableVersions(withLatest(versions));
 
         // Load installed versions
         const installed = await GetInstalledVersionsForBranch(branch);
-        setInstalledVersions(installed);
+        const latestInstalled = await IsVersionInstalled(branch, 0);
+        const installedWithLatest = [...(installed || [])];
+        if (latestInstalled && !installedWithLatest.includes(0)) installedWithLatest.unshift(0);
+        setInstalledVersions(installedWithLatest);
 
         // Check if "latest" (version 0) is installed first
-        const latestInstalled = await IsVersionInstalled(branch, 0);
 
         if (latestInstalled) {
           // Use latest if installed
@@ -251,14 +364,33 @@ const App: React.FC = () => {
       setDownloaded(data.downloaded);
       setTotal(data.total);
 
-      // When launch stage is received, game is starting
-      if (data.stage === 'launch') {
+      // Update download state based on progress ranges
+      if (data.progress >= 0 && data.progress < 5) {
+        setDownloadState('downloading'); // Butler installation
+      } else if (data.progress >= 5 && data.progress < 70) {
+        setDownloadState('downloading'); // Downloading PWR
+      } else if (data.progress >= 70 && data.progress < 100) {
+        setDownloadState('extracting'); // Extracting with butler
+      } else if (data.progress >= 100) {
+        setDownloadState('launching'); // Ready to launch
+      }
+
+      // When complete stage with 100% is received, game is launching
+      if (data.stage === 'complete' && data.progress >= 100) {
+        // Game is now installed, update state
+        setIsVersionInstalled(true);
+      }
+    });
+    
+    // Game state event listener
+    const unsubGameState = EventsOn('game-state', (data: any) => {
+      if (data.state === 'started') {
         setIsGameRunning(true);
         setIsDownloading(false);
         setProgress(0);
-
-        // Game is now installed, update state
-        setIsVersionInstalled(true);
+      } else if (data.state === 'stopped') {
+        setIsGameRunning(false);
+        setProgress(0);
       }
     });
 
@@ -280,6 +412,7 @@ const App: React.FC = () => {
 
     return () => {
       unsubProgress();
+      unsubGameState();
       unsubUpdate();
       unsubUpdateProgress();
       unsubError();
@@ -317,6 +450,7 @@ const App: React.FC = () => {
     }
 
     setIsDownloading(true);
+    setDownloadState('downloading');
     try {
       await DownloadAndLaunch(username);
       // Button state will be managed by progress events:
@@ -325,6 +459,18 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('Launch failed:', err);
       setIsDownloading(false);
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    try {
+      await CancelDownload();
+      setIsDownloading(false);
+      setProgress(0);
+      setDownloaded(0);
+      setTotal(0);
+    } catch (err) {
+      console.error('Cancel failed:', err);
     }
   };
 
@@ -395,10 +541,9 @@ const App: React.FC = () => {
   return (
     <div className="relative w-screen h-screen bg-[#090909] text-white overflow-hidden font-sans select-none">
       <BackgroundImage />
-      <Titlebar />
 
       {/* Music Player - positioned in top right */}
-      <div className="absolute top-12 right-4 z-20">
+      <div className="absolute top-4 right-4 z-20">
         <MusicPlayer forceMuted={isGameRunning} />
       </div>
 
@@ -424,7 +569,23 @@ const App: React.FC = () => {
           {/* Hytale Logo & News - Right Side */}
           <div className="flex flex-col items-end gap-3">
             <img src={hytaleLogo} alt="Hytale" className="h-24 drop-shadow-2xl" />
-            <NewsPreview getNews={async () => await GetNews(3)} />
+            <NewsPreview
+              getNews={async (count) => {
+                const releases = await fetchLauncherReleases();
+                const hytale = await GetNews(Math.max(0, count));
+
+                const hytaleItems = (hytale || []).map((item: any) => ({
+                  item: { ...item, source: 'hytale' as const },
+                  dateMs: parseDateMs(item?.date)
+                }));
+
+                const combined = [...releases, ...hytaleItems]
+                  .sort((a, b) => b.dateMs - a.dateMs)
+                  .map((x) => x.item);
+
+                return combined;
+              }}
+            />
           </div>
         </div>
 
@@ -432,7 +593,10 @@ const App: React.FC = () => {
           onPlay={handlePlay}
           onDownload={handlePlay}
           onExit={handleExit}
+          onCancelDownload={handleCancelDownload}
           isDownloading={isDownloading}
+          downloadState={downloadState}
+          canCancel={downloadState === 'downloading' && !isGameRunning}
           isGameRunning={isGameRunning}
           isVersionInstalled={isVersionInstalled}
           isCheckingInstalled={isCheckingInstalled}
@@ -463,7 +627,7 @@ const App: React.FC = () => {
       {showDelete && (
         <DeleteConfirmationModal
           onConfirm={() => {
-            DeleteGame();
+            DeleteGame(currentBranch, currentVersion);
             setShowDelete(false);
           }}
           onCancel={() => setShowDelete(false)}
@@ -474,6 +638,20 @@ const App: React.FC = () => {
         <ErrorModal
           error={error}
           onClose={() => setError(null)}
+        />
+      )}
+
+      {launchTimeoutError && (
+        <ErrorModal
+          error={{
+            type: 'LAUNCH_FAILED',
+            message: launchTimeoutError.message,
+            technical: launchTimeoutError.logs.length > 0 
+              ? launchTimeoutError.logs.join('\n')
+              : 'No log entries available',
+            timestamp: new Date().toISOString()
+          }}
+          onClose={() => setLaunchTimeoutError(null)}
         />
       )}
 

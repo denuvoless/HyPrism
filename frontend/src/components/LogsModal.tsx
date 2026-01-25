@@ -131,7 +131,7 @@ export const LogsModal: React.FC<LogsModalProps> = ({
         <div className="flex items-center justify-between p-5 border-t border-white/10 bg-black/30 flex-shrink-0">
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            {t('Auto-refreshing every 2 seconds')}
+            {t('Auto-refreshing every 3 seconds')}
           </div>
 
           <div className="flex gap-3">
