@@ -87,3 +87,4 @@ scripts/run.sh
 
 # Build artifacts folder
 artifacts/
+dmg-arm64/Applications
