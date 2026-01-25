@@ -1915,12 +1915,94 @@ public class AppService : IDisposable
         }
     }
 
-    // Update - DISABLED: No update implementation exists. Return false to prevent broken updates.
-    // Users must manually download new versions from GitHub releases.
-    public Task<bool> UpdateAsync(JsonElement[]? args)
+    // Update - macOS helper: delete old app and download latest DMG, then open it.
+    // For other platforms, open the releases page.
+    public async Task<bool> UpdateAsync(JsonElement[]? args)
     {
-        Logger.Warning("Update", "Auto-update is disabled - returning false");
-        return Task.FromResult(false);
+        try
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                Logger.Warning("Update", "Auto-update only implemented for macOS. Opening releases page.");
+                BrowserOpenURL("https://github.com/yyyumeniku/HyPrism/releases/latest");
+                return false;
+            }
+
+            // Fetch latest release from GitHub API and locate the arm64 DMG
+            var apiUrl = "https://api.github.com/repos/yyyumeniku/HyPrism/releases/latest";
+            var json = await HttpClient.GetStringAsync(apiUrl);
+            using var doc = JsonDocument.Parse(json);
+            var assets = doc.RootElement.GetProperty("assets");
+
+            string? dmgUrl = null;
+            foreach (var asset in assets.EnumerateArray())
+            {
+                var name = asset.GetProperty("name").GetString();
+                if (!string.IsNullOrWhiteSpace(name) && name.Contains("macos-arm64.dmg", StringComparison.OrdinalIgnoreCase))
+                {
+                    dmgUrl = asset.GetProperty("browser_download_url").GetString();
+                    break;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(dmgUrl))
+            {
+                Logger.Error("Update", "Could not find macOS arm64 DMG in latest release; opening releases page");
+                BrowserOpenURL("https://github.com/yyyumeniku/HyPrism/releases/latest");
+                return false;
+            }
+
+            var downloadsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            Directory.CreateDirectory(downloadsDir);
+            var dmgPath = Path.Combine(downloadsDir, "HyPrism-latest.dmg");
+
+            Logger.Info("Update", $"Downloading latest DMG to {dmgPath}");
+            using (var response = await HttpClient.GetAsync(dmgUrl, HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                await using var stream = await response.Content.ReadAsStreamAsync();
+                await using var file = new FileStream(dmgPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                var buffer = new byte[8192];
+                int read;
+                while ((read = await stream.ReadAsync(buffer)) > 0)
+                {
+                    await file.WriteAsync(buffer.AsMemory(0, read));
+                }
+            }
+
+            // Remove old app bundle if it exists
+            var appPath = "/Applications/HyPrism.app";
+            if (Directory.Exists(appPath))
+            {
+                try
+                {
+                    Logger.Warning("Update", "Removing existing /Applications/HyPrism.app");
+                    Directory.Delete(appPath, recursive: true);
+                }
+                catch (Exception deleteEx)
+                {
+                    Logger.Warning("Update", $"Failed to delete old app: {deleteEx.Message}");
+                }
+            }
+
+            // Open the DMG so the user can drag the new app in
+            try
+            {
+                Process.Start("open", dmgPath);
+            }
+            catch (Exception openEx)
+            {
+                Logger.Warning("Update", $"Could not open DMG automatically: {openEx.Message}");
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Update", $"Update failed: {ex.Message}");
+            BrowserOpenURL("https://github.com/yyyumeniku/HyPrism/releases/latest");
+            return false;
+        }
     }
 
     // Browser
