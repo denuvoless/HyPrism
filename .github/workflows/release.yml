@@ -250,7 +250,7 @@ jobs:
           2) Run Open_HyPrism.command to clear quarantine and launch.
           EOF
           ln -s /Applications dmg-x64/Applications
-          hdiutil create -volname "HyPrism" -srcfolder dmg-x64 -ov -format UDZO artifacts/HyPrism-macos-x64.dmg
+          hdiutil create -volname "HyPrism-x64" -srcfolder dmg-x64 -ov -format UDZO artifacts/HyPrism-macos-x64.dmg
           
           # Create arm64 DMG
           mkdir -p dmg-arm64
@@ -268,7 +268,7 @@ jobs:
           2) Run Open_HyPrism.command to clear quarantine and launch.
           EOF
           ln -s /Applications dmg-arm64/Applications
-          hdiutil create -volname "HyPrism" -srcfolder dmg-arm64 -ov -format UDZO artifacts/HyPrism-macos-arm64.dmg
+          hdiutil create -volname "HyPrism-arm64" -srcfolder dmg-arm64 -ov -format UDZO artifacts/HyPrism-macos-arm64.dmg
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
