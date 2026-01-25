@@ -536,7 +536,6 @@ public class AppService : IDisposable
                     SaveConfigInternal(_config);
                     
                     // Delete old config.toml after successful migration
-                    var legacyTomlPath = Path.Combine(legacyRoot, "config.toml");
                     if (File.Exists(legacyTomlPath))
                     {
                         try
