@@ -1604,10 +1604,19 @@ public class AppService : IDisposable
         string userDataDir = Path.Combine(versionPath, "UserData");
         Directory.CreateDirectory(userDataDir);
 
-        // Use saved UUID if available; fallback to offline UUID from name
-        string uuid = string.IsNullOrWhiteSpace(_config.UUID)
-            ? GenerateOfflineUUID(_config.Nick)
-            : _config.UUID;
+        // Use saved UUID if available; fallback to offline UUID from name and save it
+        string uuid;
+        if (string.IsNullOrWhiteSpace(_config.UUID))
+        {
+            uuid = GenerateOfflineUUID(_config.Nick);
+            _config.UUID = uuid;
+            SaveConfig();
+            Logger.Info("Config", $"Generated and saved UUID from nickname: {uuid}");
+        }
+        else
+        {
+            uuid = _config.UUID;
+        }
 
         // On macOS, clear quarantine flags before launching (skip full codesign for speed)
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))

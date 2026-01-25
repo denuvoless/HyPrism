@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Edit3, Check, Download } from 'lucide-react';
+import { Edit3, Check, Download, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface ProfileSectionProps {
@@ -64,6 +64,16 @@ export const ProfileSection: React.FC<ProfileSectionProps> = ({
     }
   };
 
+  const handleGenerateUuid = () => {
+    // Generate a random UUID v4
+    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+    setUuidValue(uuid);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -20 }}
@@ -124,6 +134,15 @@ export const ProfileSection: React.FC<ProfileSectionProps> = ({
               onChange={(e) => setUuidValue(e.target.value)}
               className="bg-[#151515] text-white text-xs px-2 py-1 rounded-lg border border-white/10 focus:border-[#FFA845] outline-none w-[260px]"
             />
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleGenerateUuid}
+              className="p-1.5 rounded-lg bg-white/10 text-white/70 hover:bg-white/20"
+              title="Generate Random UUID"
+            >
+              <RefreshCw size={14} />
+            </motion.button>
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
