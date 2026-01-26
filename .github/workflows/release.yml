@@ -210,26 +210,10 @@ jobs:
           chmod +x "artifacts/HyPrism.app/Contents/MacOS/HyPrism"
           echo "APPL????" > "artifacts/HyPrism.app/Contents/PkgInfo"
 
-      - name: Create DMG (arm64 only, keeps helper command)
+      - name: Create DMG (arm64 only)
         run: |
           mkdir -p dmg
           cp -R "artifacts/HyPrism.app" "dmg/HyPrism.app"
-          
-          # Helper script to clear quarantine and open
-          cat > "dmg/Open_HyPrism.command" << 'EOF'
-          #!/bin/bash
-          APP="$(dirname "$0")/HyPrism.app"
-          xattr -cr "$APP"
-          open "$APP"
-          EOF
-          chmod +x "dmg/Open_HyPrism.command"
-          
-          cat > "dmg/README.txt" << 'EOF'
-          If macOS says the app is damaged or incomplete:
-          1) Drag HyPrism.app into Applications.
-          2) Run Open_HyPrism.command to clear quarantine and launch.
-          EOF
-          
           ln -s /Applications dmg/Applications
           hdiutil create -volname "HyPrism" -srcfolder dmg -ov -format UDZO artifacts/HyPrism-macos-arm64.dmg
 
