@@ -155,6 +155,19 @@ jobs:
           name: backend-publish
           path: artifacts
 
+      - name: Verify downloaded backend publish ⚠️
+        run: |
+          if [ ! -d "artifacts/linux-x64" ] || [ "$(ls -A artifacts/linux-x64 | wc -c)" -eq 0 ]; then
+            echo "ERROR: backend-publish artifact is missing or empty after download. Ensure publish-backend produced and uploaded it."
+            echo "Contents of artifacts directory:"; ls -la artifacts || true
+            exit 1
+          fi
+          echo "Downloaded backend publish contains:"; ls -la artifacts/linux-x64 | sed -n '1,200p'
+          if [ ! -x artifacts/linux-x64/HyPrism ]; then
+            echo "WARNING: HyPrism binary missing or not executable in artifacts/linux-x64"
+            ls -la artifacts/linux-x64 || true
+          fi
+
       - name: Merge frontend into publish
         run: |
           # Fail if frontend artifact wasn't produced
@@ -197,8 +210,20 @@ jobs:
           name: linux-publish
           path: .
 
+      - name: Verify linux publish artifact ⚠️
+        run: |
+          if [ ! -d "artifacts/linux-x64" ] || [ "$(ls -A artifacts/linux-x64 | wc -c)" -eq 0 ]; then
+            echo "ERROR: linux-publish artifact missing or empty. Ensure assemble-linux-publish succeeded."
+            echo "Available artifacts:"; ls -la artifacts || true
+            exit 1
+          fi
+          echo "linux-publish artifact present and contains:"; ls -la artifacts/linux-x64 | sed -n '1,200p'
+
       - name: Install appimagetool
         run: |
+          sudo apt-get update
+          # Ensure FUSE runtime is available so AppImages can run during checks
+          sudo apt-get install -y libfuse2 || true
           curl -fsSL -o /tmp/appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x /tmp/appimagetool
           sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
@@ -237,6 +262,15 @@ jobs:
         with:
           name: linux-publish
           path: .
+
+      - name: Verify linux publish artifact ⚠️
+        run: |
+          if [ ! -d "artifacts/linux-x64" ] || [ "$(ls -A artifacts/linux-x64 | wc -c)" -eq 0 ]; then
+            echo "ERROR: linux-publish artifact missing or empty. Ensure assemble-linux-publish succeeded."
+            echo "Available artifacts:"; ls -la artifacts || true
+            exit 1
+          fi
+          echo "linux-publish artifact present and contains:"; ls -la artifacts/linux-x64 | sed -n '1,200p'
 
       - name: Build Flatpak
         run: |
@@ -280,6 +314,15 @@ jobs:
         with:
           name: linux-publish
           path: .
+
+      - name: Verify linux publish artifact ⚠️
+        run: |
+          if [ ! -d "artifacts/linux-x64" ] || [ "$(ls -A artifacts/linux-x64 | wc -c)" -eq 0 ]; then
+            echo "ERROR: linux-publish artifact missing or empty. Ensure assemble-linux-publish succeeded."
+            echo "Available artifacts:"; ls -la artifacts || true
+            exit 1
+          fi
+          echo "linux-publish artifact present and contains:"; ls -la artifacts/linux-x64 | sed -n '1,200p'
 
       - name: Install packaging tools
         run: |
