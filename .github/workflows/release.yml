@@ -492,32 +492,43 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Determine version from app.manifest / input / tag
+      - name: Determine version from app.manifest (default), optional input override, and tag consistency
         id: determine_version
         run: |
           set -euo pipefail
-          # Prefer tag reference
-          if [ -n "${GITHUB_REF_NAME:-}" ]; then
-            VERSION="${GITHUB_REF_NAME#v}"
-            TAG_NAME="${GITHUB_REF_NAME}"
-          elif [ -n "${{ github.event.inputs.version }}" ]; then
+
+          # --- Default: derive version from app.manifest (source of truth) ---
+          if [ ! -f app.manifest ]; then
+            echo "ERROR: app.manifest not found"
+            exit 1
+          fi
+          RAW=$(grep -oP 'assemblyIdentity\s+[^>]*version="\K[^"]+' app.manifest || true)
+          if [ -z "$RAW" ]; then
+            echo "ERROR: could not parse version from app.manifest"
+            exit 1
+          fi
+          IFS=. read -r MAJOR MINOR PATCH REST <<<"$RAW"
+          PATCH=${PATCH:-0}
+          VERSION="$MAJOR.$MINOR.$PATCH"
+
+          # --- Optional override by workflow input (discouraged) ---
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "::warning::Version overridden by workflow input (discouraged). Prefer updating app.manifest to keep it authoritative."
             VERSION="${{ github.event.inputs.version }}"
-            TAG_NAME="${{ github.event.inputs.version }}"
+          fi
+
+          # --- If triggered by a tag, ensure consistency with the derived version ---
+          if [ -n "${GITHUB_REF_NAME:-}" ]; then
+            if [ "${GITHUB_REF_NAME}" != "v$VERSION" ]; then
+              echo "ERROR: Tag '${GITHUB_REF_NAME}' does not match version '${VERSION}' (derived from app.manifest or override)."
+              echo "Please tag as v$VERSION or provide the correct version via workflow input."
+              exit 1
+            fi
+            TAG_NAME="${GITHUB_REF_NAME}"
           else
-            if [ ! -f app.manifest ]; then
-              echo "ERROR: app.manifest not found"
-              exit 1
-            fi
-            RAW=$(grep -oP 'assemblyIdentity\s+[^>]*version="\K[^"]+' app.manifest || true)
-            if [ -z "$RAW" ]; then
-              echo "ERROR: could not parse version from app.manifest"
-              exit 1
-            fi
-            IFS=. read -r MAJOR MINOR PATCH REST <<<"$RAW"
-            PATCH=${PATCH:-0}
-            VERSION="$MAJOR.$MINOR.$PATCH"
             TAG_NAME="v$VERSION"
           fi
+
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
