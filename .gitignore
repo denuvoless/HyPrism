@@ -94,3 +94,11 @@ scripts/run.sh
 artifacts/
 dmg-arm64/Applications
 scripts/build-linux-all-ubuntu.sh
+# Python debug scripts
+*.py
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+venv/

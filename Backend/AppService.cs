@@ -48,7 +48,7 @@ public class AppService : IDisposable
 
     public AppService()
     {
-        _appDir = GetDefaultAppDir();
+        _appDir = GetEffectiveAppDir();
         Directory.CreateDirectory(_appDir);
         _configPath = Path.Combine(_appDir, "config.json");
         _config = LoadConfig();
@@ -56,6 +56,38 @@ public class AppService : IDisposable
         _butlerService = new ButlerService(_appDir);
         _discordService = new DiscordService();
         _discordService.Initialize();
+    }
+
+    /// <summary>
+    /// Gets the effective app directory, checking for environment variable override first.
+    /// </summary>
+    private string GetEffectiveAppDir()
+    {
+        // First check environment variable
+        var envDir = Environment.GetEnvironmentVariable("HYPRISM_DATA");
+        if (!string.IsNullOrWhiteSpace(envDir) && Directory.Exists(envDir))
+        {
+            return envDir;
+        }
+
+        // Then check if there's a config file in default location with custom path
+        var defaultDir = GetDefaultAppDir();
+        var defaultConfigPath = Path.Combine(defaultDir, "config.json");
+        if (File.Exists(defaultConfigPath))
+        {
+            try
+            {
+                var configJson = File.ReadAllText(defaultConfigPath);
+                var config = JsonSerializer.Deserialize<Config>(configJson, JsonOptions);
+                if (config != null && !string.IsNullOrWhiteSpace(config.LauncherDataDirectory) && Directory.Exists(config.LauncherDataDirectory))
+                {
+                    return config.LauncherDataDirectory;
+                }
+            }
+            catch { /* Ignore parsing errors, use default */ }
+        }
+
+        return defaultDir;
     }
     
     public void Dispose()
@@ -69,7 +101,7 @@ public class AppService : IDisposable
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HyPrism");
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HyPrism");
         }
         else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
@@ -1171,15 +1203,15 @@ public class AppService : IDisposable
         var cache = LoadVersionCache();
         int startVersion = 1;
         
-        // If we have cached versions for this branch, start from the highest known version
+        // If we have cached versions for this branch, start from the highest known version + 1
         if (cache.KnownVersions.TryGetValue(normalizedBranch, out var knownVersions) && knownVersions.Count > 0)
         {
-            startVersion = knownVersions.Max();
+            startVersion = knownVersions.Max() + 1; // Start checking from the NEXT version after the highest known
             // Add all known versions to result first
             result.AddRange(knownVersions);
         }
 
-        // Check for new versions starting from the highest known version
+        // Check for new versions starting from startVersion
         int currentVersion = startVersion;
         int consecutiveFailures = 0;
         const int maxConsecutiveFailures = 3; // Stop after 3 consecutive non-existent versions
@@ -1380,6 +1412,136 @@ public class AppService : IDisposable
         return exists;
     }
 
+    /// <summary>
+    /// Checks if Assets.zip exists for the specified branch and version.
+    /// Assets.zip is required for the skin customizer to work.
+    /// </summary>
+    public bool HasAssetsZip(string branch, int version)
+    {
+        var normalizedBranch = NormalizeVersionType(branch);
+        var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
+        return HasAssetsZipInternal(versionPath);
+    }
+    
+    /// <summary>
+    /// Gets the path to Assets.zip if it exists, or null if not found.
+    /// </summary>
+    public string? GetAssetsZipPath(string branch, int version)
+    {
+        var normalizedBranch = NormalizeVersionType(branch);
+        var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
+        var assetsZipPath = GetAssetsZipPathInternal(versionPath);
+        return File.Exists(assetsZipPath) ? assetsZipPath : null;
+    }
+    
+    private bool HasAssetsZipInternal(string versionPath)
+    {
+        var assetsZipPath = GetAssetsZipPathInternal(versionPath);
+        bool exists = File.Exists(assetsZipPath);
+        Logger.Info("Assets", $"HasAssetsZip: path={assetsZipPath}, exists={exists}");
+        return exists;
+    }
+    
+    private string GetAssetsZipPathInternal(string versionPath)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            return Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "Assets.zip");
+        }
+        else
+        {
+            return Path.Combine(versionPath, "Client", "Assets.zip");
+        }
+    }
+    
+    // Cosmetic category file mappings (matching auth server structure)
+    private static readonly Dictionary<string, string> CosmeticCategoryMap = new()
+    {
+        { "BodyCharacteristics.json", "bodyCharacteristic" },
+        { "Capes.json", "cape" },
+        { "EarAccessory.json", "earAccessory" },
+        { "Ears.json", "ears" },
+        { "Eyebrows.json", "eyebrows" },
+        { "Eyes.json", "eyes" },
+        { "Faces.json", "face" },
+        { "FaceAccessory.json", "faceAccessory" },
+        { "FacialHair.json", "facialHair" },
+        { "Gloves.json", "gloves" },
+        { "Haircuts.json", "haircut" },
+        { "HeadAccessory.json", "headAccessory" },
+        { "Mouths.json", "mouth" },
+        { "Overpants.json", "overpants" },
+        { "Overtops.json", "overtop" },
+        { "Pants.json", "pants" },
+        { "Shoes.json", "shoes" },
+        { "SkinFeatures.json", "skinFeature" },
+        { "Undertops.json", "undertop" },
+        { "Underwear.json", "underwear" }
+    };
+    
+    /// <summary>
+    /// Gets the available cosmetics from the Assets.zip file for the specified instance.
+    /// Returns a dictionary where keys are category names and values are lists of cosmetic IDs.
+    /// </summary>
+    public Dictionary<string, List<string>>? GetCosmeticsList(string branch, int version)
+    {
+        try
+        {
+            var normalizedBranch = NormalizeVersionType(branch);
+            var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
+            var assetsZipPath = GetAssetsZipPathInternal(versionPath);
+            
+            if (!File.Exists(assetsZipPath))
+            {
+                Logger.Warning("Cosmetics", $"Assets.zip not found: {assetsZipPath}");
+                return null;
+            }
+            
+            var cosmetics = new Dictionary<string, List<string>>();
+            
+            using var zip = ZipFile.OpenRead(assetsZipPath);
+            
+            foreach (var (fileName, categoryName) in CosmeticCategoryMap)
+            {
+                var entryPath = $"Cosmetics/CharacterCreator/{fileName}";
+                var entry = zip.GetEntry(entryPath);
+                
+                if (entry == null)
+                {
+                    Logger.Info("Cosmetics", $"Entry not found: {entryPath}");
+                    continue;
+                }
+                
+                using var stream = entry.Open();
+                using var reader = new StreamReader(stream);
+                var json = reader.ReadToEnd();
+                
+                var items = JsonSerializer.Deserialize<List<CosmeticItem>>(json, JsonOptions);
+                if (items != null)
+                {
+                    var ids = items
+                        .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+                        .Select(item => item.Id!)
+                        .ToList();
+                    
+                    if (ids.Count > 0)
+                    {
+                        cosmetics[categoryName] = ids;
+                        Logger.Info("Cosmetics", $"Loaded {ids.Count} {categoryName} items");
+                    }
+                }
+            }
+            
+            Logger.Success("Cosmetics", $"Loaded cosmetics from {assetsZipPath}: {cosmetics.Count} categories");
+            return cosmetics;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Cosmetics", $"Failed to load cosmetics: {ex.Message}");
+            return null;
+        }
+    }
+
     public List<int> GetInstalledVersionsForBranch(string branch)
     {
         var normalizedBranch = NormalizeVersionType(branch);
@@ -1474,6 +1636,121 @@ public class AppService : IDisposable
         return info.Version != latest;
     }
 
+    /// <summary>
+    /// Get information about the pending update, including old version details.
+    /// Returns null if no update is pending.
+    /// </summary>
+    public async Task<UpdateInfo?> GetPendingUpdateInfoAsync(string branch)
+    {
+        try
+        {
+            var normalizedBranch = NormalizeVersionType(branch);
+            var versions = await GetVersionListAsync(normalizedBranch);
+            if (versions.Count == 0) return null;
+
+            var latestVersion = versions[0];
+            var latestPath = GetLatestInstancePath(normalizedBranch);
+            var info = LoadLatestInfo(normalizedBranch);
+            
+            // Check if update is needed
+            if (info == null || info.Version == latestVersion) return null;
+            
+            // Check if old version has userdata
+            var oldUserDataPath = Path.Combine(latestPath, "UserData");
+            var hasOldUserData = Directory.Exists(oldUserDataPath) && 
+                                 Directory.GetFileSystemEntries(oldUserDataPath).Length > 0;
+            
+            return new UpdateInfo
+            {
+                OldVersion = info.Version,
+                NewVersion = latestVersion,
+                HasOldUserData = hasOldUserData,
+                Branch = normalizedBranch
+            };
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Update", $"Failed to get pending update info: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Copy userdata from one version to another.
+    /// </summary>
+    public async Task<bool> CopyUserDataAsync(string branch, int fromVersion, int toVersion)
+    {
+        try
+        {
+            var normalizedBranch = NormalizeVersionType(branch);
+            
+            // Get source path (if fromVersion is 0, use latest)
+            string fromPath;
+            if (fromVersion == 0)
+            {
+                fromPath = GetLatestInstancePath(normalizedBranch);
+            }
+            else
+            {
+                fromPath = ResolveInstancePath(normalizedBranch, fromVersion, preferExisting: true);
+            }
+            
+            // Get destination path (if toVersion is 0, use latest)
+            string toPath;
+            if (toVersion == 0)
+            {
+                toPath = GetLatestInstancePath(normalizedBranch);
+            }
+            else
+            {
+                toPath = ResolveInstancePath(normalizedBranch, toVersion, preferExisting: true);
+            }
+            
+            var fromUserData = Path.Combine(fromPath, "UserData");
+            var toUserData = Path.Combine(toPath, "UserData");
+            
+            if (!Directory.Exists(fromUserData))
+            {
+                Logger.Warning("UserData", $"Source UserData does not exist: {fromUserData}");
+                return false;
+            }
+            
+            // Create destination if needed
+            Directory.CreateDirectory(toUserData);
+            
+            // Copy all contents
+            await Task.Run(() => CopyDirectory(fromUserData, toUserData, true));
+            
+            Logger.Success("UserData", $"Copied UserData from v{fromVersion} to v{toVersion}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("UserData", $"Failed to copy userdata: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void CopyDirectory(string sourceDir, string destDir, bool overwrite)
+    {
+        // Create destination directory
+        Directory.CreateDirectory(destDir);
+        
+        // Copy files
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            var destFile = Path.Combine(destDir, Path.GetFileName(file));
+            File.Copy(file, destFile, overwrite);
+        }
+        
+        // Copy subdirectories
+        foreach (var dir in Directory.GetDirectories(sourceDir))
+        {
+            var destSubDir = Path.Combine(destDir, Path.GetFileName(dir));
+            CopyDirectory(dir, destSubDir, overwrite);
+        }
+    }
+
     // Game
     public async Task<DownloadProgress> DownloadAndLaunchAsync(PhotinoWindow window)
     {
@@ -1545,8 +1822,17 @@ public class AppService : IDisposable
                 }
                 
                 SendProgress(window, "complete", 100, "Launching game...", 0, 0);
-                await LaunchGameAsync(versionPath, branch);
-                return new DownloadProgress { Success = true, Progress = 100 };
+                try
+                {
+                    await LaunchGameAsync(versionPath, branch);
+                    return new DownloadProgress { Success = true, Progress = 100 };
+                }
+                catch (Exception ex)
+                {
+                    Logger.Error("Game", $"Launch failed: {ex.Message}");
+                    SendErrorEvent("launch", "Failed to launch game", ex.ToString());
+                    return new DownloadProgress { Error = $"Failed to launch game: {ex.Message}" };
+                }
             }
             
             // Game is NOT installed - need to download
@@ -1645,9 +1931,17 @@ public class AppService : IDisposable
             SendProgress(window, "complete", 100, "Launching game...", 0, 0);
 
             // Launch the game
-            await LaunchGameAsync(versionPath, branch);
-            
-            return new DownloadProgress { Success = true, Progress = 100 };
+            try
+            {
+                await LaunchGameAsync(versionPath, branch);
+                return new DownloadProgress { Success = true, Progress = 100 };
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Game", $"Launch failed: {ex.Message}");
+                SendErrorEvent("launch", "Failed to launch game", ex.ToString());
+                return new DownloadProgress { Error = $"Failed to launch game: {ex.Message}" };
+            }
         }
         catch (OperationCanceledException)
         {
@@ -2507,7 +2801,8 @@ public class AppService : IDisposable
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
             executable = Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "MacOS", "HytaleClient");
-            workingDir = Path.Combine(versionPath, "Client");
+            // Set working directory to the MacOS folder where the executable is located
+            workingDir = Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "MacOS");
             
             if (!File.Exists(executable))
             {
@@ -2536,6 +2831,126 @@ public class AppService : IDisposable
             {
                 Logger.Error("Game", $"Game client not found at {executable}");
                 throw new Exception($"Game client not found at {executable}");
+            }
+        }
+
+        // On macOS, clear quarantine attributes BEFORE patching
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            string appBundle = Path.Combine(versionPath, "Client", "Hytale.app");
+            ClearMacQuarantine(appBundle);
+            Logger.Info("Game", "Cleared macOS quarantine attributes before patching");
+        }
+
+        // Patch binary to accept custom auth server tokens
+        // The auth domain is "sessions.sanasol.ws" but we need to patch "hytale.com" -> "sanasol.ws"
+        // so that sessions.hytale.com becomes sessions.sanasol.ws
+        bool enablePatching = true;
+        if (enablePatching && _config.OnlineMode && !string.IsNullOrWhiteSpace(_config.AuthDomain))
+        {
+            try
+            {
+                // Extract the base domain from auth domain (e.g., "sessions.sanasol.ws" -> "sanasol.ws")
+                string baseDomain = _config.AuthDomain;
+                if (baseDomain.StartsWith("sessions."))
+                {
+                    baseDomain = baseDomain.Substring("sessions.".Length);
+                }
+                
+                Logger.Info("Game", $"Patching binary: hytale.com -> {baseDomain}");
+                var patcher = new ClientPatcher(baseDomain);
+                var patchResult = patcher.EnsureClientPatched(versionPath, (msg, progress) =>
+                {
+                    if (progress.HasValue)
+                    {
+                        Logger.Info("Patcher", $"{msg} ({progress}%)");
+                    }
+                    else
+                    {
+                        Logger.Info("Patcher", msg);
+                    }
+                });
+                
+                if (patchResult.Success)
+                {
+                    if (patchResult.AlreadyPatched)
+                    {
+                        Logger.Info("Game", "Binary already patched");
+                    }
+                    else if (patchResult.PatchCount > 0)
+                    {
+                        Logger.Success("Game", $"Binary patched successfully ({patchResult.PatchCount} occurrences)");
+                        
+                        // Re-sign the binary after patching (macOS requirement)
+                        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                        {
+                            try
+                            {
+                                Logger.Info("Game", "Re-signing patched binary...");
+                                string appBundle = Path.Combine(versionPath, "Client", "Hytale.app");
+                                bool signed = ClientPatcher.SignMacOSBinary(appBundle);
+                                if (signed)
+                                {
+                                    Logger.Success("Game", "Binary re-signed successfully");
+                                }
+                                else
+                                {
+                                    Logger.Warning("Game", "Binary signing failed - game may not launch");
+                                }
+                            }
+                            catch (Exception signEx)
+                            {
+                                Logger.Warning("Game", $"Error re-signing binary: {signEx.Message}");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        Logger.Info("Game", "No patches needed - binary uses unknown encoding or already patched");
+                    }
+                }
+                else
+                {
+                    Logger.Warning("Game", $"Binary patching failed: {patchResult.Error}");
+                    Logger.Info("Game", "Continuing launch anyway - may not connect to custom auth server");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("Game", $"Error during binary patching: {ex.Message}");
+                Logger.Info("Game", "Continuing launch anyway - may not connect to custom auth server");
+            }
+        }
+
+        // Fetch auth token if online mode is enabled
+        string? identityToken = null;
+        string? sessionToken = null;
+        if (_config.OnlineMode && !string.IsNullOrWhiteSpace(_config.AuthDomain))
+        {
+            Logger.Info("Game", "Online mode enabled - fetching auth tokens...");
+            
+            try
+            {
+                var authService = new AuthService(HttpClient, _config.AuthDomain);
+                var tokenResult = await authService.GetGameSessionTokenAsync(_config.UUID, _config.Nick);
+                
+                if (tokenResult.Success && !string.IsNullOrEmpty(tokenResult.Token))
+                {
+                    identityToken = tokenResult.Token;
+                    sessionToken = tokenResult.SessionToken ?? tokenResult.Token; // Fallback to identity token
+                    Logger.Success("Game", "Identity token obtained successfully");
+                    Logger.Success("Game", "Session token obtained successfully");
+                }
+                else
+                {
+                    Logger.Warning("Game", $"Could not get auth token: {tokenResult.Error}");
+                    Logger.Info("Game", "Will try launching with offline mode instead");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Game", $"Error fetching auth token: {ex.Message}");
+                Logger.Info("Game", "Will try launching with offline mode instead");
             }
         }
 
@@ -2595,131 +3010,146 @@ public class AppService : IDisposable
             uuid = _config.UUID;
         }
 
-        // On macOS, clear quarantine flags before launching (skip full codesign for speed)
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            string appBundle = Path.Combine(versionPath, "Client", "Hytale.app");
-            string signStampPath = Path.Combine(versionPath, ".app-signed");
-            // Always clear quarantine to avoid "damaged" warnings
-            ClearMacQuarantine(appBundle);
-            if (!IsMacAppSignatureCurrent(executable, signStampPath))
-            {
-                Logger.Info("Game", "Clearing macOS quarantine attributes...");
-                MarkMacAppSigned(executable, signStampPath);
-            }
-            else
-            {
-                Logger.Info("Game", "Skipping app signing (already signed)");
-            }
-        }
-
         Logger.Info("Game", $"Launching: {executable}");
         Logger.Info("Game", $"Java: {javaPath}");
         Logger.Info("Game", $"AppDir: {gameDir}");
         Logger.Info("Game", $"UserData: {userDataDir}");
+        Logger.Info("Game", $"Online Mode: {_config.OnlineMode}");
 
-        // Build arguments matching old launcher
-        var args = new List<string>
+        // Build arguments - use only documented game arguments
+        var gameArgs = new List<string>
         {
-            "--app-dir", gameDir,
-            "--user-dir", userDataDir,
-            "--java-exec", javaPath,
-            "--auth-mode", "offline",
-            "--uuid", uuid,
-            "--name", _config.Nick
+            $"--app-dir \"{gameDir}\"",
+            $"--user-dir \"{userDataDir}\"",
+            $"--java-exec \"{javaPath}\"",
+            $"--name \"{_config.Nick}\""
         };
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = executable,
-            WorkingDirectory = workingDir,
-            UseShellExecute = false,
-            CreateNoWindow = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true
-        };
-
-        foreach (var arg in args)
-        {
-            startInfo.ArgumentList.Add(arg);
-        }
-
-        // Add environment variables
-        startInfo.EnvironmentVariables["HYTALE_NICK"] = _config.Nick;
         
-        // On Linux, set LD_LIBRARY_PATH to find native libraries (SDL3, etc.)
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        // Add auth mode: prefer authenticated if we truly have tokens, otherwise fall back to insecure
+        // (offline mode was still being blocked by auth checks). Insecure lets the client start even if
+        // the auth server signature is rejected by the stock binary.
+        if (_config.OnlineMode && !string.IsNullOrEmpty(identityToken) && !string.IsNullOrEmpty(sessionToken))
         {
-            string clientDir = Path.Combine(versionPath, "Client");
-            string existingLdPath = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH") ?? "";
-            string newLdPath = string.IsNullOrEmpty(existingLdPath) ? clientDir : $"{clientDir}:{existingLdPath}";
-            startInfo.EnvironmentVariables["LD_LIBRARY_PATH"] = newLdPath;
-            Logger.Info("Game", $"LD_LIBRARY_PATH set to: {newLdPath}");
+            gameArgs.Add("--auth-mode authenticated");
+            gameArgs.Add($"--uuid \"{uuid}\"");
+            gameArgs.Add($"--identity-token \"{identityToken}\"");
+            gameArgs.Add($"--session-token \"{sessionToken}\"");
+            Logger.Info("Game", "Using authenticated mode with identity and session tokens");
+        }
+        else
+        {
+            gameArgs.Add("--auth-mode insecure");
+            Logger.Info("Game", "Using insecure auth mode (no token validation)");
         }
 
-        // On macOS, set DYLD_LIBRARY_PATH so the client can load bundled libs
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        // On macOS/Linux, create a launch script to run with clean environment
+        ProcessStartInfo startInfo;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            string clientDir = Path.Combine(versionPath, "Client");
-            string existingDyldPath = Environment.GetEnvironmentVariable("DYLD_LIBRARY_PATH") ?? "";
-            string newDyldPath = string.IsNullOrEmpty(existingDyldPath) ? clientDir : $"{clientDir}:{existingDyldPath}";
-            startInfo.EnvironmentVariables["DYLD_LIBRARY_PATH"] = newDyldPath;
-            Logger.Info("Game", $"DYLD_LIBRARY_PATH set to: {newDyldPath}");
+            startInfo = new ProcessStartInfo
+            {
+                FileName = executable,
+                WorkingDirectory = workingDir,
+                UseShellExecute = true,
+                CreateNoWindow = false
+            };
+            // Add arguments for Windows
+            foreach (var arg in gameArgs)
+            {
+                var parts = arg.Split(' ', 2);
+                startInfo.ArgumentList.Add(parts[0]);
+                if (parts.Length > 1) startInfo.ArgumentList.Add(parts[1].Trim('"'));
+            }
+        }
+        else
+        {
+            // macOS/Linux: Use env -i to run with completely clean environment
+            // This prevents .NET runtime environment variables from interfering
+            string argsString = string.Join(" ", gameArgs);
+            string launchScript = Path.Combine(versionPath, "launch.sh");
+            
+            string homeDir = Environment.GetEnvironmentVariable("HOME") ?? "/Users/" + Environment.UserName;
+            string userName = Environment.GetEnvironmentVariable("USER") ?? Environment.UserName;
+            
+            // Write the launch script with env -i to start with empty environment
+            string scriptContent = $@"#!/bin/bash
+# Launch script generated by HyPrism
+# Uses env -i to clear ALL environment variables before launching game
+
+exec env -i \
+    HOME=""{homeDir}"" \
+    USER=""{userName}"" \
+    PATH=""/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin"" \
+    SHELL=""/bin/zsh"" \
+    TMPDIR=""{Path.GetTempPath().TrimEnd('/')}"" \
+    ""{executable}"" {argsString}
+";
+            File.WriteAllText(launchScript, scriptContent);
+            
+            // Make it executable
+            var chmod = new ProcessStartInfo
+            {
+                FileName = "/bin/chmod",
+                Arguments = $"+x \"{launchScript}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+            Process.Start(chmod)?.WaitForExit();
+            
+            // Use /bin/bash to run the script
+            startInfo = new ProcessStartInfo
+            {
+                FileName = "/bin/bash",
+                WorkingDirectory = workingDir,
+                UseShellExecute = false,
+                CreateNoWindow = false,
+                RedirectStandardOutput = false,
+                RedirectStandardError = false
+            };
+            startInfo.ArgumentList.Add(launchScript);
+            
+            Logger.Info("Game", $"Launch script: {launchScript}");
         }
         
-        _gameProcess = Process.Start(startInfo);
-        
-        if (_gameProcess != null)
+        try
         {
-            Logger.Success("Game", $"Game started with PID: {_gameProcess.Id}");
-            
-            // Capture stdout and stderr for debugging
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    string? line;
-                    while ((line = await _gameProcess.StandardOutput.ReadLineAsync()) != null)
-                    {
-                        Logger.Info("GameOut", line);
-                    }
-                }
-                catch { }
-            });
-            
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    string? line;
-                    while ((line = await _gameProcess.StandardError.ReadLineAsync()) != null)
-                    {
-                        Logger.Warning("GameErr", line);
-                    }
-                }
-                catch { }
-            });
-            
-            // Set Discord presence to Playing
-            _discordService.SetPresence(DiscordService.PresenceState.Playing, $"Playing as {_config.Nick}");
-            
-            // Notify frontend that game has launched
-            SendGameStateEvent("started");
-            
-            // Handle process exit in background
-            _ = Task.Run(async () =>
-            {
-                await _gameProcess.WaitForExitAsync();
-                Logger.Info("Game", $"Game process exited with code: {_gameProcess.ExitCode}");
-                _gameProcess = null;
-                
-                // Set Discord presence back to Idle
-                _discordService.SetPresence(DiscordService.PresenceState.Idle);
-                
-                // Notify frontend that game has exited
-                SendGameStateEvent("stopped");
-            });
+            _gameProcess = Process.Start(startInfo);
         }
+        catch (Exception ex)
+        {
+            Logger.Error("Game", $"Failed to start game process: {ex.Message}");
+            SendErrorEvent("launch", "Failed to start game", ex.Message);
+            throw new Exception($"Failed to start game: {ex.Message}");
+        }
+        
+        if (_gameProcess == null)
+        {
+            Logger.Error("Game", "Process.Start returned null - game failed to launch");
+            SendErrorEvent("launch", "Failed to start game", "Process.Start returned null");
+            throw new Exception("Failed to start game process");
+        }
+        
+        Logger.Success("Game", $"Game started with PID: {_gameProcess.Id}");
+        
+        // Set Discord presence to Playing
+        _discordService.SetPresence(DiscordService.PresenceState.Playing, $"Playing as {_config.Nick}");
+        
+        // Notify frontend that game has launched
+        SendGameStateEvent("started");
+        
+        // Handle process exit in background
+        _ = Task.Run(async () =>
+        {
+            await _gameProcess.WaitForExitAsync();
+            Logger.Info("Game", $"Game process exited with code: {_gameProcess.ExitCode}");
+            _gameProcess = null;
+            
+            // Set Discord presence back to Idle
+            _discordService.SetPresence(DiscordService.PresenceState.Idle);
+            
+            // Notify frontend that game has exited
+            SendGameStateEvent("stopped");
+        });
     }
     
     private void SendGameStateEvent(string state)
@@ -2739,6 +3169,32 @@ public class AppService : IDisposable
         catch (Exception ex)
         {
             Logger.Warning("Game", $"Failed to send game state event: {ex.Message}");
+        }
+    }
+
+    private void SendErrorEvent(string type, string message, string? technical = null)
+    {
+        if (_mainWindow == null) return;
+
+        try
+        {
+            var eventData = new
+            {
+                type = "event",
+                eventName = "error",
+                data = new
+                {
+                    type,
+                    message,
+                    technical,
+                    timestamp = DateTimeOffset.UtcNow
+                }
+            };
+            _mainWindow.SendWebMessage(JsonSerializer.Serialize(eventData, JsonOptions));
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Events", $"Failed to send error event: {ex.Message}");
         }
     }
     
@@ -3292,6 +3748,249 @@ del ""%~f0""
             SaveConfig();
             Logger.Info("Discord", $"Announcement {announcementId} dismissed");
         }
+        return true;
+    }
+
+    // News settings
+    public bool GetDisableNews() => _config.DisableNews;
+    
+    public bool SetDisableNews(bool disabled)
+    {
+        _config.DisableNews = disabled;
+        SaveConfig();
+        Logger.Info("Config", $"News disabled set to: {disabled}");
+        return true;
+    }
+
+    // Background settings
+    public string GetBackgroundMode() => _config.BackgroundMode;
+    
+    public bool SetBackgroundMode(string mode)
+    {
+        _config.BackgroundMode = mode;
+        SaveConfig();
+        Logger.Info("Config", $"Background mode set to: {mode}");
+        return true;
+    }
+
+    // Accent color settings
+    public string GetAccentColor() => _config.AccentColor;
+    
+    public bool SetAccentColor(string color)
+    {
+        _config.AccentColor = color;
+        SaveConfig();
+        Logger.Info("Config", $"Accent color set to: {color}");
+        return true;
+    }
+
+    // Online mode settings
+    public bool GetOnlineMode() => _config.OnlineMode;
+    
+    public bool SetOnlineMode(bool online)
+    {
+        _config.OnlineMode = online;
+        SaveConfig();
+        Logger.Info("Config", $"Online mode set to: {online}");
+        return true;
+    }
+    
+    // Auth domain settings
+    public string GetAuthDomain() => _config.AuthDomain;
+    
+    public bool SetAuthDomain(string domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain))
+        {
+            domain = "sessions.sanasol.ws";
+        }
+        _config.AuthDomain = domain;
+        SaveConfig();
+        Logger.Info("Config", $"Auth domain set to: {domain}");
+        return true;
+    }
+    
+    // Skin configuration methods
+    private string GetSkinConfigPath()
+    {
+        return Path.Combine(_appDir, "skin_config.json");
+    }
+    
+    /// <summary>
+    /// Gets the cached skin configuration for the current user.
+    /// This is stored in the launcher data directory and can be applied to any instance.
+    /// </summary>
+    public SkinConfig? GetSkinConfig()
+    {
+        try
+        {
+            var path = GetSkinConfigPath();
+            if (!File.Exists(path))
+            {
+                Logger.Info("Skin", "No cached skin config found");
+                return null;
+            }
+            
+            var json = File.ReadAllText(path);
+            var config = JsonSerializer.Deserialize<SkinConfig>(json, JsonOptions);
+            Logger.Info("Skin", $"Loaded skin config for {config?.Name ?? "unknown"}");
+            return config;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Skin", $"Failed to load skin config: {ex.Message}");
+            return null;
+        }
+    }
+    
+    /// <summary>
+    /// Saves the skin configuration to the launcher data directory cache.
+    /// </summary>
+    public bool SaveSkinConfig(SkinConfig config)
+    {
+        try
+        {
+            var path = GetSkinConfigPath();
+            var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = true
+            });
+            File.WriteAllText(path, json);
+            Logger.Success("Skin", $"Saved skin config for {config.Name ?? "unknown"}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Skin", $"Failed to save skin config: {ex.Message}");
+            return false;
+        }
+    }
+    
+    /// <summary>
+    /// Reads the skin configuration from a specific game instance's UserData folder.
+    /// </summary>
+    public SkinConfig? GetInstanceSkinConfig(string branch, int version)
+    {
+        try
+        {
+            var normalizedBranch = NormalizeVersionType(branch);
+            var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
+            var skinPath = Path.Combine(versionPath, "UserData", "skin.json");
+            
+            if (!File.Exists(skinPath))
+            {
+                Logger.Info("Skin", $"No skin config in instance: {skinPath}");
+                return null;
+            }
+            
+            var json = File.ReadAllText(skinPath);
+            var config = JsonSerializer.Deserialize<SkinConfig>(json, JsonOptions);
+            Logger.Info("Skin", $"Read skin config from instance: {skinPath}");
+            return config;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Skin", $"Failed to read instance skin config: {ex.Message}");
+            return null;
+        }
+    }
+    
+    /// <summary>
+    /// Applies the cached skin configuration to a specific game instance.
+    /// </summary>
+    public bool ApplySkinToInstance(string branch, int version)
+    {
+        try
+        {
+            var config = GetSkinConfig();
+            if (config == null)
+            {
+                Logger.Warning("Skin", "No cached skin config to apply");
+                return false;
+            }
+            
+            var normalizedBranch = NormalizeVersionType(branch);
+            var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
+            var userDataPath = Path.Combine(versionPath, "UserData");
+            Directory.CreateDirectory(userDataPath);
+            
+            var skinPath = Path.Combine(userDataPath, "skin.json");
+            var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = true
+            });
+            File.WriteAllText(skinPath, json);
+            Logger.Success("Skin", $"Applied skin config to instance: {skinPath}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Skin", $"Failed to apply skin to instance: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Gets the list of available background filenames
+    /// </summary>
+    public List<string> GetAvailableBackgrounds()
+    {
+        var backgrounds = new List<string>();
+        // These match the backgrounds in the frontend assets
+        for (int i = 1; i <= 30; i++)
+        {
+            backgrounds.Add($"bg_{i}");
+        }
+        return backgrounds;
+    }
+
+    // Launcher Data Directory settings
+    public string GetLauncherDataDirectory() => _config.LauncherDataDirectory;
+    
+    public Task<string?> SetLauncherDataDirectoryAsync(string path)
+    {
+        try
+        {
+            // If path is empty or whitespace, clear the custom launcher data directory
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                _config.LauncherDataDirectory = "";
+                SaveConfig();
+                Logger.Success("Config", "Launcher data directory cleared, will use default on next restart");
+                return Task.FromResult<string?>(null);
+            }
+
+            var expanded = Environment.ExpandEnvironmentVariables(path.Trim());
+
+            if (!Path.IsPathRooted(expanded))
+            {
+                expanded = Path.GetFullPath(expanded);
+            }
+
+            // Just save the path, the change takes effect on next restart
+            _config.LauncherDataDirectory = expanded;
+            SaveConfig();
+
+            Logger.Success("Config", $"Launcher data directory set to {expanded} (takes effect on restart)");
+            return Task.FromResult<string?>(expanded);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Config", $"Failed to set launcher data directory: {ex.Message}");
+            return Task.FromResult<string?>(null);
+        }
+    }
+
+    // Hardware acceleration settings
+    public bool GetDisableHardwareAcceleration() => _config.DisableHardwareAcceleration;
+    
+    public bool SetDisableHardwareAcceleration(bool disabled)
+    {
+        _config.DisableHardwareAcceleration = disabled;
+        SaveConfig();
+        Logger.Info("Config", $"Hardware acceleration disabled set to: {disabled} (takes effect on restart)");
         return true;
     }
 
@@ -4098,17 +4797,17 @@ del ""%~f0""
             
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                // Use osascript to show folder picker on macOS
-                var script = $@"tell application ""System Events""
+                // Use osascript with stdin to avoid shell quoting issues
+                var script = $@"tell application ""Finder""
                     activate
-                    set theFolder to choose folder with prompt ""Select Folder"" default location POSIX file ""{startPath}""
+                    set theFolder to choose folder with prompt ""Select Folder"" default location (POSIX file ""{startPath.Replace("\"", "\\\"")}"" as alias)
                     return POSIX path of theFolder
                 end tell";
                 
                 var psi = new ProcessStartInfo
                 {
                     FileName = "osascript",
-                    Arguments = $"-e '{script.Replace("'", "'\\''")}'",
+                    RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
@@ -4118,12 +4817,55 @@ del ""%~f0""
                 using var process = Process.Start(psi);
                 if (process == null) return null;
                 
+                // Write script to stdin to avoid shell escaping issues
+                await process.StandardInput.WriteAsync(script);
+                process.StandardInput.Close();
+                
                 var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
                 
                 if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
                 {
                     return output.Trim();
+                }
+                
+                // User cancelled or error - try simpler approach without default location
+                if (!string.IsNullOrEmpty(error) && error.Contains("-128"))
+                {
+                    // User cancelled
+                    return null;
+                }
+                
+                // Fallback: try without default location
+                var fallbackScript = @"tell application ""Finder""
+                    activate
+                    set theFolder to choose folder with prompt ""Select Folder""
+                    return POSIX path of theFolder
+                end tell";
+                
+                var fallbackPsi = new ProcessStartInfo
+                {
+                    FileName = "osascript",
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using var fallbackProcess = Process.Start(fallbackPsi);
+                if (fallbackProcess == null) return null;
+                
+                await fallbackProcess.StandardInput.WriteAsync(fallbackScript);
+                fallbackProcess.StandardInput.Close();
+                
+                var fallbackOutput = await fallbackProcess.StandardOutput.ReadToEndAsync();
+                await fallbackProcess.WaitForExitAsync();
+                
+                if (fallbackProcess.ExitCode == 0 && !string.IsNullOrWhiteSpace(fallbackOutput))
+                {
+                    return fallbackOutput.Trim();
                 }
             }
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -4336,6 +5078,35 @@ public class Config
     /// List of Discord announcement IDs that have been dismissed by the user.
     /// </summary>
     public List<string> DismissedAnnouncementIds { get; set; } = new();
+    /// <summary>
+    /// If true, news will not be fetched or displayed.
+    /// </summary>
+    public bool DisableNews { get; set; } = false;
+    /// <summary>
+    /// Background mode: "slideshow" for rotating backgrounds, or a specific background filename.
+    /// </summary>
+    public string BackgroundMode { get; set; } = "slideshow";
+    /// <summary>
+    /// Custom launcher data directory. If set, overrides the default app data location.
+    /// </summary>
+    public string LauncherDataDirectory { get; set; } = "";
+    /// <summary>
+    /// If true, disable GPU hardware acceleration (requires restart).
+    /// </summary>
+    public bool DisableHardwareAcceleration { get; set; } = false;
+    /// <summary>
+    /// Accent color for the UI (hex format, e.g., "#FFA845").
+    /// </summary>
+    public string AccentColor { get; set; } = "#FFA845";
+    /// <summary>
+    /// If true, game will run in online mode (requires authentication).
+    /// If false, game runs in offline mode.
+    /// </summary>
+    public bool OnlineMode { get; set; } = false;
+    /// <summary>
+    /// Auth server domain for online mode (e.g., "sessions.sanasol.ws").
+    /// </summary>
+    public string AuthDomain { get; set; } = "sessions.sanasol.ws";
 }
 
 /// <summary>
@@ -4395,6 +5166,14 @@ public class NewsItemResponse
     
     [JsonPropertyName("imageUrl")]
     public string ImageUrl { get; set; } = "";
+}
+
+public class UpdateInfo
+{
+    public int OldVersion { get; set; }
+    public int NewVersion { get; set; }
+    public bool HasOldUserData { get; set; }
+    public string Branch { get; set; } = "";
 }
 
 public class DownloadProgress
@@ -4572,4 +5351,151 @@ public class CurseForgeFilesResponse
 public class CurseForgeFileResponse
 {
     public CurseForgeFile? Data { get; set; }
+}
+
+/// <summary>
+/// Represents a cosmetic item from Assets.zip
+/// </summary>
+public class CosmeticItem
+{
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+    
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+    
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+}
+
+/// <summary>
+/// Skin configuration for character customization.
+/// This structure matches the format used by the auth server.
+/// </summary>
+public class SkinConfig
+{
+    /// <summary>
+    /// Player's display name
+    /// </summary>
+    public string? Name { get; set; }
+    
+    /// <summary>
+    /// Body characteristic type (e.g., "Default", "Muscular")
+    /// </summary>
+    public string? BodyCharacteristic { get; set; }
+    
+    /// <summary>
+    /// Cape style
+    /// </summary>
+    public string? Cape { get; set; }
+    
+    /// <summary>
+    /// Ear accessory
+    /// </summary>
+    public string? EarAccessory { get; set; }
+    
+    /// <summary>
+    /// Ear type
+    /// </summary>
+    public string? Ears { get; set; }
+    
+    /// <summary>
+    /// Eyebrow style
+    /// </summary>
+    public string? Eyebrows { get; set; }
+    
+    /// <summary>
+    /// Eye style
+    /// </summary>
+    public string? Eyes { get; set; }
+    
+    /// <summary>
+    /// Eye color (hex or color name)
+    /// </summary>
+    public string? EyeColor { get; set; }
+    
+    /// <summary>
+    /// Face type
+    /// </summary>
+    public string? Face { get; set; }
+    
+    /// <summary>
+    /// Face accessory
+    /// </summary>
+    public string? FaceAccessory { get; set; }
+    
+    /// <summary>
+    /// Facial hair style
+    /// </summary>
+    public string? FacialHair { get; set; }
+    
+    /// <summary>
+    /// Gloves type
+    /// </summary>
+    public string? Gloves { get; set; }
+    
+    /// <summary>
+    /// Haircut style
+    /// </summary>
+    public string? Haircut { get; set; }
+    
+    /// <summary>
+    /// Hair color (hex or gradient ID)
+    /// </summary>
+    public string? HairColor { get; set; }
+    
+    /// <summary>
+    /// Head accessory
+    /// </summary>
+    public string? HeadAccessory { get; set; }
+    
+    /// <summary>
+    /// Mouth style
+    /// </summary>
+    public string? Mouth { get; set; }
+    
+    /// <summary>
+    /// Overpants (pants worn over base)
+    /// </summary>
+    public string? Overpants { get; set; }
+    
+    /// <summary>
+    /// Overtop (top worn over base)
+    /// </summary>
+    public string? Overtop { get; set; }
+    
+    /// <summary>
+    /// Pants style
+    /// </summary>
+    public string? Pants { get; set; }
+    
+    /// <summary>
+    /// Shoes style
+    /// </summary>
+    public string? Shoes { get; set; }
+    
+    /// <summary>
+    /// Skin feature (freckles, marks, etc.)
+    /// </summary>
+    public string? SkinFeature { get; set; }
+    
+    /// <summary>
+    /// Skin color/tone (hex or gradient ID)
+    /// </summary>
+    public string? SkinColor { get; set; }
+    
+    /// <summary>
+    /// Undertop (base layer top)
+    /// </summary>
+    public string? Undertop { get; set; }
+    
+    /// <summary>
+    /// Underwear style
+    /// </summary>
+    public string? Underwear { get; set; }
+    
+    /// <summary>
+    /// Colors dictionary for various parts (key=part, value=color)
+    /// </summary>
+    public Dictionary<string, string>? Colors { get; set; }
 }

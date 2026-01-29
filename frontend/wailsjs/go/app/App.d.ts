@@ -10,11 +10,24 @@ export function CheckInstanceModUpdates(arg1:string,arg2:number):Promise<Array<m
 
 export function CheckLatestNeedsUpdate(arg1:string):Promise<boolean>;
 
+export interface UpdateInfo {
+    OldVersion: number;
+    NewVersion: number;
+    HasOldUserData: boolean;
+    Branch: string;
+}
+
+export function GetPendingUpdateInfo(arg1:string):Promise<UpdateInfo|null>;
+
+export function CopyUserData(arg1:string,arg2:number,arg3:number):Promise<boolean>;
+
 export function CheckModUpdates():Promise<Array<mods.Mod>>;
 
 export function CheckUpdate():Promise<updater.Asset>;
 
 export function CheckVersionAvailability():Promise<app.VersionCheckInfo>;
+
+export function CancelDownload():Promise<boolean>;
 
 export function DeleteGame(arg1:string,arg2:number):Promise<boolean>;
 
@@ -41,6 +54,10 @@ export function GetCustomInstanceDir():Promise<string>;
 export function GetGameLogs():Promise<string>;
 
 export function GetGamePath():Promise<string>;
+
+export function HasAssetsZip(arg1:string,arg2:number):Promise<boolean>;
+
+export function GetAssetsZipPath(arg1:string,arg2:number):Promise<string|null>;
 
 export function GetInstalledMods():Promise<Array<mods.Mod>>;
 
@@ -122,6 +139,43 @@ export function SetInstanceDirectory(arg1:string):Promise<string>;
 
 export function SetAuthDomain(arg1:string):Promise<void>;
 
+// Skin configuration types and functions
+export interface SkinConfig {
+    name?: string;
+    bodyCharacteristic?: string;
+    cape?: string;
+    earAccessory?: string;
+    ears?: string;
+    eyebrows?: string;
+    eyes?: string;
+    eyeColor?: string;
+    face?: string;
+    faceAccessory?: string;
+    facialHair?: string;
+    gloves?: string;
+    haircut?: string;
+    hairColor?: string;
+    headAccessory?: string;
+    mouth?: string;
+    overpants?: string;
+    overtop?: string;
+    pants?: string;
+    shoes?: string;
+    skinFeature?: string;
+    skinColor?: string;
+    undertop?: string;
+    underwear?: string;
+    colors?: Record<string, string>;
+}
+
+export function GetSkinConfig():Promise<SkinConfig|null>;
+
+export function SaveSkinConfig(arg1:SkinConfig):Promise<boolean>;
+
+export function GetInstanceSkinConfig(arg1:string,arg2:number):Promise<SkinConfig|null>;
+
+export function ApplySkinToInstance(arg1:string,arg2:number):Promise<boolean>;
+
 export function SetAutoUpdateLatest(arg1:boolean):Promise<void>;
 
 export function SetCustomInstanceDir(arg1:string):Promise<void>;
@@ -195,6 +249,27 @@ export function GetLauncherFolderPath():Promise<string>;
 
 // Developer testing
 export function GetTestAnnouncement():Promise<DiscordAnnouncement | null>;
+
+// News settings
+export function GetDisableNews():Promise<boolean>;
+export function SetDisableNews(arg1:boolean):Promise<boolean>;
+
+// Background settings
+export function GetBackgroundMode():Promise<string>;
+export function SetBackgroundMode(arg1:string):Promise<boolean>;
+export function GetAvailableBackgrounds():Promise<string[]>;
+
+// Accent color settings
+export function GetAccentColor():Promise<string>;
+export function SetAccentColor(arg1:string):Promise<boolean>;
+
+// Launcher Data Directory
+export function GetLauncherDataDirectory():Promise<string>;
+export function SetLauncherDataDirectory(arg1:string):Promise<string|null>;
+
+// Hardware acceleration
+export function GetDisableHardwareAcceleration():Promise<boolean>;
+export function SetDisableHardwareAcceleration(arg1:boolean):Promise<boolean>;
 
 // Window controls
 export function WindowClose():Promise<void>;

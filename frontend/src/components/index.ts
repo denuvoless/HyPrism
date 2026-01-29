@@ -9,4 +9,5 @@ export { DeleteConfirmationModal } from './DeleteConfirmationModal';
 export { ModManager } from './ModManager';
 export { LogsModal } from './LogsModal';
 export { SettingsModal } from './SettingsModal';
-export { DiscordAnnouncement } from './DiscordAnnouncement';
+export { UpdateConfirmationModal } from './UpdateConfirmationModal';
+export { ProfileEditor, SkinEditor } from './ProfileEditor';

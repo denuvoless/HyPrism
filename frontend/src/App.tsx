@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrowserOpenURL } from '../wailsjs/runtime/runtime';
 import { GameBranch } from './constants/enums';
@@ -7,13 +7,18 @@ import { ProfileSection } from './components/ProfileSection';
 import { ControlSection } from './components/ControlSection';
 import { MusicPlayer } from './components/MusicPlayer';
 import { UpdateOverlay } from './components/UpdateOverlay';
-import { ErrorModal } from './components/ErrorModal';
-import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
-import { ModManager } from './components/ModManager';
-import { SettingsModal } from './components/SettingsModal';
-import { DiscordAnnouncement } from './components/DiscordAnnouncement';
+import { DiscordIcon } from './components/DiscordIcon';
+// Controller detection removed - not using floating indicator
 import hytaleLogo from './assets/logo.png';
-import discordLogo from './assets/discord.png';
+
+// Lazy load heavy modals for better initial load performance
+const ErrorModal = lazy(() => import('./components/ErrorModal').then(m => ({ default: m.ErrorModal })));
+const DeleteConfirmationModal = lazy(() => import('./components/DeleteConfirmationModal').then(m => ({ default: m.DeleteConfirmationModal })));
+const ModManager = lazy(() => import('./components/ModManager').then(m => ({ default: m.ModManager })));
+const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const UpdateConfirmationModal = lazy(() => import('./components/UpdateConfirmationModal').then(m => ({ default: m.UpdateConfirmationModal })));
+const NewsPreview = lazy(() => import('./components/NewsPreview').then(m => ({ default: m.NewsPreview })));
+const ProfileEditor = lazy(() => import('./components/ProfileEditor').then(m => ({ default: m.ProfileEditor })));
 
 import {
   DownloadAndLaunch,
@@ -35,6 +40,8 @@ import {
   IsVersionInstalled,
   GetInstalledVersionsForBranch,
   CheckLatestNeedsUpdate,
+  GetPendingUpdateInfo,
+  CopyUserData,
   // Settings
   GetCustomInstanceDir,
   SetInstanceDirectory,
@@ -45,10 +52,19 @@ import {
   CheckRosettaStatus,
   GetCloseAfterLaunch,
   WindowClose,
+  GetBackgroundMode,
+  GetDisableNews,
+  GetAccentColor,
 } from '../wailsjs/go/app/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
-import { NewsPreview } from './components/NewsPreview';
 import appIcon from './assets/appicon.png';
+
+// Modal loading fallback - minimal spinner
+const ModalFallback = () => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+  </div>
+);
 
 const withLatest = (versions: number[] | null | undefined): number[] => {
   const base = Array.isArray(versions) ? versions : [];
@@ -141,6 +157,7 @@ const App: React.FC = () => {
   const [showModManager, setShowModManager] = useState<boolean>(false);
   const [modManagerSearchQuery, setModManagerSearchQuery] = useState<string>('');
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [showProfileEditor, setShowProfileEditor] = useState<boolean>(false);
   const [error, setError] = useState<any>(null);
   const [launchTimeoutError, setLaunchTimeoutError] = useState<{ message: string; logs: string[] } | null>(null);
 
@@ -163,8 +180,18 @@ const App: React.FC = () => {
   const [customInstanceDir, setCustomInstanceDir] = useState<string>("");
   const [latestNeedsUpdate, setLatestNeedsUpdate] = useState<boolean>(false);
 
-  // Manual announcement (from test button)
-  const [manualAnnouncement, setManualAnnouncement] = useState<any>(null);
+  // Background, news, and accent color settings
+  const [backgroundMode, setBackgroundMode] = useState<string>('slideshow');
+  const [newsDisabled, setNewsDisabled] = useState<boolean>(false);
+  const [_accentColor, setAccentColor] = useState<string>('#FFA845'); // Used only for SettingsModal callback
+
+  // Pending game update modal
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    oldVersion: number;
+    newVersion: number;
+    hasOldUserData: boolean;
+    branch: string;
+  } | null>(null);
 
   // Check if current version is installed when branch or version changes
   useEffect(() => {
@@ -318,12 +345,25 @@ const App: React.FC = () => {
     return () => clearInterval(pollInterval);
   }, [isGameRunning, t]);
 
+  // Reload profile data from backend
+  const reloadProfile = async () => {
+    const nick = await GetNick();
+    if (nick) setUsername(nick);
+    const uuid = await GetUUID();
+    if (uuid) setUuid(uuid);
+  };
+
   useEffect(() => {
     // Initialize user settings
     GetNick().then((n: string) => n && setUsername(n));
     GetUUID().then((u: string) => u && setUuid(u));
     GetLauncherVersion().then((v: string) => setLauncherVersion(v));
     GetCustomInstanceDir().then((dir: string) => dir && setCustomInstanceDir(dir));
+
+    // Load background mode, news settings, and accent color
+    GetBackgroundMode().then((mode: string) => setBackgroundMode(mode || 'slideshow'));
+    GetDisableNews().then((disabled: boolean) => setNewsDisabled(disabled));
+    GetAccentColor().then((color: string) => setAccentColor(color || '#FFA845'));
 
     // Load saved branch and version - must load branch first, then version
     const loadSettings = async () => {
@@ -513,6 +553,30 @@ const App: React.FC = () => {
       return;
     }
 
+    // Check if using "Latest" and there's a pending update with userdata
+    if (currentVersion === 0) {
+      try {
+        const updateInfo = await GetPendingUpdateInfo(currentBranch);
+        if (updateInfo && updateInfo.HasOldUserData) {
+          // Show the update confirmation modal
+          setPendingUpdate({
+            oldVersion: updateInfo.OldVersion,
+            newVersion: updateInfo.NewVersion,
+            hasOldUserData: updateInfo.HasOldUserData,
+            branch: updateInfo.Branch
+          });
+          return; // Don't proceed, wait for modal decision
+        }
+      } catch (err) {
+        console.error('Failed to check pending update:', err);
+        // Continue anyway if check fails
+      }
+    }
+
+    doLaunch();
+  };
+
+  const doLaunch = async () => {
     setIsDownloading(true);
     setDownloadState('downloading');
     try {
@@ -524,6 +588,27 @@ const App: React.FC = () => {
       console.error('Launch failed:', err);
       setIsDownloading(false);
     }
+  };
+
+  const handleUpdateConfirmWithCopy = async () => {
+    if (!pendingUpdate) return;
+    try {
+      // Copy userdata from old version (0 = latest instance) to the new version
+      await CopyUserData(pendingUpdate.branch, 0, pendingUpdate.newVersion);
+    } catch (err) {
+      console.error('Failed to copy userdata:', err);
+    }
+    setPendingUpdate(null);
+    doLaunch();
+  };
+
+  const handleUpdateConfirmWithoutCopy = async () => {
+    setPendingUpdate(null);
+    doLaunch();
+  };
+
+  const handleUpdateCancel = () => {
+    setPendingUpdate(null);
   };
 
   const handleCancelDownload = async () => {
@@ -643,7 +728,7 @@ const App: React.FC = () => {
 
   return (
     <div className="relative w-screen h-screen bg-[#090909] text-white overflow-hidden font-sans select-none">
-      <BackgroundImage />
+      <BackgroundImage mode={backgroundMode} />
 
       {/* Music Player - positioned in top right */}
       <div className="absolute top-4 right-4 z-20">
@@ -670,19 +755,20 @@ const App: React.FC = () => {
             updateAvailable={!!updateAsset}
             onUpdate={handleUpdate}
             launcherVersion={launcherVersion}
+            onOpenProfileEditor={() => setShowProfileEditor(true)}
           />
           {/* Hytale Logo & News - Right Side */}
           <div className="flex flex-col items-end gap-3">
             <img src={hytaleLogo} alt="Hytale" className="h-24 drop-shadow-2xl" />
             {/* Social Buttons Row */}
             <div className="flex items-center gap-3">
-              {/* Discord Button - bigger */}
+              {/* Discord Button */}
               <button
                 onClick={() => BrowserOpenURL('https://discord.gg/3U8KNbap3g')}
-                className="opacity-90 hover:opacity-100 transition-opacity duration-150 cursor-pointer"
+                className="p-2 rounded-xl hover:bg-[#5865F2]/20 transition-all duration-150 cursor-pointer active:scale-95"
                 title={t('Join Discord')}
               >
-                <img src={discordLogo} alt="Discord" className="h-14 object-contain drop-shadow-lg" />
+                <DiscordIcon size={28} className="drop-shadow-lg" />
               </button>
               {/* GitHub Button */}
               <button
@@ -701,23 +787,27 @@ const App: React.FC = () => {
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/></svg>
               </button>
             </div>
-            <NewsPreview
-              getNews={async (count) => {
-                const releases = await fetchLauncherReleases();
-                const hytale = await GetNews(Math.max(0, count));
+            {!newsDisabled && (
+              <Suspense fallback={<div className="w-80 h-32 animate-pulse bg-white/5 rounded-xl" />}>
+                <NewsPreview
+                  getNews={async (count) => {
+                    const releases = await fetchLauncherReleases();
+                    const hytale = await GetNews(Math.max(0, count));
 
-                const hytaleItems = (hytale || []).map((item: any) => ({
-                  item: { ...item, source: 'hytale' as const },
-                  dateMs: parseDateMs(item?.date)
-                }));
+                    const hytaleItems = (hytale || []).map((item: any) => ({
+                      item: { ...item, source: 'hytale' as const },
+                      dateMs: parseDateMs(item?.date)
+                    }));
 
-                const combined = [...releases, ...hytaleItems]
-                  .sort((a, b) => b.dateMs - a.dateMs)
-                  .map((x) => x.item);
+                    const combined = [...releases, ...hytaleItems]
+                      .sort((a, b) => b.dateMs - a.dateMs)
+                      .map((x) => x.item);
 
-                return combined;
-              }}
-            />
+                    return combined;
+                  }}
+                />
+              </Suspense>
+            )}
           </div>
         </div>
 
@@ -756,69 +846,85 @@ const App: React.FC = () => {
         />
       </main>
 
-      {/* Modals */}
-      {showDelete && (
-        <DeleteConfirmationModal
-          onConfirm={() => {
-            DeleteGame(currentBranch, currentVersion);
-            setShowDelete(false);
-          }}
-          onCancel={() => setShowDelete(false)}
-        />
-      )}
+      {/* Modals - wrapped in Suspense for lazy loading */}
+      <Suspense fallback={<ModalFallback />}>
+        {showDelete && (
+          <DeleteConfirmationModal
+            onConfirm={() => {
+              DeleteGame(currentBranch, currentVersion);
+              setShowDelete(false);
+            }}
+            onCancel={() => setShowDelete(false)}
+          />
+        )}
 
-      {error && (
-        <ErrorModal
-          error={error}
-          onClose={() => setError(null)}
-        />
-      )}
+        {pendingUpdate && (
+          <UpdateConfirmationModal
+            oldVersion={pendingUpdate.oldVersion}
+            newVersion={pendingUpdate.newVersion}
+            hasOldUserData={pendingUpdate.hasOldUserData}
+            onConfirmWithCopy={handleUpdateConfirmWithCopy}
+            onConfirmWithoutCopy={handleUpdateConfirmWithoutCopy}
+            onCancel={handleUpdateCancel}
+          />
+        )}
 
-      {launchTimeoutError && (
-        <ErrorModal
-          error={{
-            type: 'LAUNCH_FAILED',
-            message: launchTimeoutError.message,
-            technical: launchTimeoutError.logs.length > 0 
-              ? launchTimeoutError.logs.join('\n')
-              : 'No log entries available',
-            timestamp: new Date().toISOString()
-          }}
-          onClose={() => setLaunchTimeoutError(null)}
-        />
-      )}
+        {error && (
+          <ErrorModal
+            error={error}
+            onClose={() => setError(null)}
+          />
+        )}
 
-      {showModManager && (
-        <ModManager
-          onClose={() => setShowModManager(false)}
-          currentBranch={currentBranch}
-          currentVersion={currentVersion}
-          initialSearchQuery={modManagerSearchQuery}
-        />
-      )}
+        {launchTimeoutError && (
+          <ErrorModal
+            error={{
+              type: 'LAUNCH_FAILED',
+              message: launchTimeoutError.message,
+              technical: launchTimeoutError.logs.length > 0 
+                ? launchTimeoutError.logs.join('\n')
+                : 'No log entries available',
+              timestamp: new Date().toISOString()
+            }}
+            onClose={() => setLaunchTimeoutError(null)}
+          />
+        )}
 
-      {showSettings && (
-        <SettingsModal
-          onClose={() => setShowSettings(false)}
-          launcherBranch={launcherBranch}
-          onLauncherBranchChange={handleLauncherBranchChange}
-          onShowModManager={(query) => {
-            setModManagerSearchQuery(query || '');
-            setShowModManager(true);
-          }}
-          rosettaWarning={rosettaWarning}
-          onTestAnnouncement={(announcement) => {
-            setManualAnnouncement(announcement);
-            setShowSettings(false);
-          }}
-        />
-      )}
+        {showModManager && (
+          <ModManager
+            onClose={() => setShowModManager(false)}
+            currentBranch={currentBranch}
+            currentVersion={currentVersion}
+            initialSearchQuery={modManagerSearchQuery}
+          />
+        )}
 
-      {/* Discord Announcement Popup */}
-      <DiscordAnnouncement 
-        manualAnnouncement={manualAnnouncement}
-        onDismiss={() => setManualAnnouncement(null)}
-      />
+        {showSettings && (
+          <SettingsModal
+            onClose={() => setShowSettings(false)}
+            launcherBranch={launcherBranch}
+            onLauncherBranchChange={handleLauncherBranchChange}
+            onShowModManager={(query) => {
+              setModManagerSearchQuery(query || '');
+              setShowModManager(true);
+            }}
+            rosettaWarning={rosettaWarning}
+            onBackgroundModeChange={(mode) => setBackgroundMode(mode)}
+            onNewsDisabledChange={(disabled) => setNewsDisabled(disabled)}
+            onAccentColorChange={(color) => setAccentColor(color)}
+          />
+        )}
+
+        {/* Profile Editor */}
+        {showProfileEditor && (
+          <ProfileEditor
+            isOpen={showProfileEditor}
+            onClose={() => setShowProfileEditor(false)}
+            onProfileUpdate={reloadProfile}
+          />
+        )}
+
+      </Suspense>
     </div>
   );
 };
