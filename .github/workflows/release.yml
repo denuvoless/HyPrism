@@ -129,6 +129,11 @@ jobs:
             /p:IncludeNativeLibrariesForSelfExtract=true /p:IncludeAllContentForSelfExtract=true \
             -o artifacts/linux-arm64
 
+          # Ensure the published single-file binaries are executable so downstream packaging works
+          chmod +x artifacts/linux-x64/HyPrism || true
+          chmod +x artifacts/linux-arm64/HyPrism || true
+          echo "Post-publish listing (linux-x64):"; ls -la artifacts/linux-x64 | sed -n '1,200p' || true
+
       - name: Upload backend publish
         uses: actions/upload-artifact@v4
         with:
@@ -164,8 +169,9 @@ jobs:
           fi
           echo "Downloaded backend publish contains:"; ls -la artifacts/linux-x64 | sed -n '1,200p'
           if [ ! -x artifacts/linux-x64/HyPrism ]; then
-            echo "WARNING: HyPrism binary missing or not executable in artifacts/linux-x64"
-            ls -la artifacts/linux-x64 || true
+            echo "HyPrism binary not executable; attempting to set executable bit"
+            chmod +x artifacts/linux-x64/HyPrism || true
+            echo "Post-chmod listing:"; ls -la artifacts/linux-x64 || true
           fi
 
       - name: Merge frontend into publish
