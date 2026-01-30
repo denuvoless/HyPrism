@@ -279,6 +279,7 @@ EOF
     echo "==> Building Flatpak"
     FLATPAK_STAGE="$ARTIFACTS/linux-x64/flatpak-build"
     FLATPAK_REPO="$ARTIFACTS/flatpak-repo"
+    # Use user remotes to avoid system-remote lookups in CI
     flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
     flatpak remote-add --user --if-not-exists flathub-beta https://flathub.org/beta-repo/flathub-beta.flatpakrepo
     rm -rf "$ROOT/packaging/flatpak/bundle"
@@ -286,7 +287,7 @@ EOF
     cp -R "$LINUX_OUT"/* "$ROOT/packaging/flatpak/bundle/"
     cp "$ROOT/packaging/flatpak/dev.hyprism.HyPrism."* "$ROOT/packaging/flatpak/bundle/" || true
     chmod +x "$ROOT/packaging/flatpak/bundle/HyPrism" || true
-    flatpak-builder --force-clean "$FLATPAK_STAGE" \
+    flatpak-builder --user --force-clean "$FLATPAK_STAGE" \
       --install-deps-from=flathub --install-deps-from=flathub-beta \
       "$ROOT/packaging/flatpak/dev.hyprism.HyPrism.json" --repo="$FLATPAK_REPO"
   else
