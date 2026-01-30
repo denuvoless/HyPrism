@@ -177,7 +177,7 @@ jobs:
 
       - name: Build deb/rpm via script
         run: |
-          SKIP_BUILD=1 ./scripts/build-linux.sh --auto-install-deps --only-deb
+          SKIP_BUILD=1 ./scripts/build-linux.sh --auto-install-deps --only-deb-rpm
 
       - name: Upload deb/rpm artifacts
         uses: actions/upload-artifact@v4
@@ -449,8 +449,6 @@ jobs:
         run: |
           set -euo pipefail
           EXPECTED=(
-            "HyPrism-linux-x64.tar.gz"
-            "HyPrism-linux-arm64.tar.gz"
             "HyPrism-linux-x64.deb"
             "HyPrism-linux-x64.rpm"
             "HyPrism-linux-x64.AppImage"

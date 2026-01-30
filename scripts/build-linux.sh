@@ -22,10 +22,10 @@ Options:
   --only-bundle         Build only the bundle (skip all packaging)
   --no-appimage         Skip AppImage packaging
   --no-flatpak          Skip Flatpak packaging
-  --no-deb              Skip deb/rpm packaging
+  --no-deb-rpm          Skip deb/rpm packaging
   --only-appimage       Build only AppImage (skip deb/rpm and Flatpak)
   --only-flatpak        Build only Flatpak (skip deb/rpm and AppImage)
-  --only-deb            Build only deb/rpm (skip Flatpak and AppImage)
+  --only-deb-rpm        Build only deb/rpm (skip Flatpak and AppImage)
 EOF
 }
 
@@ -68,7 +68,7 @@ for arg in "$@"; do
       DO_FLATPAK=1
       DO_DEB=0
       ;;
-    --only-deb)
+    --only-deb-rpm)
       DO_APPIMAGE=0
       DO_FLATPAK=0
       DO_DEB=1
