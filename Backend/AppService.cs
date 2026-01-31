@@ -4505,8 +4505,7 @@ exec env \
             var isBetaChannel = launcherBranch == "beta";
             
             // Get all releases (not just latest) to support beta channel
-            // TESTING: Using TEST repo instead of HyPrism
-            var apiUrl = "https://api.github.com/repos/yyyumeniku/TEST/releases?per_page=50";
+            var apiUrl = "https://api.github.com/repos/yyyumeniku/HyPrism/releases?per_page=50";
             var json = await HttpClient.GetStringAsync(apiUrl);
             using var doc = JsonDocument.Parse(json);
 
@@ -4804,7 +4803,7 @@ exec env \
     public async Task<bool> UpdateAsync(JsonElement[]? args)
     {
         // TESTING: Using TEST repo instead of HyPrism
-        const string releasesPage = "https://github.com/yyyumeniku/TEST/releases/latest";
+        const string releasesPage = "https://github.com/yyyumeniku/HyPrism/releases/latest";
 
         try
         {
@@ -4813,8 +4812,7 @@ exec env \
             var currentVersion = GetLauncherVersion();
             
             // Get all releases to find the best match for user's channel
-            // TESTING: Using TEST repo instead of HyPrism
-            var apiUrl = "https://api.github.com/repos/yyyumeniku/TEST/releases?per_page=50";
+            var apiUrl = "https://api.github.com/repos/yyyumeniku/HyPrism/releases?per_page=50";
             var json = await HttpClient.GetStringAsync(apiUrl);
             using var doc = JsonDocument.Parse(json);
             
