@@ -160,7 +160,18 @@ if [[ "$(uname -s)" == "Linux" ]]; then
     if [[ "$DO_FLATPAK" == "1" ]]; then
       require_tool flatpak-builder "flatpak flatpak-builder" "flatpak flatpak-builder" ""
       # appstream-compose is required by flatpak-builder for AppStream metadata
-      require_tool appstream-compose "appstream-util appstream desktop-file-utils" "appstream desktop-file-utils" ""
+      if [[ "$AUTO_INSTALL" == "1" ]]; then
+        if [[ "$(detect_distro)" == "ubuntu" || "$(detect_distro)" == "debian" ]]; then
+          if apt-cache show appstream-compose >/dev/null 2>&1; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y appstream-compose
+          else
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y appstream appstream-util desktop-file-utils
+          fi
+        elif [[ "$(detect_distro)" == "fedora" ]]; then
+          sudo dnf -y install appstream desktop-file-utils || true
+        fi
+      fi
+      require_tool appstream-compose "appstream appstream-util desktop-file-utils" "appstream desktop-file-utils" ""
     fi
   fi
 fi
