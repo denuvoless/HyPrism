@@ -377,6 +377,12 @@ jobs:
         run: |
           mkdir -p release-assets
 
+      - name: Remove Flatpak repo metadata from release assets
+        run: |
+          set -euo pipefail
+          echo "Removing unwanted repo metadata files (summary, summary.idx, config) from release-assets/"
+          find release-assets -type f \( -name 'summary' -o -name 'summary.idx' -o -name 'config' \) -print -exec rm -f {} + || true
+
       - name: List release assets
         run: ls -la release-assets/ || true
 
