@@ -269,7 +269,7 @@ if [[ "$(uname -s)" == "Linux" ]]; then
     APPDIR="$ARTIFACTS/linux-x64/AppDir"
     rm -rf "$APPDIR"
     mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-    cp "$LINUX_OUT/HyPrism" "$APPDIR/usr/bin/HyPrism"
+    cp -r "$LINUX_OUT/" "$APPDIR/usr/bin/"
     chmod +x "$APPDIR/usr/bin/HyPrism"
     [[ -f "$DESKTOP_SRC" ]] && cp "$DESKTOP_SRC" "$APPDIR/usr/share/applications/dev.hyprism.HyPrism.desktop"
     [[ -f "$ICON_SRC" ]] && cp "$ICON_SRC" "$APPDIR/usr/share/icons/hicolor/256x256/apps/dev.hyprism.HyPrism.png"
