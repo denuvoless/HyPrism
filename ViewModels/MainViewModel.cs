@@ -10,7 +10,7 @@ namespace HyPrism.ViewModels;
 
 public class MainViewModel : ReactiveObject
 {
-    private readonly AppService _appService;
+    public AppService AppService { get; }
 
     // User Profile
     private string _nick;
@@ -71,35 +71,94 @@ public class MainViewModel : ReactiveObject
         set => this.RaiseAndSetIfChanged(ref _selectedVersion, value);
     }
 
+    // Overlays
+    private bool _isSettingsOpen;
+    public bool IsSettingsOpen
+    {
+        get => _isSettingsOpen;
+        set => this.RaiseAndSetIfChanged(ref _isSettingsOpen, value);
+    }
+
+    private bool _isConfigOpen; // For ModManager or others
+    public bool IsModsOpen
+    {
+        get => _isConfigOpen;
+        set => this.RaiseAndSetIfChanged(ref _isConfigOpen, value);
+    }
+
+    private readonly ObservableAsPropertyHelper<bool> _isOverlayOpen;
+    public bool IsOverlayOpen => _isOverlayOpen.Value;
+    
+    // Child ViewModels for Overlays
+    private SettingsViewModel? _settingsViewModel;
+    public SettingsViewModel? SettingsViewModel
+    {
+        get => _settingsViewModel;
+        set => this.RaiseAndSetIfChanged(ref _settingsViewModel, value);
+    }
+
+    private ModManagerViewModel? _modManagerViewModel;
+    public ModManagerViewModel? ModManagerViewModel
+    {
+        get => _modManagerViewModel;
+        set => this.RaiseAndSetIfChanged(ref _modManagerViewModel, value);
+    }
+
     public ObservableCollection<string> Branches { get; } = new() { "Release", "Pre-Release" };
 
     // Commands
     public ReactiveCommand<Unit, Unit> LaunchCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenFolderCommand { get; }
-    public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
-
+    public ReactiveCommand<Unit, Unit> ToggleSettingsCommand { get; }
+    public ReactiveCommand<Unit, Unit> ToggleModsCommand { get; }
+    
     public MainViewModel()
     {
-        _appService = new AppService();
-        _nick = _appService.GetNick();
+        AppService = new AppService();
+        _nick = AppService.Configuration.Nick;
         
+        // Output properties
+        _isOverlayOpen = this.WhenAnyValue(x => x.IsSettingsOpen, x => x.IsModsOpen, (s, m) => s || m)
+                             .ToProperty(this, x => x.IsOverlayOpen);
+        
+        // Initialize child VMs
+        SettingsViewModel = new SettingsViewModel(AppService);
+        SettingsViewModel.CloseCommand.Subscribe(_ => IsSettingsOpen = false);
+
         // Commands
         LaunchCommand = ReactiveCommand.CreateFromTask(LaunchAsync);
         OpenFolderCommand = ReactiveCommand.Create(() => 
         {
             var branch = SelectedBranch?.ToLower().Replace(" ", "-") ?? "release";
-            _appService.OpenInstanceFolder(branch, SelectedVersion);
+            AppService.OpenInstanceFolder(branch, SelectedVersion);
         });
-        OpenSettingsCommand = ReactiveCommand.Create(() => { /* Settings */ });
+        
+        ToggleSettingsCommand = ReactiveCommand.Create(() => 
+        {
+            IsSettingsOpen = !IsSettingsOpen;
+            if (IsSettingsOpen) IsModsOpen = false;
+        });
+        
+        ToggleModsCommand = ReactiveCommand.Create(() => 
+        {
+            if (!IsModsOpen)
+            {
+                var branch = SelectedBranch?.ToLower().Replace(" ", "-") ?? "release"; 
+                ModManagerViewModel = new ModManagerViewModel(AppService, branch, SelectedVersion);
+                ModManagerViewModel.CloseCommand.Subscribe(_ => IsModsOpen = false);
+            }
+            IsModsOpen = !IsModsOpen;
+            if (IsModsOpen) IsSettingsOpen = false;
+        });
         
         // Event subscriptions need to be marshaled to UI thread
-        _appService.DownloadProgressChanged += (state, progress, speed, dl, total) => 
+        AppService.DownloadProgressChanged += (state, progress, speed, dl, total) => 
             Dispatcher.UIThread.Post(() => OnDownloadProgress(state, progress, speed, dl, total));
             
-        _appService.GameStateChanged += (state, code) => 
+        AppService.GameStateChanged += (state, code) => 
             Dispatcher.UIThread.Post(() => OnGameStateChanged(state, code));
             
-        _appService.ErrorOccurred += (title, msg, trace) => 
+        AppService.ErrorOccurred += (title, msg, trace) => 
             Dispatcher.UIThread.Post(() => OnError(title, msg, trace));
     }
 
@@ -141,7 +200,7 @@ public class MainViewModel : ReactiveObject
             IsDownloading = true;
             ProgressText = "Preparing...";
             
-            await _appService.DownloadAndLaunchAsync();
+            await AppService.DownloadAndLaunchAsync();
         }
         catch (Exception ex)
         {

@@ -1,17 +1,20 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Avalonia.Svg.Skia"
              x:Class="HyPrism.App"
              RequestedThemeVariant="Dark">
     <Application.Resources>
-        <Color x:Key="HytaleOrange">#FFA845</Color>
-        <Color x:Key="HytaleOrangeDark">#FF6B35</Color>
-        <Color x:Key="HytaleDark">#090909</Color>
-        <Color x:Key="HytaleDarkLight">#0d0d0d</Color>
-        
-        <SolidColorBrush x:Key="HytaleOrangeBrush" Color="{StaticResource HytaleOrange}"/>
-        <SolidColorBrush x:Key="HytaleOrangeDarkBrush" Color="{StaticResource HytaleOrangeDark}"/>
-        <SolidColorBrush x:Key="HytaleDarkBrush" Color="{StaticResource HytaleDark}"/>
-        <SolidColorBrush x:Key="HytaleDarkLightBrush" Color="{StaticResource HytaleDarkLight}"/>
+        <ResourceDictionary>
+            <Color x:Key="HytaleOrange">#FFA845</Color>
+            <Color x:Key="HytaleOrangeDark">#FF6B35</Color>
+            <Color x:Key="HytaleDark">#090909</Color>
+            <Color x:Key="HytaleDarkLight">#0d0d0d</Color>
+            
+            <SolidColorBrush x:Key="HytaleOrangeBrush" Color="{StaticResource HytaleOrange}"/>
+            <SolidColorBrush x:Key="HytaleOrangeDarkBrush" Color="{StaticResource HytaleOrangeDark}"/>
+            <SolidColorBrush x:Key="HytaleDarkBrush" Color="{StaticResource HytaleDark}"/>
+            <SolidColorBrush x:Key="HytaleDarkLightBrush" Color="{StaticResource HytaleDarkLight}"/>
+        </ResourceDictionary>
     </Application.Resources>
     <Application.Styles>
         <FluentTheme />

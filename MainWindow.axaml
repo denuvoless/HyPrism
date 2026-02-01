@@ -3,6 +3,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:HyPrism.ViewModels"
+        xmlns:views="using:HyPrism.Views"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
         x:Class="HyPrism.MainWindow"
         x:DataType="vm:MainViewModel"
@@ -12,13 +13,56 @@
         WindowStartupLocation="CenterScreen"
         Background="#1E1E1E">
 
+    <Window.Styles>
+        <!-- Overlay Layer Animation -->
+        <Style Selector="Grid.overlay-layer">
+            <Setter Property="Opacity" Value="0"/>
+            <Setter Property="IsHitTestVisible" Value="False"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.2"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Grid.overlay-layer[Tag=True]">
+            <Setter Property="Opacity" Value="1"/>
+            <Setter Property="IsHitTestVisible" Value="True"/>
+        </Style>
+        
+        <!-- Modal Content Animation (Scale + Fade) -->
+        <Style Selector="Grid.modal">
+             <Setter Property="Opacity" Value="0"/>
+             <Setter Property="IsHitTestVisible" Value="False"/>
+             <Setter Property="RenderTransform" Value="scale(0.95)"/>
+             <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.2" Easing="CubicEaseOut"/>
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.25" Easing="BackEaseOut"/>
+                </Transitions>
+             </Setter>
+        </Style>
+        <Style Selector="Grid.modal[Tag=True]">
+             <Setter Property="Opacity" Value="1"/>
+             <Setter Property="IsHitTestVisible" Value="True"/>
+             <Setter Property="RenderTransform" Value="scale(1)"/>
+        </Style>
+    </Window.Styles>
+
     <Design.DataContext>
         <vm:MainViewModel/>
     </Design.DataContext>
     
     <Grid>
-        <!-- Background -->
-        <Image Source="/Assets/bg_1.jpg" Stretch="UniformToFill"/>
+        <!-- Content Root with Blur Effect -->
+        <Grid Tag="{Binding IsOverlayOpen}">
+            <Grid.Styles>
+                <Style Selector="Grid[Tag=True]">
+                    <Setter Property="Effect" Value="blur(16)"/>
+                </Style>
+            </Grid.Styles>
+
+            <!-- Background -->
+            <Image Source="/Assets/bg_1.jpg" Stretch="UniformToFill"/>
         <Rectangle Fill="#CC090909"/> 
         
         <!-- Main Layout -->
@@ -37,7 +81,9 @@
                 </StackPanel>
                 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
-                    <Button Content="Settings" Command="{Binding OpenSettingsCommand}" Background="#33FFFFFF" Foreground="White"/>
+                    <Button Command="{Binding ToggleSettingsCommand}" Background="Transparent" Padding="8" CornerRadius="8">
+                        <PathIcon Data="{StaticResource IconSettings}" Classes="outline" Foreground="White" Width="24" Height="24"/>
+                    </Button>
                 </StackPanel>
             </Grid>
             
@@ -64,29 +110,72 @@
                              Background="{StaticResource HytaleDarkLightBrush}"/>
                 
                 <!-- Action Buttons -->
-                <Grid ColumnDefinitions="*, Auto, Auto">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
                     <Button Grid.Column="0" Command="{Binding LaunchCommand}" 
-                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                             Height="50" FontSize="18" FontWeight="Bold"
                             Background="{StaticResource HytaleOrangeBrush}" Foreground="{StaticResource HytaleDarkBrush}"
-                            CornerRadius="8">
+                            CornerRadius="8" BorderThickness="0">
                         <Panel>
-                            <TextBlock Text="PLAY" IsVisible="{Binding !IsDownloading}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding !IsDownloading}" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <PathIcon Data="{StaticResource IconPlay}" Classes="outline" Foreground="#111" Width="20" Height="20" />
+                                <TextBlock Text="PLAY" VerticalAlignment="Center"/>
+                            </StackPanel>
                             <TextBlock Text="INSTALLING..." IsVisible="{Binding IsDownloading}"/>
                         </Panel>
                     </Button>
                     
-                    <ComboBox Grid.Column="1" Margin="10,0,0,0" 
+                    <ComboBox Grid.Column="2" 
                               ItemsSource="{Binding Branches}" 
                               SelectedItem="{Binding SelectedBranch}"
-                              VerticalAlignment="Stretch"/>
+                              VerticalAlignment="Stretch" Height="50" CornerRadius="8"
+                              Background="#333" Foreground="White" BorderThickness="0"
+                              Padding="15,0" VerticalContentAlignment="Center"/>
                               
-                    <Button Grid.Column="2" Margin="10,0,0,0"
-                            Content="📂" 
+                    <Button Grid.Column="4"
                             Command="{Binding OpenFolderCommand}"
-                            VerticalAlignment="Stretch"/>
+                            VerticalAlignment="Stretch" Height="50" Width="50" CornerRadius="8"
+                            Background="#333" Padding="0"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                        <PathIcon Data="{StaticResource IconFolder}" Classes="outline" Foreground="White" Width="24" Height="24"/>
+                    </Button>
+                            
+                    <Button Grid.Column="6"
+                            Command="{Binding ToggleModsCommand}"
+                            VerticalAlignment="Stretch" Height="50" Width="50" CornerRadius="8"
+                            Background="#333" Padding="0"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                        <PathIcon Data="{StaticResource IconPackage}" Classes="outline" Foreground="White" Width="24" Height="24"/>
+                    </Button>
                 </Grid>
             </StackPanel>
+        </Grid>
+        </Grid>
+
+        <!-- Global Overlay Layer -->
+        <Grid Classes="overlay-layer" Tag="{Binding IsOverlayOpen}">
+            <!-- Dimmer Background -->
+            <Border Background="#B3000000"/>
+            
+            <!-- Settings Overlay -->
+            <Grid Classes="modal" Tag="{Binding IsSettingsOpen}">
+                <views:SettingsView DataContext="{Binding SettingsViewModel}" Width="900" Height="650" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Grid>
+            
+            <!-- Mods Overlay -->
+            <Grid Classes="modal" Tag="{Binding IsModsOpen}">
+                <views:ModManagerView DataContext="{Binding ModManagerViewModel}" Width="1100" Height="750" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            </Grid>
         </Grid>
     </Grid>
     

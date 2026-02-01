@@ -26,6 +26,9 @@ public class AppService : IDisposable
     private CancellationTokenSource? _downloadCts;
     private bool _disposed;
     
+    // Exposed for ViewModel access
+    public Config Configuration => _config;
+
     // UI Events
     public event Action<string, double, string, long, long>? DownloadProgressChanged;
     public event Action<string, int>? GameStateChanged;
@@ -1120,7 +1123,7 @@ public class AppService : IDisposable
         File.WriteAllText(_configPath, json);
     }
 
-    private void SaveConfig()
+    public void SaveConfig()
     {
         SaveConfigInternal(_config);
     }

@@ -3,6 +3,9 @@ using System.Runtime.InteropServices;
 using Avalonia;
 using HyPrism.Backend;
 
+using Avalonia.ReactiveUI;
+using Avalonia.Svg.Skia;
+
 namespace HyPrism;
 
 class Program
@@ -12,10 +15,14 @@ class Program
     {
         BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(args);
+            
     }
 
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .UseReactiveUI()
+            .With(new SkiaOptions { UseOpacitySaveLayer = true })
             .LogToTrace();
+            
 }
