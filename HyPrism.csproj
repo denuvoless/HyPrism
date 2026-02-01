@@ -40,7 +40,6 @@
     <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.116.1" />
     <PackageReference Include="Svg.Skia" Version="3.4.1" />
-    <PackageReference Include="System.Text.Json" Version="10.0.2" />
   </ItemGroup>
 
   <ItemGroup>

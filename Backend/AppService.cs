@@ -117,6 +117,10 @@ public class AppService : IDisposable
         _downloadService = new DownloadService(HttpClient);
         _modService = new ModService(HttpClient, _appDir);
         _launchService = new LaunchService(_appDir, HttpClient);
+        _instanceService = new InstanceService(
+            _appDir,
+            () => _config,
+            SaveConfigInternal);
         _gameUtilityService = new GameUtilityService(
             _appDir,
             _config,
@@ -127,11 +131,7 @@ public class AppService : IDisposable
             GetProfilesFolder,
             UtilityService.SanitizeFileName,
             () => _gameProcess,
-            p => _gameProcess = p);
-        _instanceService = new InstanceService(
-            _appDir,
-            () => _config,
-            SaveConfigInternal);
+            p => _gameProcess = p!);
         
         _updateService = new UpdateService(
             HttpClient,

@@ -437,10 +437,10 @@ public class MainViewModel : ReactiveObject
                         {
                             Title = item.Title,
                             Excerpt = item.Excerpt,
-                            Url = item.Url,
+                            Url = item.Url ?? "",
                             Date = item.Date,
                             Author = item.Author,
-                            ImageUrl = item.ImageUrl,
+                            ImageUrl = item.ImageUrl ?? "",
                             Source = "hytale"
                         });
                     }
