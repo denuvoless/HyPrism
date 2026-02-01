@@ -33,6 +33,7 @@ import { Language } from '../constants/enums';
 import { LANGUAGE_CONFIG } from '../constants/languages';
 import { ACCENT_COLORS } from '../constants/colors';
 import appIcon from '../assets/appicon.png';
+import { SOLID_COLORS } from '../constants/colors';
 
 // Background images (matching SettingsModal) - using the correct path
 const backgroundModulesJpg = import.meta.glob('../assets/bg_*.jpg', { query: '?url', import: 'default', eager: true });
@@ -212,11 +213,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
         setIsLoadingContributors(false);
     };
     
-    // Slideshow effect for background
+    // Slideshow effect for background - includes images and solid colors
     useEffect(() => {
-        if (backgroundMode === 'slideshow' && backgroundImages.length > 0) {
+        if (backgroundMode === 'slideshow') {
+            const totalOptions = backgroundImages.length + SOLID_COLORS.length;
             const interval = setInterval(() => {
-                setCurrentBackgroundIndex(prev => (prev + 1) % backgroundImages.length);
+                setCurrentBackgroundIndex(prev => (prev + 1) % totalOptions);
             }, 8000);
             return () => clearInterval(interval);
         }
@@ -362,13 +364,40 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     
     const currentStepIndex = steps.findIndex(s => s.id === currentStep);
     
-    // Get current background for preview
+    // Get current background for preview - includes both images and solid colors
     const getCurrentBackground = () => {
+        const totalOptions = backgroundImages.length + SOLID_COLORS.length;
         if (backgroundMode === 'slideshow') {
-            return backgroundImages[currentBackgroundIndex]?.url || backgroundImages[0]?.url;
+            const index = currentBackgroundIndex % totalOptions;
+            if (index < backgroundImages.length) {
+                return backgroundImages[index]?.url || backgroundImages[0]?.url;
+            } else {
+                // Return null for solid colors - handled separately
+                return null;
+            }
+        }
+        // Check if it's a solid color
+        if (backgroundMode.startsWith('#')) {
+            return null;
         }
         const selected = backgroundImages.find(bg => bg.name === backgroundMode);
         return selected?.url || backgroundImages[0]?.url;
+    };
+    
+    // Get current solid color for background
+    const getCurrentSolidColor = () => {
+        const totalOptions = backgroundImages.length + SOLID_COLORS.length;
+        if (backgroundMode === 'slideshow') {
+            const index = currentBackgroundIndex % totalOptions;
+            if (index >= backgroundImages.length) {
+                return SOLID_COLORS[index - backgroundImages.length];
+            }
+            return null;
+        }
+        if (backgroundMode.startsWith('#')) {
+            return backgroundMode;
+        }
+        return null;
     };
     
     // Get maintainer and other contributors
@@ -384,13 +413,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     
     // Splash Screen Phase
     if (phase === 'splash') {
+        const bgImage = getCurrentBackground();
+        const solidColor = getCurrentSolidColor();
+        
         return (
             <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center overflow-hidden">
                 {/* Background with blur */}
                 <div 
-                    className="absolute inset-0 bg-cover bg-center transition-opacity duration-1000"
+                    className="absolute inset-0 bg-cover bg-center transition-all duration-1000"
                     style={{ 
-                        backgroundImage: `url(${getCurrentBackground()})`,
+                        backgroundImage: bgImage ? `url(${bgImage})` : 'none',
+                        backgroundColor: solidColor || 'transparent',
                         filter: 'blur(16px) brightness(0.5)',
                         transform: 'scale(1.1)'
                     }}
@@ -458,16 +491,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                     )}
                 </div>
                 
-                {/* Skip splash button - styled like main menu skip button */}
-                {!splashAnimationComplete && (
-                    <button
-                        onClick={handleSkipSplash}
-                        className="absolute bottom-8 right-8 z-10 flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm bg-white/10 text-white/60 hover:bg-white/20 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 backdrop-blur-sm"
-                    >
-                        <SkipForward size={16} />
-                        {t('Skip')}
-                    </button>
-                )}
+                {/* Skip button - visible during entire onboarding */}
+                <button
+                    onClick={handleSkip}
+                    className="absolute bottom-8 right-8 z-10 flex items-center gap-2 font-semibold text-sm text-white/60 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all duration-150"
+                >
+                    <SkipForward size={16} />
+                    {t('Skip')}
+                </button>
                 
                 {/* CSS animations */}
                 <style>{`
@@ -491,13 +522,17 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     }
     
     // Setup Phase - Multi-step wizard
+    const bgImage = getCurrentBackground();
+    const solidColor = getCurrentSolidColor();
+    
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden">
             {/* Background with blur - changes in real-time */}
             <div 
                 className="absolute inset-0 bg-cover bg-center transition-all duration-1000"
                 style={{ 
-                    backgroundImage: `url(${getCurrentBackground()})`,
+                    backgroundImage: bgImage ? `url(${bgImage})` : 'none',
+                    backgroundColor: solidColor || 'transparent',
                     filter: 'blur(20px) brightness(0.3)',
                     transform: 'scale(1.1)'
                 }}
@@ -755,8 +790,8 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                                     <input
                                         type="text"
                                         value={instanceDir}
-                                        readOnly
-                                        className="flex-1 h-12 px-4 rounded-xl bg-[#0a0a0a]/80 border border-white/10 text-white text-sm focus:outline-none cursor-default truncate"
+                                        onChange={(e) => setInstanceDir(e.target.value)}
+                                        className="flex-1 h-12 px-4 rounded-xl bg-[#0a0a0a]/80 border border-white/10 text-white text-sm focus:outline-none focus:border-white/30 truncate"
                                     />
                                     <button
                                         onClick={handleBrowseInstanceDir}
@@ -947,6 +982,16 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                     </div>
                 </div>
             </div>
+            
+            {/* Skip button - visible during setup phase */}
+            <button
+                onClick={handleSkip}
+                disabled={isLoading}
+                className="absolute bottom-8 right-8 z-10 flex items-center gap-2 font-semibold text-sm text-white/60 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <SkipForward size={16} />
+                {t('Skip')}
+            </button>
             
             {/* CSS animations */}
             <style>{`

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, RefreshCw, Check, User, Edit3, Copy, CheckCircle, Plus, Trash2, Dices, FolderOpen, CopyPlus } from 'lucide-react';
+import { X, RefreshCw, Check, User, Edit3, Copy, CheckCircle, Plus, Trash2, Dices, FolderOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAccentColor } from '../contexts/AccentColorContext';
-import { GetUUID, SetUUID, GetNick, SetNick, GetAvatarPreview, GetAvatarPreviewForUUID, GetProfiles, CreateProfile, DuplicateProfile, DeleteProfile, SwitchProfile, SaveCurrentAsProfile, OpenCurrentProfileFolder } from '@/api/backend';
+import { GetUUID, SetUUID, GetNick, SetNick, GetAvatarPreview, GetAvatarPreviewForUUID, GetProfiles, CreateProfile, DeleteProfile, SwitchProfile, SaveCurrentAsProfile, OpenCurrentProfileFolder } from '@/api/backend';
 import type { Profile } from '@/api/backend';
 import { DeleteProfileConfirmationModal } from './DeleteProfileConfirmationModal';
 
@@ -392,49 +392,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
             console.error('Failed to create profile:', err);
         }
     };
-    
-    const handleDuplicateProfile = async (profileId: string, e: React.MouseEvent) => {
-        e.stopPropagation();
-        e.preventDefault();
-        
-        console.log('[ProfileEditor] Duplicating profile:', profileId);
-        
-        try {
-            const newProfile = await DuplicateProfile(profileId);
-            console.log('[ProfileEditor] Duplicated profile:', newProfile);
-            
-            if (newProfile) {
-                // Reload profiles list
-                await loadProfiles();
-                
-                // Find the new profile and switch to it
-                const updatedProfiles = await GetProfiles();
-                const newProfileIndex = updatedProfiles?.findIndex(p => p.uuid === newProfile.uuid);
-                if (newProfileIndex !== undefined && newProfileIndex >= 0) {
-                    console.log('[ProfileEditor] Switching to duplicated profile at index:', newProfileIndex);
-                    await SwitchProfile(newProfileIndex);
-                    // Update UI with new profile data
-                    setUsernameState(newProfile.name);
-                    setEditUsername(newProfile.name);
-                    setUuid(newProfile.uuid);
-                    setEditUuid(newProfile.uuid);
-                    
-                    // Load avatar if it was copied
-                    try {
-                        const avatar = await GetAvatarPreview();
-                        setLocalAvatar(avatar || null);
-                    } catch {
-                        setLocalAvatar(null);
-                    }
-                }
-                
-                await loadProfiles();
-                onProfileUpdate?.();
-            }
-        } catch (err) {
-            console.error('Failed to duplicate profile:', err);
-        }
-    };
 
     if (!isOpen) return null;
 
@@ -510,13 +467,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
                                             </span>
                                         </button>
                                         <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button
-                                                onClick={(e) => handleDuplicateProfile(profile.id, e)}
-                                                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all"
-                                                title={t('Duplicate Profile')}
-                                            >
-                                                <CopyPlus size={14} />
-                                            </button>
                                             {!isCurrentProfile && (
                                                 <button
                                                     onClick={(e) => handleDeleteProfile(profile.id, e)}

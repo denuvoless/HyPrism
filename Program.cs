@@ -409,6 +409,10 @@ class Program
                         "GetDisableNews" => app.GetDisableNews(),
                         "SetDisableNews" => app.SetDisableNews(GetArg<bool>(request.Args, 0)),
                         
+                        // Mod settings
+                        "GetShowAlphaMods" => app.GetShowAlphaMods(),
+                        "SetShowAlphaMods" => app.SetShowAlphaMods(GetArg<bool>(request.Args, 0)),
+                        
                         // Background settings
                         "GetBackgroundMode" => app.GetBackgroundMode(),
                         "SetBackgroundMode" => app.SetBackgroundMode(GetArg<string>(request.Args, 0)),

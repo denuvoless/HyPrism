@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Github, Bug, Check, AlertTriangle, ChevronDown, ExternalLink, Power, FolderOpen, Trash2, Settings, Database, Globe, Code, Image, User, Edit3, Shuffle, Copy, CheckCircle, Download, Loader2, HardDrive, Languages, FlaskConical, Box } from 'lucide-react';
+import { X, Github, Bug, Check, AlertTriangle, ChevronDown, ExternalLink, Power, FolderOpen, Trash2, Settings, Database, Globe, Code, Image, User, Edit3, Shuffle, Copy, CheckCircle, Download, Loader2, HardDrive, Languages, FlaskConical, Box, RotateCcw } from 'lucide-react';
 import { BrowserOpenURL } from '@/api/bridge';
 import { 
     GetCloseAfterLaunch, 
@@ -460,6 +460,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             }
         } catch (err) {
             console.error('Failed to browse folder:', err);
+        }
+    };
+
+    const handleResetInstanceDir = async () => {
+        try {
+            setInstanceDir(launcherFolderPath);
+            await SetInstanceDirectory(launcherFolderPath);
+        } catch (err) {
+            console.error('Failed to reset instance directory:', err);
+        }
+    };
+
+    const handleResetLauncherDataDir = async () => {
+        try {
+            setLauncherDataDir(launcherFolderPath);
+            await SetLauncherDataDirectory(launcherFolderPath);
+        } catch (err) {
+            console.error('Failed to reset launcher data directory:', err);
         }
     };
 
@@ -969,10 +987,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             <input
                                                 type="text"
                                                 value={instanceDir}
-                                                readOnly
-                                                className="flex-1 h-12 px-4 rounded-xl bg-[#151515] border border-white/10 text-white text-sm focus:outline-none cursor-default"
+                                                onChange={(e) => setInstanceDir(e.target.value)}
+                                                onBlur={async () => {
+                                                    if (instanceDir.trim()) {
+                                                        await SetInstanceDirectory(instanceDir.trim());
+                                                    }
+                                                }}
+                                                className="flex-1 h-12 px-4 rounded-xl bg-[#151515] border border-white/10 text-white text-sm focus:outline-none focus:border-white/30"
                                             />
                                             <div className="flex rounded-full overflow-hidden border border-white/10">
+                                                <button
+                                                    onClick={handleResetInstanceDir}
+                                                    className="h-12 px-4 bg-[#151515] flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors"
+                                                    title={t('Reset to Default')}
+                                                >
+                                                    <RotateCcw size={18} />
+                                                    <span className="ml-2 text-sm">{t('Reset')}</span>
+                                                </button>
+                                                <div className="w-px bg-white/10" />
                                                 <button
                                                     onClick={handleBrowseInstanceDir}
                                                     className="h-12 px-4 bg-[#151515] flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors"
@@ -1001,10 +1033,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             <input
                                                 type="text"
                                                 value={launcherDataDir}
-                                                readOnly
-                                                className="flex-1 h-12 px-4 rounded-xl bg-[#151515] border border-white/10 text-white text-sm focus:outline-none cursor-default"
+                                                onChange={(e) => setLauncherDataDir(e.target.value)}
+                                                onBlur={async () => {
+                                                    if (launcherDataDir.trim()) {
+                                                        await SetLauncherDataDirectory(launcherDataDir.trim());
+                                                    }
+                                                }}
+                                                className="flex-1 h-12 px-4 rounded-xl bg-[#151515] border border-white/10 text-white text-sm focus:outline-none focus:border-white/30"
                                             />
                                             <div className="flex rounded-full overflow-hidden border border-white/10">
+                                                <button
+                                                    onClick={handleResetLauncherDataDir}
+                                                    className="h-12 px-4 bg-[#151515] flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors"
+                                                    title={t('Reset to Default')}
+                                                >
+                                                    <RotateCcw size={18} />
+                                                    <span className="ml-2 text-sm">{t('Reset')}</span>
+                                                </button>
+                                                <div className="w-px bg-white/10" />
                                                 <button
                                                     onClick={handleBrowseLauncherDataDir}
                                                     className="h-12 px-4 bg-[#151515] flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors"

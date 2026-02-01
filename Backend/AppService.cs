@@ -8142,12 +8142,23 @@ rm -f ""$0""
     {
         var result = new List<InstalledMod>();
 
-        // Get current version's mods folder in UserData
-        string resolvedBranch = string.IsNullOrWhiteSpace(branch) ? _config.VersionType : branch;
-        string versionPath = ResolveInstancePath(resolvedBranch, version, preferExisting: true);
-        if (!Directory.Exists(versionPath)) return result;
+        string modsPath;
         
-        string modsPath = GetModsPath(versionPath);
+        // If a profile is active, use the profile's mods folder
+        if (_config.ActiveProfileIndex >= 0 && _config.Profiles != null && 
+            _config.ActiveProfileIndex < _config.Profiles.Count)
+        {
+            var profile = _config.Profiles[_config.ActiveProfileIndex];
+            modsPath = GetProfileModsFolder(profile);
+        }
+        else
+        {
+            // Fall back to instance mods folder if no profile is active
+            string resolvedBranch = string.IsNullOrWhiteSpace(branch) ? _config.VersionType : branch;
+            string versionPath = ResolveInstancePath(resolvedBranch, version, preferExisting: true);
+            if (!Directory.Exists(versionPath)) return result;
+            modsPath = GetModsPath(versionPath);
+        }
         
         if (!Directory.Exists(modsPath)) return result;
         
@@ -8433,12 +8444,23 @@ rm -f ""$0""
     {
         try
         {
-            // Get current version's mods folder in UserData
-            string resolvedBranch = string.IsNullOrWhiteSpace(branch) ? _config.VersionType : branch;
-            string versionPath = ResolveInstancePath(resolvedBranch, version, preferExisting: true);
-            if (!Directory.Exists(versionPath)) Directory.CreateDirectory(versionPath);
+            string modsPath;
             
-            string modsPath = GetModsPath(versionPath);
+            // If a profile is active, use the profile's mods folder
+            if (_config.ActiveProfileIndex >= 0 && _config.Profiles != null && 
+                _config.ActiveProfileIndex < _config.Profiles.Count)
+            {
+                var profile = _config.Profiles[_config.ActiveProfileIndex];
+                modsPath = GetProfileModsFolder(profile);
+            }
+            else
+            {
+                // Fall back to instance mods folder if no profile is active
+                string resolvedBranch = string.IsNullOrWhiteSpace(branch) ? _config.VersionType : branch;
+                string versionPath = ResolveInstancePath(resolvedBranch, version, preferExisting: true);
+                if (!Directory.Exists(versionPath)) Directory.CreateDirectory(versionPath);
+                modsPath = GetModsPath(versionPath);
+            }
             
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {

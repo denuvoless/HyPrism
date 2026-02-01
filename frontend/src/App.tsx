@@ -165,6 +165,9 @@ const App: React.FC = () => {
   // Version state
   const [currentBranch, setCurrentBranch] = useState<string>(GameBranch.RELEASE);
   const [currentVersion, setCurrentVersion] = useState<number>(0);
+  // Refs to track current values for event listeners
+  const currentBranchRef = useRef<string>(GameBranch.RELEASE);
+  const currentVersionRef = useRef<number>(0);
   const [availableVersions, setAvailableVersions] = useState<number[]>([]);
   const [installedVersions, setInstalledVersions] = useState<number[]>([]);
   const [isLoadingVersions, setIsLoadingVersions] = useState<boolean>(false);
@@ -177,6 +180,15 @@ const App: React.FC = () => {
   const [backgroundMode, setBackgroundMode] = useState<string>('slideshow');
   const [newsDisabled, setNewsDisabled] = useState<boolean>(false);
   const [_accentColor, setAccentColor] = useState<string>('#FFA845'); // Used only for SettingsModal callback
+
+  // Keep refs in sync with state for event listeners
+  useEffect(() => {
+    currentBranchRef.current = currentBranch;
+  }, [currentBranch]);
+
+  useEffect(() => {
+    currentVersionRef.current = currentVersion;
+  }, [currentVersion]);
 
   // Onboarding state
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
@@ -226,7 +238,9 @@ const App: React.FC = () => {
       try {
         const installed = await IsVersionInstalled(currentBranch, currentVersion);
         setIsVersionInstalled(installed);
-        setVersionStatus(null); // Versioned instances don't auto-update
+        // For historical versions, still get version status to check if duplication is possible
+        const status = await GetLatestVersionStatus(currentBranch);
+        setVersionStatus(status);
       } catch (e) {
         console.error('Failed to check if version installed:', e);
         setIsVersionInstalled(false);
@@ -506,6 +520,14 @@ const App: React.FC = () => {
         // Game is now installed, update state
         if (data.progress >= 100) {
           setIsVersionInstalled(true);
+          // Update version status for latest instance so DUPLICATE button appears
+          if (currentVersionRef.current === 0) {
+            GetLatestVersionStatus(currentBranchRef.current).then(status => {
+              setVersionStatus(status);
+            }).catch(err => {
+              console.error('Failed to get version status after download:', err);
+            });
+          }
         }
       } else {
         // Fallback to progress-based detection

@@ -414,31 +414,6 @@ export const ControlSection: React.FC<ControlSectionProps> = memo(({
                 <span>{t('PLAY')}</span>
               </button>
             </div>
-          ) : isVersionInstalled && versionStatus?.status === 'current' && currentVersion === 0 ? (
-            // Show DUPLICATE button when latest instance is already up to date
-            <div className="flex items-center gap-2">
-              <button
-                tabIndex={-1}
-                onClick={onDuplicate}
-                className="h-12 px-4 rounded-xl font-black text-base tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500 to-violet-600 text-white hover:shadow-lg hover:shadow-purple-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
-              >
-                <Copy size={16} />
-                <span>{t('DUPLICATE')}</span>
-              </button>
-              <button
-                tabIndex={-1}
-                onClick={onPlay}
-                className="h-12 px-6 rounded-xl font-black text-lg tracking-tight flex items-center justify-center gap-2 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
-                style={{ 
-                  background: `linear-gradient(to right, ${accentColor}, ${accentColor}cc)`,
-                  boxShadow: `0 10px 15px -3px ${accentColor}40`,
-                  color: accentTextColor
-                }}
-              >
-                <Play size={18} fill="currentColor" />
-                <span>{t('PLAY')}</span>
-              </button>
-            </div>
           ) : isVersionInstalled ? (
             <button
               tabIndex={-1}
@@ -452,6 +427,16 @@ export const ControlSection: React.FC<ControlSectionProps> = memo(({
             >
               <Play size={18} fill="currentColor" />
               <span>{t('PLAY')}</span>
+            </button>
+          ) : currentVersion > 0 && versionStatus?.installedVersion === currentVersion ? (
+            // Show DUPLICATE button for historical versions that can be duplicated from latest
+            <button
+              tabIndex={-1}
+              onClick={onDuplicate}
+              className="h-12 px-4 rounded-xl font-black text-base tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500 to-violet-600 text-white hover:shadow-lg hover:shadow-purple-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
+            >
+              <Copy size={16} />
+              <span>{t('DUPLICATE')}</span>
             </button>
           ) : (
             <button
