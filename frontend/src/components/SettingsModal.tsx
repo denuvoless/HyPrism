@@ -28,7 +28,10 @@ import {
     OpenInstanceFolder,
     GetAvatarPreview,
     SetGameLanguage,
-    ResetOnboarding
+    ResetOnboarding,
+    GetShowAlphaMods,
+    SetShowAlphaMods,
+    ImportInstanceFromZip
 } from '@/api/backend';
 import type { InstalledVersionInfo } from '@/api/backend';
 import { useAccentColor } from '../contexts/AccentColorContext';
@@ -72,7 +75,7 @@ interface SettingsModalProps {
     onInstanceDeleted?: () => void;
 }
 
-type SettingsTab = 'profile' | 'general' | 'visual' | 'language' | 'data' | 'instances' | 'about' | 'developer';
+type SettingsTab = 'general' | 'visual' | 'language' | 'data' | 'instances' | 'about' | 'developer';
 
 // Auth server base URL for avatar/skin head
 const DEFAULT_AUTH_DOMAIN = 'sessions.sanasol.ws';
@@ -89,7 +92,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onInstanceDeleted
 }) => {
     const { i18n, t } = useTranslation();
-    const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
+    const [activeTab, setActiveTab] = useState<SettingsTab>('general');
     const [isLanguageOpen, setIsLanguageOpen] = useState(false);
     const [isBranchOpen, setIsBranchOpen] = useState(false);
     const [showTranslationConfirm, setShowTranslationConfirm] = useState<{ langName: string; langCode: string; searchQuery: string } | null>(null);
@@ -101,6 +104,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [devModeEnabled, setDevModeEnabled] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [disableNews, setDisableNews] = useState(false);
+    const [showAlphaMods, setShowAlphaModsState] = useState(false);
     const [backgroundMode, setBackgroundModeState] = useState('slideshow');
     const [showAllBackgrounds, setShowAllBackgrounds] = useState(false);
     const [launcherDataDir, setLauncherDataDir] = useState('');
@@ -114,8 +118,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [installedInstances, setInstalledInstances] = useState<InstalledVersionInfo[]>([]);
     const [isLoadingInstances, setIsLoadingInstances] = useState(false);
     const [exportingInstance, setExportingInstance] = useState<string | null>(null);
+    const [exportMessage, setExportMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [instanceToDelete, setInstanceToDelete] = useState<InstalledVersionInfo | null>(null);
     const [instanceBranchFilter, setInstanceBranchFilter] = useState<'all' | 'release' | 'pre-release'>('all');
+    const [isImportingInstance, setIsImportingInstance] = useState(false);
+    const [isDraggingZip, setIsDraggingZip] = useState(false);
+    const [showImportModal, setShowImportModal] = useState<{ zipBase64: string; fileName: string } | null>(null);
+    const [importTargetBranch, setImportTargetBranch] = useState<'release' | 'pre-release'>('release');
+    const [importTargetVersion, setImportTargetVersion] = useState<number>(0);
 
     // Profile state
     const [profileUsername, setProfileUsername] = useState('');
@@ -142,6 +152,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 
                 const newsDisabled = await GetDisableNews();
                 setDisableNews(newsDisabled);
+                
+                const showAlpha = await GetShowAlphaMods();
+                setShowAlphaModsState(showAlpha);
                 
                 const bgMode = await GetBackgroundMode();
                 setBackgroundModeState(bgMode);
@@ -218,14 +231,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const handleExportInstance = async (instance: InstalledVersionInfo) => {
         const key = `${instance.Branch}-${instance.Version}`;
         setExportingInstance(key);
+        setExportMessage(null);
         try {
             const exportPath = await ExportInstance(instance.Branch, instance.Version);
             if (exportPath) {
-                // Could show a success toast here
-                console.log('Exported to:', exportPath);
+                setExportMessage({ type: 'success', text: `${t('Exported to Downloads folder')}: ${exportPath.split('/').pop()}` });
+                setTimeout(() => setExportMessage(null), 5000);
+            } else {
+                setExportMessage({ type: 'error', text: t('No UserData folder to export') });
+                setTimeout(() => setExportMessage(null), 5000);
             }
         } catch (err) {
             console.error('Failed to export instance:', err);
+            setExportMessage({ type: 'error', text: t('Failed to export instance') });
+            setTimeout(() => setExportMessage(null), 5000);
         }
         setExportingInstance(null);
     };
@@ -243,6 +262,46 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             console.error('Failed to delete instance:', err);
         }
         setInstanceToDelete(null);
+    };
+    
+    const handleInstanceZipDrop = async (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingZip(false);
+        
+        const file = e.dataTransfer.files[0];
+        if (!file || !file.name.toLowerCase().endsWith('.zip')) {
+            return;
+        }
+        
+        // Read file as base64
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const base64 = (event.target?.result as string)?.split(',')[1];
+            if (base64) {
+                setShowImportModal({ zipBase64: base64, fileName: file.name });
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+    
+    const handleImportInstance = async () => {
+        if (!showImportModal) return;
+        
+        setIsImportingInstance(true);
+        try {
+            const success = await ImportInstanceFromZip(importTargetBranch, importTargetVersion, showImportModal.zipBase64);
+            if (success) {
+                await loadInstances();
+                console.log('Successfully imported instance');
+            } else {
+                console.error('Failed to import instance');
+            }
+        } catch (err) {
+            console.error('Failed to import instance:', err);
+        }
+        setIsImportingInstance(false);
+        setShowImportModal(null);
     };
     
     const formatSize = (bytes: number): string => {
@@ -427,7 +486,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const currentLangConfig = LANGUAGE_CONFIG[i18n.language as Language] || LANGUAGE_CONFIG[Language.ENGLISH];
 
     const tabs = [
-        { id: 'profile' as const, icon: User, label: t('Profile') },
         { id: 'general' as const, icon: Settings, label: t('General') },
         { id: 'visual' as const, icon: Image, label: t('Visual') },
         { id: 'language' as const, icon: Languages, label: t('Language') },
@@ -504,7 +562,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     return (
         <>
             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-                <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl flex overflow-hidden max-w-3xl w-full mx-4 max-h-[80vh]">
+                <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl flex overflow-hidden mx-4" style={{ width: '800px', height: '600px' }}>
                     {/* Sidebar */}
                     <div className="w-48 bg-[#151515] border-r border-white/5 flex flex-col py-4">
                         <h2 className="text-lg font-bold text-white px-4 mb-4">{t('Settings')}</h2>
@@ -586,139 +644,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 )}
                                             </div>
                                         </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Profile Tab */}
-                            {activeTab === 'profile' && (
-                                <div className="space-y-6">
-                                    {/* Profile Picture and Username */}
-                                    <div className="flex flex-col items-center gap-4 py-4">
-                                        {/* Avatar - Local or Placeholder */}
-                                        <div 
-                                            className="w-24 h-24 rounded-full overflow-hidden border-2 flex items-center justify-center"
-                                            style={{ borderColor: accentColor, backgroundColor: localAvatar ? 'transparent' : `${accentColor}20` }}
-                                            title={t('Your player avatar')}
-                                        >
-                                            {localAvatar ? (
-                                                <img
-                                                    src={localAvatar}
-                                                    className="w-full h-full object-cover object-[center_15%]"
-                                                    alt="Player Avatar"
-                                                />
-                                            ) : (
-                                                <User size={40} style={{ color: accentColor }} />
-                                            )}
-                                        </div>
-                                        
-                                        {/* Username */}
-                                        <div className="flex items-center gap-2">
-                                            {editingUsername ? (
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="text"
-                                                        value={editUsernameValue}
-                                                        onChange={(e) => setEditUsernameValue(e.target.value)}
-                                                        onKeyDown={(e) => {
-                                                            if (e.key === 'Enter') handleSaveUsername();
-                                                            if (e.key === 'Escape') {
-                                                                setEditUsernameValue(profileUsername);
-                                                                setEditingUsername(false);
-                                                            }
-                                                        }}
-                                                        maxLength={16}
-                                                        autoFocus
-                                                        className="bg-[#151515] text-white text-xl font-bold px-3 py-1 rounded-lg border outline-none w-40 text-center"
-                                                        style={{ borderColor: accentColor }}
-                                                    />
-                                                    <button
-                                                        onClick={handleSaveUsername}
-                                                        className="p-2 rounded-lg hover:opacity-80"
-                                                        style={{ backgroundColor: `${accentColor}33`, color: accentColor }}
-                                                    >
-                                                        <Check size={16} />
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <span className="text-2xl font-bold text-white">{profileUsername}</span>
-                                                    <button
-                                                        onClick={() => {
-                                                            setEditUsernameValue(profileUsername);
-                                                            setEditingUsername(true);
-                                                        }}
-                                                        className="p-1.5 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/5"
-                                                        title={t('Edit Username')}
-                                                    >
-                                                        <Edit3 size={14} />
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* UUID Section */}
-                                    <div className="p-4 rounded-xl bg-[#151515] border border-white/10">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <label className="text-sm text-white/60">{t('Player UUID')}</label>
-                                            <div className="flex items-center gap-1">
-                                                <button
-                                                    onClick={handleCopyUuid}
-                                                    className="p-1.5 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10"
-                                                    title={t('Copy UUID')}
-                                                >
-                                                    {copiedUuid ? <CheckCircle size={14} className="text-green-400" /> : <Copy size={14} />}
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setEditUuidValue(profileUuid);
-                                                        setEditingUuid(true);
-                                                    }}
-                                                    className="p-1.5 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/10"
-                                                    title={t('Edit UUID')}
-                                                >
-                                                    <Edit3 size={14} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                        
-                                        {editingUuid ? (
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    type="text"
-                                                    value={editUuidValue}
-                                                    onChange={(e) => setEditUuidValue(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') handleSaveUuid();
-                                                        if (e.key === 'Escape') {
-                                                            setEditUuidValue(profileUuid);
-                                                            setEditingUuid(false);
-                                                        }
-                                                    }}
-                                                    autoFocus
-                                                    className="flex-1 bg-[#0a0a0a] text-white font-mono text-sm px-3 py-2 rounded-lg border outline-none"
-                                                    style={{ borderColor: accentColor }}
-                                                />
-                                                <button
-                                                    onClick={handleRandomizeUuid}
-                                                    className="p-2 rounded-lg bg-white/10 text-white/70 hover:bg-white/20"
-                                                    title={t('Generate Random UUID')}
-                                                >
-                                                    <Shuffle size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={handleSaveUuid}
-                                                    className="p-2 rounded-lg hover:opacity-80"
-                                                    style={{ backgroundColor: `${accentColor}33`, color: accentColor }}
-                                                    title={t('Save UUID')}
-                                                >
-                                                    <Check size={16} />
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <p className="text-white font-mono text-sm truncate">{profileUuid || 'No UUID set'}</p>
-                                        )}
                                     </div>
                                 </div>
                             )}
@@ -965,6 +890,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             />
                                         </div>
                                     </div>
+
+                                    {/* Show Alpha Mods Toggle */}
+                                    <div 
+                                        className="flex items-center justify-between p-3 rounded-xl bg-[#151515] border border-white/10 cursor-pointer hover:border-white/20 transition-colors"
+                                        onClick={async () => {
+                                            const newValue = !showAlphaMods;
+                                            setShowAlphaModsState(newValue);
+                                            await SetShowAlphaMods(newValue);
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <FlaskConical size={18} className="text-white/60" />
+                                            <div>
+                                                <span className="text-white text-sm">{t('Show Alpha Mods')}</span>
+                                                <p className="text-xs text-white/40">{t('Show mods with alpha release type in the mod manager')}</p>
+                                            </div>
+                                        </div>
+                                        <div 
+                                            className="w-10 h-6 rounded-full flex items-center transition-colors"
+                                            style={{ backgroundColor: showAlphaMods ? accentColor : 'rgba(255,255,255,0.2)' }}
+                                        >
+                                            <div 
+                                                className={`w-4 h-4 rounded-full shadow-md transform transition-transform ${showAlphaMods ? 'translate-x-5' : 'translate-x-1'}`}
+                                                style={{ backgroundColor: showAlphaMods ? accentTextColor : 'white' }}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
@@ -1098,7 +1050,43 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             
                             {/* Instances Tab */}
                             {activeTab === 'instances' && (
-                                <div className="space-y-6">
+                                <div 
+                                    className="space-y-6 relative"
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (e.dataTransfer.types.includes('Files')) {
+                                            setIsDraggingZip(true);
+                                        }
+                                    }}
+                                    onDragLeave={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setIsDraggingZip(false);
+                                    }}
+                                    onDrop={handleInstanceZipDrop}
+                                >
+                                    {/* Drag overlay */}
+                                    {isDraggingZip && (
+                                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 rounded-xl border-2 border-dashed border-white/40">
+                                            <div className="text-center">
+                                                <Download size={32} className="mx-auto mb-2 text-white/60" />
+                                                <p className="text-white/80">{t('Drop ZIP to import instance')}</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Export message */}
+                                    {exportMessage && (
+                                        <div className={`p-3 rounded-xl text-sm flex items-center gap-2 ${
+                                            exportMessage.type === 'success' 
+                                                ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                                                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                        }`}>
+                                            {exportMessage.type === 'success' ? '✓' : '✕'} {exportMessage.text}
+                                        </div>
+                                    )}
+                                    
                                     <div>
                                         <div className="flex items-center justify-between mb-3">
                                             <label className="text-sm text-white/60">{t('Installed Instances')}</label>
@@ -1158,10 +1146,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         ) : (() => {
                                             const filteredInstances = installedInstances.filter((instance) => {
                                                 if (instanceBranchFilter === 'all') return true;
-                                                const pathLower = (instance.Path || '').toLowerCase();
-                                                const isReleaseFromPath = pathLower.includes('/release/') || pathLower.includes('\\release\\') || pathLower.includes('/release-') || pathLower.includes('\\release-');
-                                                const isPreReleaseFromPath = pathLower.includes('/pre-release/') || pathLower.includes('\\pre-release\\') || pathLower.includes('/pre-release-') || pathLower.includes('\\pre-release-');
-                                                const isRelease = isPreReleaseFromPath ? false : (isReleaseFromPath ? true : (instance.Branch?.toLowerCase() === 'release'));
+                                                // Use Branch property directly from backend
+                                                const isRelease = instance.Branch?.toLowerCase() === 'release';
                                                 return instanceBranchFilter === 'release' ? isRelease : !isRelease;
                                             });
                                             
@@ -1178,35 +1164,54 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     {filteredInstances.map((instance) => {
                                                         const key = `${instance.Branch}-${instance.Version}`;
                                                         const versionLabel = instance.Version === 0 || instance.Version === undefined ? t('latest') : `v${instance.Version}`;
-                                                        // Determine branch from Path - check if path contains 'pre-release' or 'release'
-                                                        const pathLower = (instance.Path || '').toLowerCase();
-                                                        const isReleaseFromPath = pathLower.includes('/release/') || pathLower.includes('\\release\\') || pathLower.includes('/release-') || pathLower.includes('\\release-');
-                                                        const isPreReleaseFromPath = pathLower.includes('/pre-release/') || pathLower.includes('\\pre-release\\') || pathLower.includes('/pre-release-') || pathLower.includes('\\pre-release-');
-                                                        // Use path-based detection, fallback to Branch property
-                                                        const isRelease = isPreReleaseFromPath ? false : (isReleaseFromPath ? true : (instance.Branch?.toLowerCase() === 'release'));
+                                                        // Use Branch property directly from backend
+                                                        const isRelease = instance.Branch?.toLowerCase() === 'release';
                                                         const branchLabel = isRelease ? t('Release') : t('Pre-Release');
                                                         const isExporting = exportingInstance === key;
                                                         
-                                                        // Different icon based on branch type
-                                                        const BranchIcon = isRelease ? Box : FlaskConical;
+                                                        // Format creation date
+                                                        const createdAt = instance.CreatedAt ? new Date(instance.CreatedAt) : null;
+                                                        const createdLabel = createdAt 
+                                                            ? createdAt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+                                                            : null;
                                                         
                                                         return (
-                                                            <div key={key} className="p-3 rounded-xl bg-[#151515] border border-white/10 flex items-center gap-3">
-                                                                <BranchIcon size={18} className={isRelease ? "text-green-400/60 flex-shrink-0" : "text-yellow-400/60 flex-shrink-0"} />
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="text-white text-sm font-medium">
-                                                                        {branchLabel} {versionLabel}
-                                                                    </div>
-                                                                    {instance.HasUserData && (
-                                                                        <div className="text-white/40 text-xs">
-                                                                            {t('UserData')}: {formatSize(instance.UserDataSize)}
-                                                                        </div>
+                                                            <div key={key} className="p-3 rounded-xl bg-[#151515] border border-white/10 flex items-center gap-3 hover:border-white/20 transition-colors">
+                                                                {/* Branch icon */}
+                                                                <div 
+                                                                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                                                                    style={{ backgroundColor: isRelease ? 'rgba(34, 197, 94, 0.15)' : 'rgba(234, 179, 8, 0.15)' }}
+                                                                >
+                                                                    {isRelease ? (
+                                                                        <Box size={20} className="text-green-400" />
+                                                                    ) : (
+                                                                        <FlaskConical size={20} className="text-yellow-400" />
                                                                     )}
+                                                                </div>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="text-white text-sm font-medium flex items-center gap-2">
+                                                                        {branchLabel} {versionLabel}
+                                                                        {/* Checkmark if has UserData */}
+                                                                        {instance.HasUserData && (
+                                                                            <CheckCircle size={14} className="text-green-400" />
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-3 text-white/40 text-xs mt-0.5 flex-wrap">
+                                                                        {createdLabel && (
+                                                                            <span>📅 {createdLabel}</span>
+                                                                        )}
+                                                                        {instance.PlayTimeSeconds > 0 && (
+                                                                            <span>⏱ {instance.PlayTimeFormatted}</span>
+                                                                        )}
+                                                                        {instance.HasUserData && (
+                                                                            <span>💾 {formatSize(instance.UserDataSize)}</span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-1">
                                                                     <button
                                                                         onClick={() => OpenInstanceFolder(instance.Branch, instance.Version ?? 0)}
-                                                                        className="p-2 rounded-lg hover:bg-white/10 text-white/40 hover:text-white"
+                                                                        className="p-2 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-colors"
                                                                         title={t('Open Folder')}
                                                                     >
                                                                         <FolderOpen size={16} />
@@ -1214,8 +1219,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                     <button
                                                                         onClick={() => handleExportInstance(instance)}
                                                                         disabled={isExporting || !instance.HasUserData}
-                                                                        className={`p-2 rounded-lg hover:bg-white/10 ${instance.HasUserData ? 'text-white/40 hover:text-white' : 'text-white/20 cursor-not-allowed'}`}
-                                                                        title={t('Export as ZIP')}
+                                                                        className={`p-2 rounded-lg transition-colors ${!instance.HasUserData ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/10 text-white/40 hover:text-white'}`}
+                                                                        title={instance.HasUserData ? t('Export as ZIP') : t('No UserData to export')}
                                                                     >
                                                                         {isExporting ? (
                                                                             <Loader2 size={16} className="animate-spin" />
@@ -1225,7 +1230,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                     </button>
                                                                     <button
                                                                         onClick={() => setInstanceToDelete(instance)}
-                                                                        className="p-2 rounded-lg hover:bg-red-500/10 text-white/40 hover:text-red-400"
+                                                                        className="p-2 rounded-lg hover:bg-red-500/10 text-white/40 hover:text-red-400 transition-colors"
                                                                         title={t('Delete Instance')}
                                                                     >
                                                                         <Trash2 size={16} />
@@ -1504,6 +1509,98 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 className="flex-1 h-10 rounded-xl bg-red-500 text-white font-medium hover:bg-red-600 transition-colors"
                             >
                                 {t('Delete')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Import Instance Modal */}
+            {showImportModal && (
+                <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div className="bg-[#1a1a1a] border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ backgroundColor: `${accentColor}20` }}>
+                                <Download size={20} style={{ color: accentColor }} />
+                            </div>
+                            <h3 className="text-lg font-bold text-white">{t('Import Instance')}</h3>
+                        </div>
+                        <p className="text-white/70 text-sm mb-2">
+                            {t('Importing')}: <span className="text-white">{showImportModal.fileName}</span>
+                        </p>
+                        <p className="text-white/50 text-xs mb-4">
+                            {t('Select which instance to import the UserData into:')}
+                        </p>
+                        
+                        <div className="space-y-3 mb-6">
+                            <div>
+                                <label className="text-xs text-white/60 mb-1 block">{t('Branch')}</label>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setImportTargetBranch('release')}
+                                        className={`flex-1 px-3 py-2 text-sm rounded-lg transition-all flex items-center justify-center gap-2 ${
+                                            importTargetBranch === 'release' 
+                                                ? 'bg-white/20 text-white' 
+                                                : 'bg-white/5 text-white/50 hover:text-white/70'
+                                        }`}
+                                    >
+                                        <Box size={14} />
+                                        {t('Release')}
+                                    </button>
+                                    <button
+                                        onClick={() => setImportTargetBranch('pre-release')}
+                                        className={`flex-1 px-3 py-2 text-sm rounded-lg transition-all flex items-center justify-center gap-2 ${
+                                            importTargetBranch === 'pre-release' 
+                                                ? 'bg-white/20 text-white' 
+                                                : 'bg-white/5 text-white/50 hover:text-white/70'
+                                        }`}
+                                    >
+                                        <FlaskConical size={14} />
+                                        {t('Pre-Release')}
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="text-xs text-white/60 mb-1 block">{t('Version')}</label>
+                                <select
+                                    value={importTargetVersion}
+                                    onChange={(e) => setImportTargetVersion(parseInt(e.target.value))}
+                                    className="w-full h-10 px-3 rounded-lg bg-[#151515] border border-white/10 text-white text-sm focus:outline-none"
+                                >
+                                    <option value={0}>{t('Latest')}</option>
+                                    {installedInstances
+                                        .filter(i => i.Branch === importTargetBranch && i.Version !== 0)
+                                        .map(i => (
+                                            <option key={i.Version} value={i.Version}>v{i.Version}</option>
+                                        ))
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowImportModal(null)}
+                                disabled={isImportingInstance}
+                                className="flex-1 h-10 rounded-xl bg-white/5 text-white/70 hover:bg-white/10 transition-colors"
+                            >
+                                {t('Cancel')}
+                            </button>
+                            <button
+                                onClick={handleImportInstance}
+                                disabled={isImportingInstance}
+                                className="flex-1 h-10 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+                                style={{ backgroundColor: accentColor, color: accentTextColor }}
+                            >
+                                {isImportingInstance ? (
+                                    <>
+                                        <Loader2 size={16} className="animate-spin" />
+                                        {t('Importing...')}
+                                    </>
+                                ) : (
+                                    t('Import')
+                                )}
                             </button>
                         </div>
                     </div>

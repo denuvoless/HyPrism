@@ -25,7 +25,6 @@ export const formatNumber = (num: number): string => {
 };
 
 /**
- * Format duration in seconds to human-readable string
  * @param seconds - Duration in seconds
  * @returns Formatted string like "2h 30m" or "45s"
  */

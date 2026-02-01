@@ -32,6 +32,12 @@ export interface InstalledVersionInfo {
     UserDataSize: number;
     /** Whether UserData exists */
     HasUserData: boolean;
+    /** When the instance was created */
+    CreatedAt?: string;
+    /** Total playtime in seconds */
+    PlayTimeSeconds: number;
+    /** Formatted playtime string (HH:MM:SS or Dd HH:MM:SS) */
+    PlayTimeFormatted: string;
 }
 
 /**
@@ -303,10 +309,32 @@ export const BrowseModFiles = () => callBackend<string[]>('BrowseModFiles');
 export const CheckLatestNeedsUpdate = (branch: string) => callBackend<boolean>('CheckLatestNeedsUpdate', branch);
 
 /**
+ * Version status response
+ */
+export interface VersionStatus {
+    /** Status: "not_installed", "update_available", "current", "none", "error" */
+    Status: 'not_installed' | 'update_available' | 'current' | 'none' | 'error';
+    InstalledVersion: number;
+    LatestVersion: number;
+}
+
+/**
+ * Gets the version status for the latest instance
+ * @param branch - The game branch
+ */
+export const GetLatestVersionStatus = (branch: string) => callBackend<VersionStatus>('GetLatestVersionStatus', branch);
+
+/**
  * Forces the latest instance to update by resetting its version info
  * @param branch - The game branch
  */
 export const ForceUpdateLatest = (branch: string) => callBackend<boolean>('ForceUpdateLatest', branch);
+
+/**
+ * Duplicates the current latest instance as a versioned instance
+ * @param branch - The game branch
+ */
+export const DuplicateLatest = (branch: string) => callBackend<boolean>('DuplicateLatest', branch);
 
 /**
  * Checks for launcher application updates
@@ -451,6 +479,14 @@ export const GetAssetsZipPath = (branch: string, version: number) => callBackend
  * @param version - The game version
  */
 export const ExportInstance = (branch: string, version: number) => callBackend<string | null>('ExportInstance', branch, version);
+
+/**
+ * Imports an instance from a ZIP file (base64 encoded)
+ * @param branch - The game branch
+ * @param version - The game version
+ * @param zipBase64 - Base64 encoded ZIP file
+ */
+export const ImportInstanceFromZip = (branch: string, version: number, zipBase64: string) => callBackend<boolean>('ImportInstanceFromZip', branch, version, zipBase64);
 
 /**
  * Copies UserData from one version to another
@@ -703,6 +739,12 @@ export const GetActiveProfileIndex = () => callBackend<number>('GetActiveProfile
 export const CreateProfile = (name: string, uuid: string) => callBackend<Profile | null>('CreateProfile', name, uuid);
 
 /**
+ * Duplicates an existing profile (copies UserData folder too)
+ * @param profileId - Profile ID to duplicate
+ */
+export const DuplicateProfile = (profileId: string) => callBackend<Profile | null>('DuplicateProfile', profileId);
+
+/**
  * Deletes a profile
  * @param profileId - Profile ID
  */
@@ -881,6 +923,17 @@ export const GetShowDiscordAnnouncements = () => callBackend<boolean>('GetShowDi
  * @param enabled - Enable/Disable
  */
 export const SetShowDiscordAnnouncements = (enabled: boolean) => callBackend<boolean>('SetShowDiscordAnnouncements', enabled);
+
+/**
+ * Checks if alpha/experimental mods should be shown in mod browser
+ */
+export const GetShowAlphaMods = () => callBackend<boolean>('GetShowAlphaMods');
+
+/**
+ * Sets alpha mods visibility
+ * @param enabled - Enable/Disable
+ */
+export const SetShowAlphaMods = (enabled: boolean) => callBackend<boolean>('SetShowAlphaMods', enabled);
 
 /**
  * Marks an announcement as dismissed

@@ -13,7 +13,8 @@ import {
   UninstallInstanceMod,
   OpenInstanceModsFolder, CheckInstanceModUpdates,
   InstallLocalModFile, ExportModsToFolder, GetLastExportPath, ImportModList, BrowseFolder, BrowseModFiles,
-  InstallModFromBase64
+  InstallModFromBase64,
+  GetShowAlphaMods
 } from '@/api/backend';
 import { GameBranch } from '@/constants/enums';
 import { useAccentColor } from '../contexts/AccentColorContext';
@@ -218,6 +219,9 @@ export const ModManager: React.FC<ModManagerProps> = ({
   // Multi-select tracking
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
 
+  // Alpha mods setting
+  const [showAlphaMods, setShowAlphaMods] = useState(false);
+
   // Refs
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -316,7 +320,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab, filteredInstalledMods]);
 
-  // Load categories
+  // Load categories and alpha mods setting on mount and whenever component opens
   useEffect(() => {
     const loadCategories = async () => {
       try {
@@ -327,6 +331,25 @@ export const ModManager: React.FC<ModManagerProps> = ({
       }
     };
     loadCategories();
+  }, []);
+  
+  // Load alpha mods setting - reload every time component is visible
+  // This ensures changes from Settings are reflected immediately
+  useEffect(() => {
+    const loadAlphaModsSetting = async () => {
+      try {
+        const showAlpha = await GetShowAlphaMods();
+        setShowAlphaMods(showAlpha);
+        console.log('[ModManager] Alpha mods setting:', showAlpha);
+      } catch (err) {
+        console.error('Failed to load alpha mods setting:', err);
+      }
+    };
+    loadAlphaModsSetting();
+    
+    // Also poll for changes while the modal is open (in case user changes settings)
+    const interval = setInterval(loadAlphaModsSetting, 2000);
+    return () => clearInterval(interval);
   }, []);
 
   // Close category dropdown on click outside
@@ -420,6 +443,13 @@ export const ModManager: React.FC<ModManagerProps> = ({
     }
   }, [activeTab]);
 
+  // Clear cache when showAlphaMods setting changes
+  useEffect(() => {
+    // Clear cache so files are re-fetched with new filter
+    setModFilesCache(new Map());
+    setSelectedVersions(new Map());
+  }, [showAlphaMods]);
+
   // Load mod files
   const loadModFiles = async (modId: number | string): Promise<ModFile[]> => {
     const cacheKey = normalizeModKey(modId);
@@ -433,7 +463,13 @@ export const ModManager: React.FC<ModManagerProps> = ({
     try {
       const result: any = await GetModFiles(String(modId), 0, 50);
       // Handle both array response and object with Files property
-      const files = Array.isArray(result) ? result : (result?.Files ?? result?.files ?? []);
+      let files = Array.isArray(result) ? result : (result?.Files ?? result?.files ?? []);
+      
+      // Filter out alpha mods (releaseType === 3) unless showAlphaMods is enabled
+      if (!showAlphaMods) {
+        files = files.filter((f: ModFile) => f.releaseType !== 3);
+      }
+      
       files.sort((a: ModFile, b: ModFile) => new Date(b.fileDate).getTime() - new Date(a.fileDate).getTime());
       setModFilesCache((prev) => new Map(prev).set(cacheKey, files));
       if (files.length > 0 && !selectedVersions.has(cacheKey)) {
@@ -1181,7 +1217,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
               className={`p-2 rounded-xl hover:bg-white/10 ${isImporting ? 'text-white/20 cursor-not-allowed' : 'text-white/60 hover:text-white'}`}
               title={t('Add Mods')}
             >
-              <Upload size={20} />
+              <Share size={20} />
             </button>
             <button
               onClick={handleOpenExportModal}
@@ -1189,7 +1225,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
               className={`p-2 rounded-xl hover:bg-white/10 ${installedMods.length > 0 ? 'text-white/60 hover:text-white' : 'text-white/20 cursor-not-allowed'}`}
               title={t('Export Mods')}
             >
-              <Share size={20} />
+              <Upload size={20} />
             </button>
             <button
               onClick={handleOpenFolder}

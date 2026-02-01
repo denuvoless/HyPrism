@@ -458,11 +458,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                     )}
                 </div>
                 
-                {/* Skip splash button */}
+                {/* Skip splash button - styled like main menu skip button */}
                 {!splashAnimationComplete && (
                     <button
                         onClick={handleSkipSplash}
-                        className="absolute bottom-8 right-8 z-10 flex items-center gap-2 px-4 py-2 text-white/40 hover:text-white/70 transition-colors"
+                        className="absolute bottom-8 right-8 z-10 flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm bg-white/10 text-white/60 hover:bg-white/20 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 backdrop-blur-sm"
                     >
                         <SkipForward size={16} />
                         {t('Skip')}
@@ -903,17 +903,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                 
                 {/* Footer */}
                 <div className="p-6 border-t border-white/10 bg-[#0a0a0a]/80">
-                    <div className="flex justify-between items-center">
-                        {/* Skip button */}
-                        <button
-                            onClick={handleSkip}
-                            disabled={isLoading}
-                            className="flex items-center gap-2 px-4 py-2 text-white/40 hover:text-white/70 transition-colors disabled:opacity-50"
-                        >
-                            <SkipForward size={16} />
-                            {t('Skip')}
-                        </button>
-                        
+                    <div className="flex justify-end items-center">
                         <div className="flex items-center gap-3">
                             {/* Back button */}
                             {currentStepIndex > 0 && (

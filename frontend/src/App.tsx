@@ -21,6 +21,7 @@ const NewsPreview = lazy(() => import('./components/NewsPreview').then(m => ({ d
 const ProfileEditor = lazy(() => import('./components/ProfileEditor').then(m => ({ default: m.ProfileEditor })));
 const OnboardingModal = lazy(() => import('./components/OnboardingModal').then(m => ({ default: m.OnboardingModal })));
 
+import type { VersionStatus } from './api/backend';
 import {
   DownloadAndLaunch,
   OpenInstanceFolder,
@@ -40,8 +41,9 @@ import {
   GetVersionList,
   IsVersionInstalled,
   GetInstalledVersionsForBranch,
-  CheckLatestNeedsUpdate,
+  GetLatestVersionStatus,
   ForceUpdateLatest,
+  DuplicateLatest,
   GetPendingUpdateInfo,
   CopyUserData,
   // Settings
@@ -167,7 +169,8 @@ const App: React.FC = () => {
   const [isVersionInstalled, setIsVersionInstalled] = useState<boolean>(false);
   const [isCheckingInstalled, setIsCheckingInstalled] = useState<boolean>(false);
   const [customInstanceDir, setCustomInstanceDir] = useState<string>("");
-  const [latestNeedsUpdate, setLatestNeedsUpdate] = useState<boolean>(false);
+  const [versionStatus, setVersionStatus] = useState<VersionStatus | null>(null);
+  const [updateSkipped, setUpdateSkipped] = useState<boolean>(false);
 
   // Background, news, and accent color settings
   const [backgroundMode, setBackgroundMode] = useState<string>('slideshow');
@@ -196,13 +199,15 @@ const App: React.FC = () => {
         try {
           const installed = await IsVersionInstalled(currentBranch, 0);
           setIsVersionInstalled(installed);
-          // Check if latest needs update
-          const needsUpdate = await CheckLatestNeedsUpdate(currentBranch);
-          setLatestNeedsUpdate(needsUpdate);
+          // Get version status (not_installed, update_available, or current)
+          const status = await GetLatestVersionStatus(currentBranch);
+          setVersionStatus(status);
+          // Reset skip state when branch changes
+          setUpdateSkipped(false);
         } catch (e) {
           console.error('Failed to check latest instance:', e);
           setIsVersionInstalled(false);
-          setLatestNeedsUpdate(false);
+          setVersionStatus(null);
         }
         setIsCheckingInstalled(false);
         return;
@@ -210,18 +215,18 @@ const App: React.FC = () => {
       if (currentVersion < 0) {
         // Uninitialized or invalid version
         setIsVersionInstalled(false);
-        setLatestNeedsUpdate(false);
+        setVersionStatus(null);
         return;
       }
       setIsCheckingInstalled(true);
       try {
         const installed = await IsVersionInstalled(currentBranch, currentVersion);
         setIsVersionInstalled(installed);
-        setLatestNeedsUpdate(false); // Versioned instances don't auto-update
+        setVersionStatus(null); // Versioned instances don't auto-update
       } catch (e) {
         console.error('Failed to check if version installed:', e);
         setIsVersionInstalled(false);
-        setLatestNeedsUpdate(false);
+        setVersionStatus(null);
       }
       setIsCheckingInstalled(false);
     };
@@ -640,13 +645,35 @@ const App: React.FC = () => {
     // Force the update by resetting the version info in latest.json
     try {
       await ForceUpdateLatest(currentBranch);
-      // After forcing, set latestNeedsUpdate to false since we're about to update
-      setLatestNeedsUpdate(false);
+      // After forcing, set versionStatus to null since we're about to update
+      setVersionStatus(null);
     } catch (err) {
       console.error('Failed to force update:', err);
     }
     // Now launch which will trigger the differential update
     doLaunch();
+  };
+
+  const handleGameDuplicate = async () => {
+    try {
+      const result = await DuplicateLatest(currentBranch);
+      if (result) {
+        // Refresh the installed versions list
+        const installed = await GetInstalledVersionsForBranch(currentBranch);
+        const latestInstalled = await IsVersionInstalled(currentBranch, 0);
+        const installedWithLatest = [...(installed || [])];
+        if (latestInstalled && !installedWithLatest.includes(0)) {
+          installedWithLatest.unshift(0);
+        }
+        setInstalledVersions(installedWithLatest);
+      }
+    } catch (err) {
+      console.error('Failed to duplicate latest:', err);
+    }
+  };
+
+  const handleSkipUpdate = () => {
+    setUpdateSkipped(true);
   };
 
   const handleUpdateConfirmWithCopy = async () => {
@@ -760,10 +787,11 @@ const App: React.FC = () => {
         const isInstalled = await IsVersionInstalled(currentBranch, currentVersion);
         setIsVersionInstalled(isInstalled);
 
-        // Check if latest needs update
+        // Check version status for latest
         if (currentVersion === 0) {
-          const needsUpdate = await CheckLatestNeedsUpdate(currentBranch);
-          setLatestNeedsUpdate(needsUpdate);
+          const status = await GetLatestVersionStatus(currentBranch);
+          setVersionStatus(status);
+          setUpdateSkipped(false);
         }
       } catch (e) {
         console.error('Failed to reload versions after directory change:', e);
@@ -893,6 +921,8 @@ const App: React.FC = () => {
           onPlay={handlePlay}
           onDownload={handlePlay}
           onUpdate={handleGameUpdate}
+          onDuplicate={handleGameDuplicate}
+          onSkip={handleSkipUpdate}
           onExit={handleExit}
           onCancelDownload={handleCancelDownload}
           isDownloading={isDownloading}
@@ -909,7 +939,7 @@ const App: React.FC = () => {
           availableVersions={availableVersions}
           installedVersions={installedVersions}
           isLoadingVersions={isLoadingVersions}
-          latestNeedsUpdate={latestNeedsUpdate}
+          versionStatus={versionStatus}
           onBranchChange={handleBranchChange}
           onVersionChange={handleVersionChange}
           onCustomDirChange={handleCustomDirChange}
@@ -1003,10 +1033,10 @@ const App: React.FC = () => {
               // Also refresh if current version was the one deleted
               const stillInstalled = await IsVersionInstalled(currentBranch, currentVersion);
               setIsVersionInstalled(stillInstalled);
-              // Refresh latest needs update check
+              // Refresh version status check
               if (currentVersion === 0) {
-                const needsUpdate = await CheckLatestNeedsUpdate(currentBranch);
-                setLatestNeedsUpdate(needsUpdate);
+                const status = await GetLatestVersionStatus(currentBranch);
+                setVersionStatus(status);
               }
             }}
           />

@@ -73,7 +73,7 @@ class Program
             .SetSize(1280, 800)
             .SetMinSize(1024, 700)
             .Center()
-            .SetDevToolsEnabled(true)
+            .SetDevToolsEnabled(false)
             .SetUseOsDefaultSize(false)
             .SetGrantBrowserPermissions(true)
             .RegisterWebMessageReceivedHandler((sender, message) =>
@@ -226,10 +226,12 @@ class Program
                         "GetProfiles" => app.GetProfiles(),
                         "GetActiveProfileIndex" => app.GetActiveProfileIndex(),
                         "CreateProfile" => app.CreateProfile(GetArg<string>(request.Args, 0), GetArg<string>(request.Args, 1)),
+                        "DuplicateProfile" => app.DuplicateProfile(GetArg<string>(request.Args, 0)),
                         "DeleteProfile" => app.DeleteProfile(GetArg<string>(request.Args, 0)),
                         "SwitchProfile" => app.SwitchProfile(GetArg<int>(request.Args, 0)),
                         "UpdateProfile" => app.UpdateProfile(GetArg<string>(request.Args, 0), GetArg<string>(request.Args, 1), GetArg<string>(request.Args, 2)),
                         "SaveCurrentAsProfile" => app.SaveCurrentAsProfile(),
+                        "OpenCurrentProfileFolder" => app.OpenCurrentProfileFolder(),
                         
                         "GetCustomInstanceDir" => app.GetCustomInstanceDir(),
                         "SetInstanceDirectory" => await app.SetInstanceDirectoryAsync(GetArg<string>(request.Args, 0)),
@@ -242,8 +244,11 @@ class Program
                         "IsVersionInstalled" => app.IsVersionInstalled(GetArg<string>(request.Args, 0), GetArg<int>(request.Args, 1)),
                         "GetInstalledVersionsForBranch" => app.GetInstalledVersionsForBranch(GetArg<string>(request.Args, 0)),
                         "CheckLatestNeedsUpdate" => await app.CheckLatestNeedsUpdateAsync(GetArg<string>(request.Args, 0)),
+                        "GetLatestVersionStatus" => await app.GetLatestVersionStatusAsync(GetArg<string>(request.Args, 0)),
                         "GetPendingUpdateInfo" => await app.GetPendingUpdateInfoAsync(GetArg<string>(request.Args, 0)),
                         "CopyUserData" => await app.CopyUserDataAsync(GetArg<string>(request.Args, 0), GetArg<int>(request.Args, 1), GetArg<int>(request.Args, 2)),
+                        "ForceUpdateLatest" => await app.ForceUpdateLatestAsync(GetArg<string>(request.Args, 0)),
+                        "DuplicateLatest" => await app.DuplicateLatestAsync(GetArg<string>(request.Args, 0)),
                         
                         // Assets
                         "HasAssetsZip" => app.HasAssetsZip(GetArg<string>(request.Args, 0), GetArg<int>(request.Args, 1)),

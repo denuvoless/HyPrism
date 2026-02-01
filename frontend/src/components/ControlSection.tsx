@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Play, Package, Square, Settings, Loader2, Download, ChevronDown, Check, X, GitBranch, RefreshCw } from 'lucide-react';
+import { FolderOpen, Play, Package, Square, Settings, Loader2, Download, ChevronDown, Check, X, GitBranch, RefreshCw, Copy, SkipForward } from 'lucide-react';
 import { CoffeeIcon } from './CoffeeIcon';
 import { OnlineToggle } from './OnlineToggle';
 import { BrowserOpenURL } from '@/api/bridge';
@@ -29,10 +29,15 @@ const NavBtn = memo(({ onClick, icon, tooltip, accentColor }: { onClick?: () => 
 
 NavBtn.displayName = 'NavBtn';
 
+// Import VersionStatus from backend
+import type { VersionStatus } from '@/api/backend';
+
 interface ControlSectionProps {
   onPlay: () => void;
   onDownload?: () => void;
   onUpdate?: () => void;
+  onDuplicate?: () => void;
+  onSkip?: () => void;
   onExit?: () => void;
   onCancelDownload?: () => void;
   isDownloading: boolean;
@@ -40,7 +45,7 @@ interface ControlSectionProps {
   canCancel?: boolean;
   isGameRunning: boolean;
   isVersionInstalled: boolean;
-  latestNeedsUpdate?: boolean;
+  versionStatus?: VersionStatus | null;
   progress: number;
   downloaded: number;
   total: number;
@@ -65,6 +70,8 @@ export const ControlSection: React.FC<ControlSectionProps> = memo(({
   onPlay,
   onDownload,
   onUpdate,
+  onDuplicate,
+  onSkip,
   onExit,
   onCancelDownload,
   isDownloading,
@@ -72,7 +79,7 @@ export const ControlSection: React.FC<ControlSectionProps> = memo(({
   canCancel = true,
   isGameRunning,
   isVersionInstalled,
-  latestNeedsUpdate = false,
+  versionStatus = null,
   progress,
   downloaded,
   total,
@@ -376,9 +383,17 @@ export const ControlSection: React.FC<ControlSectionProps> = memo(({
               <Loader2 size={16} className="animate-spin" />
               <span>{t('CHECKING...')}</span>
             </button>
-          ) : isVersionInstalled && latestNeedsUpdate && currentVersion === 0 ? (
+          ) : isVersionInstalled && versionStatus?.Status === 'update_available' && currentVersion === 0 ? (
             // Show UPDATE button when latest instance needs an update
             <div className="flex items-center gap-2">
+              <button
+                tabIndex={-1}
+                onClick={onSkip}
+                className="h-12 px-4 rounded-xl font-black text-base tracking-tight flex items-center justify-center gap-2 bg-white/10 text-white/60 hover:bg-white/20 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
+              >
+                <SkipForward size={16} />
+                <span>{t('SKIP')}</span>
+              </button>
               <button
                 tabIndex={-1}
                 onClick={onUpdate || onDownload}
@@ -398,6 +413,31 @@ export const ControlSection: React.FC<ControlSectionProps> = memo(({
                 }}
               >
                 <Play size={16} fill="currentColor" />
+                <span>{t('PLAY')}</span>
+              </button>
+            </div>
+          ) : isVersionInstalled && versionStatus?.Status === 'current' && currentVersion === 0 ? (
+            // Show DUPLICATE button when latest instance is already up to date
+            <div className="flex items-center gap-2">
+              <button
+                tabIndex={-1}
+                onClick={onDuplicate}
+                className="h-12 px-4 rounded-xl font-black text-base tracking-tight flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500 to-violet-600 text-white hover:shadow-lg hover:shadow-purple-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
+              >
+                <Copy size={16} />
+                <span>{t('DUPLICATE')}</span>
+              </button>
+              <button
+                tabIndex={-1}
+                onClick={onPlay}
+                className="h-12 px-6 rounded-xl font-black text-lg tracking-tight flex items-center justify-center gap-2 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 cursor-pointer"
+                style={{ 
+                  background: `linear-gradient(to right, ${accentColor}, ${accentColor}cc)`,
+                  boxShadow: `0 10px 15px -3px ${accentColor}40`,
+                  color: accentTextColor
+                }}
+              >
+                <Play size={18} fill="currentColor" />
                 <span>{t('PLAY')}</span>
               </button>
             </div>

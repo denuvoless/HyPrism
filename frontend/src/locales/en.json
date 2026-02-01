@@ -18,6 +18,8 @@
     "EXIT": "EXIT",
     "CHECKING...": "CHECKING...",
     "UPDATE": "UPDATE",
+    "DUPLICATE": "DUPLICATE",
+    "SKIP": "SKIP",
     "PLAY": "PLAY",
     "DOWNLOAD": "DOWNLOAD",
     "CANCEL": "CANCEL",
@@ -204,5 +206,8 @@
     "Show Intro on Next Launch": "Show Intro on Next Launch",
     "Intro will show on next launch. Please restart the launcher.": "Intro will show on next launch. Please restart the launcher.",
     "Onboarding": "Onboarding",
-    "Unofficial Hytale Launcher": "Unofficial Hytale Launcher"
+    "Unofficial Hytale Launcher": "Unofficial Hytale Launcher",
+    "Exported to Downloads folder": "Exported to Downloads folder",
+    "No UserData folder to export": "No UserData folder to export",
+    "Failed to export instance": "Failed to export instance"
 }

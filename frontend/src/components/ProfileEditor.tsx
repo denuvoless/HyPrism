@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, RefreshCw, Check, User, Edit3, Copy, CheckCircle, Plus, Trash2, Dices, FolderOpen } from 'lucide-react';
+import { X, RefreshCw, Check, User, Edit3, Copy, CheckCircle, Plus, Trash2, Dices, FolderOpen, CopyPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAccentColor } from '../contexts/AccentColorContext';
-import { GetUUID, SetUUID, GetNick, SetNick, GetAvatarPreview, GetAvatarPreviewForUUID, GetProfiles, CreateProfile, DeleteProfile, SwitchProfile, SaveCurrentAsProfile, OpenCurrentProfileFolder } from '@/api/backend';
+import { GetUUID, SetUUID, GetNick, SetNick, GetAvatarPreview, GetAvatarPreviewForUUID, GetProfiles, CreateProfile, DuplicateProfile, DeleteProfile, SwitchProfile, SaveCurrentAsProfile, OpenCurrentProfileFolder } from '@/api/backend';
 import type { Profile } from '@/api/backend';
+import { DeleteProfileConfirmationModal } from './DeleteProfileConfirmationModal';
 
 interface ProfileEditorProps {
     isOpen: boolean;
@@ -55,6 +56,9 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
     
     // New profile creation flow - directly opens name editor
     const [isCreatingNewProfile, setIsCreatingNewProfile] = useState(false);
+    
+    // Delete confirmation modal state
+    const [deleteConfirmation, setDeleteConfirmation] = useState<{ id: string; name: string } | null>(null);
 
     // Load profiles and their avatars
     const loadProfiles = useCallback(async () => {
@@ -63,12 +67,13 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
             console.log('[ProfileEditor] Loaded profiles:', JSON.stringify(profileList, null, 2));
             setProfiles(profileList || []);
             
-            // Load avatars for all profiles
+            // Load avatars for all profiles - explicitly set null for profiles without avatars
             const avatars: Record<string, string | null> = {};
             for (const profile of profileList || []) {
                 try {
                     const avatar = await GetAvatarPreviewForUUID(profile.uuid);
-                    avatars[profile.uuid] = avatar;
+                    // Explicitly set null if no avatar returned (new profiles have no avatar)
+                    avatars[profile.uuid] = avatar || null;
                 } catch {
                     avatars[profile.uuid] = null;
                 }
@@ -83,9 +88,11 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
     const loadAvatar = useCallback(async () => {
         try {
             const avatar = await GetAvatarPreview();
-            if (avatar) setLocalAvatar(avatar);
+            // Only set avatar if one exists - don't preserve old avatar
+            setLocalAvatar(avatar || null);
         } catch (err) {
             console.error('Failed to load avatar:', err);
+            setLocalAvatar(null);
         }
     }, []);
 
@@ -284,11 +291,9 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
             setUuid(targetProfile.uuid);
             setEditUuid(targetProfile.uuid);
             
-            // Pre-load the avatar for the target profile
+            // Pre-load the avatar for the target profile (use null if no avatar exists)
             const targetAvatar = profileAvatars[targetProfile.uuid];
-            if (targetAvatar) {
-                setLocalAvatar(targetAvatar);
-            }
+            setLocalAvatar(targetAvatar || null);
             
             console.log('[ProfileEditor] Switching to profile at index:', actualIndex, 'with ID:', profileId);
             const success = await SwitchProfile(actualIndex);
@@ -296,8 +301,11 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
             if (success) {
                 // Refresh avatar in the background (don't wait)
                 GetAvatarPreview().then(avatar => {
-                    if (avatar) setLocalAvatar(avatar);
-                }).catch(() => {});
+                    // Set avatar or null if no avatar exists
+                    setLocalAvatar(avatar || null);
+                }).catch(() => {
+                    setLocalAvatar(null);
+                });
                 
                 onProfileUpdate?.();
             } else {
@@ -310,14 +318,25 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
         }
     };
     
-    const handleDeleteProfile = async (profileId: string, e: React.MouseEvent) => {
+    const handleDeleteProfile = (profileId: string, e: React.MouseEvent) => {
         e.stopPropagation();
         e.preventDefault();
         
-        console.log('[ProfileEditor] Deleting profile:', profileId);
+        // Find the profile name for the confirmation modal
+        const profileToDelete = profiles.find(p => p.id === profileId);
+        const profileName = profileToDelete?.name || 'this profile';
+        
+        // Show in-launcher confirmation modal
+        setDeleteConfirmation({ id: profileId, name: profileName });
+    };
+    
+    const handleConfirmDelete = async () => {
+        if (!deleteConfirmation) return;
+        
+        console.log('[ProfileEditor] Deleting profile:', deleteConfirmation.id);
         
         try {
-            const success = await DeleteProfile(profileId);
+            const success = await DeleteProfile(deleteConfirmation.id);
             console.log('[ProfileEditor] Delete result:', success);
             if (success) {
                 // Reload profiles after delete
@@ -327,6 +346,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
         } catch (err) {
             console.error('Failed to delete profile:', err);
         }
+        
+        setDeleteConfirmation(null);
     };
     
     const handleCreateProfile = async () => {
@@ -337,17 +358,81 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
         console.log('[ProfileEditor] Creating new profile:', randomName, newUuid);
         
         try {
-            // Create profile with random name and new UUID - DO NOT SWITCH TO IT
+            // Create profile with random name and new UUID
             const profile = await CreateProfile(randomName, newUuid);
             console.log('[ProfileEditor] Created profile:', profile);
             
             if (profile) {
-                // Just reload profiles list - don't switch to the new profile
+                // Reload profiles list
+                await loadProfiles();
+                
+                // Find the new profile and switch to it
+                const updatedProfiles = await GetProfiles();
+                const newProfileIndex = updatedProfiles?.findIndex(p => p.uuid === newUuid);
+                if (newProfileIndex !== undefined && newProfileIndex >= 0) {
+                    console.log('[ProfileEditor] Switching to new profile at index:', newProfileIndex);
+                    await SwitchProfile(newProfileIndex);
+                    // Update UI with new profile data
+                    setUsernameState(randomName);
+                    setEditUsername(randomName);
+                    setUuid(newUuid);
+                    setEditUuid(newUuid);
+                    setLocalAvatar(null); // New profile has no avatar
+                }
+                
+                // Clear any cached avatar for the new UUID (it's a new identity with no skin)
+                setProfileAvatars(prev => ({
+                    ...prev,
+                    [newUuid]: null  // New profile has no avatar yet
+                }));
                 await loadProfiles();
                 onProfileUpdate?.();
             }
         } catch (err) {
             console.error('Failed to create profile:', err);
+        }
+    };
+    
+    const handleDuplicateProfile = async (profileId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        
+        console.log('[ProfileEditor] Duplicating profile:', profileId);
+        
+        try {
+            const newProfile = await DuplicateProfile(profileId);
+            console.log('[ProfileEditor] Duplicated profile:', newProfile);
+            
+            if (newProfile) {
+                // Reload profiles list
+                await loadProfiles();
+                
+                // Find the new profile and switch to it
+                const updatedProfiles = await GetProfiles();
+                const newProfileIndex = updatedProfiles?.findIndex(p => p.uuid === newProfile.uuid);
+                if (newProfileIndex !== undefined && newProfileIndex >= 0) {
+                    console.log('[ProfileEditor] Switching to duplicated profile at index:', newProfileIndex);
+                    await SwitchProfile(newProfileIndex);
+                    // Update UI with new profile data
+                    setUsernameState(newProfile.name);
+                    setEditUsername(newProfile.name);
+                    setUuid(newProfile.uuid);
+                    setEditUuid(newProfile.uuid);
+                    
+                    // Load avatar if it was copied
+                    try {
+                        const avatar = await GetAvatarPreview();
+                        setLocalAvatar(avatar || null);
+                    } catch {
+                        setLocalAvatar(null);
+                    }
+                }
+                
+                await loadProfiles();
+                onProfileUpdate?.();
+            }
+        } catch (err) {
+            console.error('Failed to duplicate profile:', err);
         }
     };
 
@@ -424,15 +509,24 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
                                                 {profile.name || 'Unnamed'}
                                             </span>
                                         </button>
-                                        {!isCurrentProfile && (
+                                        <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                             <button
-                                                onClick={(e) => handleDeleteProfile(profile.id, e)}
-                                                className="p-1.5 rounded-lg text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all flex-shrink-0 opacity-0 group-hover:opacity-100"
-                                                title={t('Delete Profile')}
+                                                onClick={(e) => handleDuplicateProfile(profile.id, e)}
+                                                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                                                title={t('Duplicate Profile')}
                                             >
-                                                <Trash2 size={14} />
+                                                <CopyPlus size={14} />
                                             </button>
-                                        )}
+                                            {!isCurrentProfile && (
+                                                <button
+                                                    onClick={(e) => handleDeleteProfile(profile.id, e)}
+                                                    className="p-1.5 rounded-lg text-red-400/60 hover:text-red-400 hover:bg-red-500/20 transition-all"
+                                                    title={t('Delete Profile')}
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 );
                             })})()}
@@ -681,6 +775,15 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ isOpen, onClose, o
                     </div>
                 </motion.div>
             </motion.div>
+            
+            {/* Delete Profile Confirmation Modal */}
+            {deleteConfirmation && (
+                <DeleteProfileConfirmationModal
+                    profileName={deleteConfirmation.name}
+                    onConfirm={handleConfirmDelete}
+                    onCancel={() => setDeleteConfirmation(null)}
+                />
+            )}
         </AnimatePresence>
     );
 };
