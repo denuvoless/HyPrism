@@ -1,4 +1,5 @@
 using System;
+using HyPrism.Backend.Services.Core;
 using System.IO;
 using System.Net.Http;
 using System.Threading;

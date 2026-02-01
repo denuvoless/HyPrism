@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using HyPrism.Backend.Models;
+using HyPrism.Backend.Services.Core;
 
 namespace HyPrism.Backend.Services.User;
 

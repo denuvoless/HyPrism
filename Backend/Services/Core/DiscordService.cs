@@ -1,7 +1,7 @@
 using DiscordRPC;
 using DiscordRPC.Logging;
 
-namespace HyPrism.Backend;
+namespace HyPrism.Backend.Services.Core;
 
 public class DiscordService : IDisposable
 {

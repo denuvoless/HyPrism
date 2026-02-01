@@ -47,6 +47,11 @@ public class AppService : IDisposable
     private readonly SettingsService _settingsService;
     private readonly FileDialogService _fileDialogService;
     private readonly LanguageService _languageService;
+    private readonly AssetService _assetService;
+    private readonly AvatarService _avatarService;
+    private readonly RosettaService _rosettaService;
+    private readonly BrowserService _browserService;
+    private readonly ProgressNotificationService _progressNotificationService;
     
     // Exposed for ViewModel access
     public Config Configuration => _config;
@@ -55,10 +60,22 @@ public class AppService : IDisposable
     public VersionService VersionService => _versionService;
     public ModService ModService => _modService;
 
-    // UI Events
-    public event Action<string, double, string, long, long>? DownloadProgressChanged;
-    public event Action<string, int>? GameStateChanged;
-    public event Action<string, string, string?>? ErrorOccurred;
+    // UI Events (forwarded from ProgressNotificationService)
+    public event Action<string, double, string, long, long>? DownloadProgressChanged
+    {
+        add => _progressNotificationService.DownloadProgressChanged += value;
+        remove => _progressNotificationService.DownloadProgressChanged -= value;
+    }
+    public event Action<string, int>? GameStateChanged
+    {
+        add => _progressNotificationService.GameStateChanged += value;
+        remove => _progressNotificationService.GameStateChanged -= value;
+    }
+    public event Action<string, string, string?>? ErrorOccurred
+    {
+        add => _progressNotificationService.ErrorOccurred += value;
+        remove => _progressNotificationService.ErrorOccurred -= value;
+    }
     public event Action<object>? LauncherUpdateAvailable;
     
     // Lock for mod manifest operations to prevent concurrent writes
@@ -79,39 +96,9 @@ public class AppService : IDisposable
 
     static AppService()
     {
-        LoadEnvFile();
+        UtilityService.LoadEnvFile();
         HttpClient.DefaultRequestHeaders.Add("User-Agent", "HyPrism/1.0");
         HttpClient.DefaultRequestHeaders.Add("Accept", "application/json");
-    }
-    
-    /// <summary>
-    /// Loads environment variables from .env file (if present) for Discord bot configuration.
-    /// </summary>
-    private static void LoadEnvFile()
-    {
-        try
-        {
-            var envPath = Path.Combine(AppContext.BaseDirectory, ".env");
-            if (!File.Exists(envPath)) return;
-            
-            foreach (var line in File.ReadAllLines(envPath))
-            {
-                var trimmed = line.Trim();
-                if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("#")) continue;
-                
-                var parts = trimmed.Split('=', 2);
-                if (parts.Length == 2)
-                {
-                    var key = parts[0].Trim();
-                    var value = parts[1].Trim();
-                    // Remove quotes if present
-                    if (value.StartsWith('"') && value.EndsWith('"'))
-                        value = value.Substring(1, value.Length - 2);
-                    Environment.SetEnvironmentVariable(key, value);
-                }
-            }
-        }
-        catch { /* Ignore errors loading .env file */ }
     }
 
     public AppService()
@@ -144,11 +131,7 @@ public class AppService : IDisposable
         _instanceService = new InstanceService(
             _appDir,
             () => _config,
-            SaveConfigInternal,
-            GetLegacyRoots,
-            LoadConfigFromPath,
-            LoadConfigFromToml,
-            IsClientPresent);
+            SaveConfigInternal);
         
         _updateService = new UpdateService(
             HttpClient,
@@ -192,11 +175,20 @@ public class AppService : IDisposable
             async () => await GetVersionListAsync("pre-release"),
             GetInstancePath,
             GetLatestInstancePath);
+        _assetService = new AssetService(_instanceService, _appDir);
+        _avatarService = new AvatarService(_instanceService, _appDir);
+        _rosettaService = new RosettaService();
+        _browserService = new BrowserService();
+        
+        // Initialize after DiscordService (needed below)
+        _butlerService = new ButlerService(_appDir);
+        _discordService = new DiscordService();
+        _progressNotificationService = new ProgressNotificationService(_discordService);
         
         // Update placeholder names to random ones immediately
         if (_config.Nick == "Hyprism" || _config.Nick == "HyPrism" || _config.Nick == "Player")
         {
-            _config.Nick = GenerateRandomUsername();
+            _config.Nick = UtilityService.GenerateRandomUsername();
             SaveConfig();
             Logger.Info("Config", $"Updated placeholder username to: {_config.Nick}");
         }
@@ -206,8 +198,6 @@ public class AppService : IDisposable
         _skinService.TryRecoverOrphanedSkinOnStartup();
         
         _instanceService.MigrateLegacyData();
-        _butlerService = new ButlerService(_appDir);
-        _discordService = new DiscordService();
         _discordService.Initialize();
         
         // Initialize profile mods symlink if an active profile exists
@@ -252,173 +242,11 @@ public class AppService : IDisposable
         return 0;
     }
 
-    private Config? LoadConfigFromPath(string path)
-    {
-        if (!File.Exists(path)) return null;
+    private string GetLatestInstancePath(string branch) => _instanceService.GetLatestInstancePath(branch);
 
-        try
-        {
-            var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<Config>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    private string GetInstancePath(string branch, int version) => _instanceService.GetInstancePath(branch, version);
 
-    private Config? LoadConfigFromToml(string path)
-    {
-        if (!File.Exists(path)) return null;
-
-        try
-        {
-            var cfg = new Config();
-            foreach (var line in File.ReadAllLines(path))
-            {
-                var trimmed = line.Trim();
-                if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("#")) continue;
-
-                static string Unquote(string value)
-                {
-                    value = value.Trim();
-                    // Handle double quotes
-                    if (value.StartsWith("\"") && value.EndsWith("\"") && value.Length >= 2)
-                    {
-                        return value.Substring(1, value.Length - 2);
-                    }
-                    // Handle single quotes (TOML style)
-                    if (value.StartsWith("'") && value.EndsWith("'") && value.Length >= 2)
-                    {
-                        return value.Substring(1, value.Length - 2);
-                    }
-                    return value;
-                }
-
-                var parts = trimmed.Split('=', 2, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length != 2) continue;
-
-                var key = parts[0].Trim().ToLowerInvariant();
-                var val = Unquote(parts[1]);
-
-                switch (key)
-                {
-                    case "nick":
-                    case "name":
-                    case "username":
-                        cfg.Nick = val;
-                        break;
-                    case "uuid":
-                        cfg.UUID = val;
-                        break;
-                    case "instance_directory":
-                    case "instancedirectory":
-                    case "instance_dir":
-                    case "instancepath":
-                    case "instance_path":
-                        cfg.InstanceDirectory = val;
-                        break;
-                    case "versiontype":
-                    case "branch":
-                        cfg.VersionType = UtilityService.NormalizeVersionType(val);
-                        break;
-                    case "selectedversion":
-                        if (int.TryParse(val, out var sel)) cfg.SelectedVersion = sel;
-                        break;
-                }
-            }
-            return cfg;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private IEnumerable<string> GetLegacyRoots()
-    {
-        var roots = new List<string>();
-        void Add(string? path)
-        {
-            if (string.IsNullOrWhiteSpace(path)) return;
-            roots.Add(path);
-        }
-
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            Add(Path.Combine(appData, "hyprism"));
-            Add(Path.Combine(appData, "Hyprism"));
-            Add(Path.Combine(appData, "HyPrism")); // legacy casing
-            Add(Path.Combine(appData, "HyPrismLauncher"));
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            Add(Path.Combine(home, "Library", "Application Support", "hyprism"));
-            Add(Path.Combine(home, "Library", "Application Support", "Hyprism"));
-        }
-        else
-        {
-            var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
-            if (!string.IsNullOrWhiteSpace(xdg))
-            {
-                Add(Path.Combine(xdg, "hyprism"));
-                Add(Path.Combine(xdg, "Hyprism"));
-            }
-            Add(Path.Combine(home, ".local", "share", "hyprism"));
-            Add(Path.Combine(home, ".local", "share", "Hyprism"));
-        }
-
-        return roots;
-    }
-
-    /// <summary>
-    /// Gets the sequence of patch versions to apply for a differential update.
-    /// Returns list of versions from (currentVersion + 1) to targetVersion inclusive.
-    /// </summary>
-    private static List<int> GetPatchSequence(int currentVersion, int targetVersion)
-    {
-        var patches = new List<int>();
-        for (int v = currentVersion + 1; v <= targetVersion; v++)
-        {
-            patches.Add(v);
-        }
-        return patches;
-    }
-
-    private string GetLatestInstancePath(string branch)
-    {
-        return Path.Combine(_instanceService.GetBranchPath(branch), "latest");
-    }
-
-    private string GetInstancePath(string branch, int version)
-    {
-        if (version == 0)
-        {
-            return GetLatestInstancePath(branch);
-        }
-        string normalizedBranch = UtilityService.NormalizeVersionType(branch);
-        return Path.Combine(_instanceService.GetInstanceRoot(), normalizedBranch, version.ToString());
-    }
-
-    private string ResolveInstancePath(string branch, int version, bool preferExisting)
-    {
-        if (preferExisting)
-        {
-            var existing = _instanceService.FindExistingInstancePath(branch, version);
-            if (!string.IsNullOrWhiteSpace(existing))
-            {
-                return existing;
-            }
-        }
-
-        return GetInstancePath(branch, version);
-    }
+    private string ResolveInstancePath(string branch, int version, bool preferExisting) => _instanceService.ResolveInstancePath(branch, version, preferExisting);
 
     private async Task<(string branch, int version)> ResolveLatestCompositeAsync()
     {
@@ -500,7 +328,7 @@ public class AppService : IDisposable
         // Default nick to random name if empty or placeholder
         if (string.IsNullOrWhiteSpace(config.Nick) || config.Nick == "Player" || config.Nick == "Hyprism" || config.Nick == "HyPrism")
         {
-            config.Nick = GenerateRandomUsername();
+            config.Nick = UtilityService.GenerateRandomUsername();
         }
         
         // Initialize UserUuids and add current user
@@ -532,50 +360,6 @@ public class AppService : IDisposable
     
     /// <summary>
     /// Attempts to recover orphaned skin data on startup.
-    /// This handles the scenario where:
-    /// 1. User had skin saved with UUID A
-    /// 2. Config was reset/recreated with UUID B
-    /// 3. Old skin files still exist with UUID A
-    /// 
-    /// The method checks if:
-    /// - The current UUID has NO skin data
-    /// - There's an orphaned UUID with skin data
-    /// If so, it either:
-    /// - Adopts the orphaned UUID as the current user's UUID, OR
-    /// - Copies the skin data from orphaned UUID to current UUID
-    /// </summary>
-    /// <summary>
-    /// Generates a random username for new users.
-    /// Format: Adjective + Noun + 4-digit number (max 16 chars total)
-    /// </summary>
-    private static string GenerateRandomUsername()
-    {
-        var random = new Random();
-        
-        // Short adjectives (max 5 chars)
-        var adjectives = new[] { 
-            "Happy", "Swift", "Brave", "Noble", "Quiet", "Bold", "Lucky", "Epic",
-            "Jolly", "Lunar", "Solar", "Azure", "Royal", "Foxy", "Wacky", "Zesty",
-            "Fizzy", "Dizzy", "Funky", "Jazzy", "Snowy", "Rainy", "Sunny", "Windy"
-        };
-        
-        // Short nouns (max 6 chars)
-        var nouns = new[] {
-            "Panda", "Tiger", "Wolf", "Dragon", "Knight", "Ranger", "Mage", "Fox",
-            "Bear", "Eagle", "Hawk", "Lion", "Falcon", "Raven", "Owl", "Shark",
-            "Cobra", "Viper", "Lynx", "Badger", "Otter", "Pirate", "Ninja", "Viking"
-        };
-        
-        var adj = adjectives[random.Next(adjectives.Length)];
-        var noun = nouns[random.Next(nouns.Length)];
-        var num = random.Next(1000, 9999);
-        
-        var name = $"{adj}{noun}{num}";
-        // Safety truncate to 16 chars
-        return name.Length <= 16 ? name : name.Substring(0, 16);
-    }
-
-    // Config
     public Config QueryConfig() => _config;
 
     public string GetNick() => _profileService.GetNick();
@@ -598,76 +382,17 @@ public class AppService : IDisposable
 
     public bool SetUUID(string uuid) => _profileService.SetUUID(uuid);
     
-    private bool SetUUIDInternal(string uuid)
-    {
-        if (string.IsNullOrWhiteSpace(uuid)) return false;
-        if (!Guid.TryParse(uuid.Trim(), out var parsed)) return false;
-        _config.UUID = parsed.ToString();
-        SaveConfig();
-        return true;
-    }
-    
     /// <summary>
     /// Clears the avatar cache for the current UUID.
     /// Call this when the user wants to reset their avatar.
     /// </summary>
     public bool ClearAvatarCache()
     {
-        try
-        {
-            var uuid = GetCurrentUuid();
-            if (string.IsNullOrWhiteSpace(uuid)) return false;
-            
-            // Clear persistent backup
-            var persistentPath = Path.Combine(_appDir, "AvatarBackups", $"{uuid}.png");
-            if (File.Exists(persistentPath))
-            {
-                File.Delete(persistentPath);
-                Logger.Info("Avatar", $"Deleted persistent avatar for {uuid}");
-            }
-            
-            // Clear game cache for all instances
-            var instanceRoot = _instanceService.GetInstanceRoot();
-            if (Directory.Exists(instanceRoot))
-            {
-                foreach (var branchDir in Directory.GetDirectories(instanceRoot))
-                {
-                    foreach (var versionDir in Directory.GetDirectories(branchDir))
-                    {
-                        var avatarPath = Path.Combine(versionDir, "UserData", "CachedAvatarPreviews", $"{uuid}.png");
-                        if (File.Exists(avatarPath))
-                        {
-                            File.Delete(avatarPath);
-                            Logger.Info("Avatar", $"Deleted cached avatar at {avatarPath}");
-                        }
-                    }
-                }
-            }
-            
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("Avatar", $"Failed to clear avatar cache: {ex.Message}");
-            return false;
-        }
+        var uuid = GetCurrentUuid();
+        return _avatarService.ClearAvatarCache(uuid);
     }
     
     public bool SetNick(string nick) => _profileService.SetNick(nick);
-    
-    private bool SetNickInternal(string nick)
-    {
-        // Validate nickname length (1-16 characters)
-        var trimmed = nick?.Trim() ?? "";
-        if (trimmed.Length < 1 || trimmed.Length > 16)
-        {
-            Logger.Warning("Config", $"Invalid nickname length: {trimmed.Length} (must be 1-16 chars)");
-            return false;
-        }
-        _config.Nick = trimmed;
-        SaveConfig();
-        return true;
-    }
     
     // ========== UUID Management (Username->UUID Mapping) ==========
     
@@ -814,70 +539,7 @@ public class AppService : IDisposable
     /// Returns null if not on macOS or if Rosetta is installed.
     /// Returns a warning object if Rosetta is needed but not installed.
     /// </summary>
-    public RosettaStatus? CheckRosettaStatus()
-    {
-        // Only relevant on macOS
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            return null;
-        }
-
-        // Only relevant on Apple Silicon (ARM64)
-        if (RuntimeInformation.ProcessArchitecture != Architecture.Arm64)
-        {
-            return null;
-        }
-
-        try
-        {
-            // Check if Rosetta is installed by checking for the runtime at /Library/Apple/usr/share/rosetta
-            var rosettaPath = "/Library/Apple/usr/share/rosetta";
-            if (Directory.Exists(rosettaPath))
-            {
-                Logger.Info("Rosetta", "Rosetta 2 is installed");
-                return null; // Rosetta is installed, no warning needed
-            }
-
-            // Also try running arch -x86_64 to verify
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "/usr/bin/arch",
-                    Arguments = "-x86_64 /usr/bin/true",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    CreateNoWindow = true
-                };
-                using var process = Process.Start(psi);
-                process?.WaitForExit(5000);
-                if (process?.ExitCode == 0)
-                {
-                    Logger.Info("Rosetta", "Rosetta 2 is installed (verified via arch command)");
-                    return null;
-                }
-            }
-            catch
-            {
-                // Ignore, proceed with warning
-            }
-
-            Logger.Warning("Rosetta", "Rosetta 2 is NOT installed - Hytale requires it to run on Apple Silicon");
-            return new RosettaStatus
-            {
-                NeedsInstall = true,
-                Message = "Rosetta 2 is required to run Hytale on Apple Silicon Macs.",
-                Command = "softwareupdate --install-rosetta --agree-to-license",
-                TutorialUrl = "https://www.youtube.com/watch?v=1W2vuSfnpXw"
-            };
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning("Rosetta", $"Failed to check Rosetta status: {ex.Message}");
-            return null;
-        }
-    }
+    public RosettaStatus? CheckRosettaStatus() => _rosettaService.CheckRosettaStatus();
 
     // Version Management
     public string GetVersionType() => _config.VersionType;
@@ -908,77 +570,26 @@ public class AppService : IDisposable
         if (versionNumber == 0)
         {
             var resolvedLatest = ResolveInstancePath(normalizedBranch, 0, preferExisting: true);
-            bool hasClient = IsClientPresent(resolvedLatest);
+            bool hasClient = _instanceService.IsClientPresent(resolvedLatest);
             Logger.Info("Version", $"IsVersionInstalled check for version 0 (latest): path={resolvedLatest}, hasClient={hasClient}");
             return hasClient;
         }
         
         string versionPath = ResolveInstancePath(normalizedBranch, versionNumber, preferExisting: true);
 
-        if (!IsClientPresent(versionPath))
+        if (!_instanceService.IsClientPresent(versionPath))
         {
             // Last chance: try legacy dash naming in legacy roots
             var legacy = _instanceService.FindExistingInstancePath(normalizedBranch, versionNumber);
             if (!string.IsNullOrWhiteSpace(legacy))
             {
                 Logger.Info("Version", $"IsVersionInstalled: found legacy layout at {legacy}");
-                return IsClientPresent(legacy);
+                return _instanceService.IsClientPresent(legacy);
             }
             return false;
         }
 
         return true;
-    }
-
-    private bool IsClientPresent(string versionPath)
-    {
-        // Try multiple layouts: new layout (Client/...) and legacy layout (game/Client/...)
-        var subfolders = new[] { "", "game" };
-
-        foreach (var sub in subfolders)
-        {
-            string basePath = string.IsNullOrEmpty(sub) ? versionPath : Path.Combine(versionPath, sub);
-            string clientPath;
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                clientPath = Path.Combine(basePath, "Client", "Hytale.app", "Contents", "MacOS", "HytaleClient");
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                clientPath = Path.Combine(basePath, "Client", "HytaleClient.exe");
-            }
-            else
-            {
-                clientPath = Path.Combine(basePath, "Client", "HytaleClient");
-            }
-
-            if (File.Exists(clientPath))
-            {
-                Logger.Info("Version", $"IsClientPresent: found at {clientPath}");
-                return true;
-            }
-        }
-
-        Logger.Info("Version", $"IsClientPresent: not found in {versionPath}");
-        return false;
-    }
-
-    private bool AreAssetsPresent(string versionPath)
-    {
-        string assetsCheck;
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            assetsCheck = Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "Assets");
-        }
-        else
-        {
-            assetsCheck = Path.Combine(versionPath, "Client", "Assets");
-        }
-
-        bool exists = Directory.Exists(assetsCheck) && Directory.EnumerateFileSystemEntries(assetsCheck).Any();
-        Logger.Info("Version", $"AreAssetsPresent: path={assetsCheck}, exists={exists}");
-        return exists;
     }
 
     /// <summary>
@@ -989,7 +600,7 @@ public class AppService : IDisposable
     {
         var normalizedBranch = UtilityService.NormalizeVersionType(branch);
         var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
-        return HasAssetsZipInternal(versionPath);
+        return _assetService.HasAssetsZip(versionPath);
     }
     
     /// <summary>
@@ -999,54 +610,8 @@ public class AppService : IDisposable
     {
         var normalizedBranch = UtilityService.NormalizeVersionType(branch);
         var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
-        var assetsZipPath = GetAssetsZipPathInternal(versionPath);
-        return File.Exists(assetsZipPath) ? assetsZipPath : null;
+        return _assetService.GetAssetsZipPathIfExists(versionPath);
     }
-    
-    private bool HasAssetsZipInternal(string versionPath)
-    {
-        var assetsZipPath = GetAssetsZipPathInternal(versionPath);
-        bool exists = File.Exists(assetsZipPath);
-        Logger.Info("Assets", $"HasAssetsZip: path={assetsZipPath}, exists={exists}");
-        return exists;
-    }
-    
-    private string GetAssetsZipPathInternal(string versionPath)
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            return Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "Assets.zip");
-        }
-        else
-        {
-            return Path.Combine(versionPath, "Client", "Assets.zip");
-        }
-    }
-    
-    // Cosmetic category file mappings (matching auth server structure)
-    private static readonly Dictionary<string, string> CosmeticCategoryMap = new()
-    {
-        { "BodyCharacteristics.json", "bodyCharacteristic" },
-        { "Capes.json", "cape" },
-        { "EarAccessory.json", "earAccessory" },
-        { "Ears.json", "ears" },
-        { "Eyebrows.json", "eyebrows" },
-        { "Eyes.json", "eyes" },
-        { "Faces.json", "face" },
-        { "FaceAccessory.json", "faceAccessory" },
-        { "FacialHair.json", "facialHair" },
-        { "Gloves.json", "gloves" },
-        { "Haircuts.json", "haircut" },
-        { "HeadAccessory.json", "headAccessory" },
-        { "Mouths.json", "mouth" },
-        { "Overpants.json", "overpants" },
-        { "Overtops.json", "overtop" },
-        { "Pants.json", "pants" },
-        { "Shoes.json", "shoes" },
-        { "SkinFeatures.json", "skinFeature" },
-        { "Undertops.json", "undertop" },
-        { "Underwear.json", "underwear" }
-    };
     
     /// <summary>
     /// Gets the available cosmetics from the Assets.zip file for the specified instance.
@@ -1054,61 +619,9 @@ public class AppService : IDisposable
     /// </summary>
     public Dictionary<string, List<string>>? GetCosmeticsList(string branch, int version)
     {
-        try
-        {
-            var normalizedBranch = UtilityService.NormalizeVersionType(branch);
-            var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
-            var assetsZipPath = GetAssetsZipPathInternal(versionPath);
-            
-            if (!File.Exists(assetsZipPath))
-            {
-                Logger.Warning("Cosmetics", $"Assets.zip not found: {assetsZipPath}");
-                return null;
-            }
-            
-            var cosmetics = new Dictionary<string, List<string>>();
-            
-            using var zip = ZipFile.OpenRead(assetsZipPath);
-            
-            foreach (var (fileName, categoryName) in CosmeticCategoryMap)
-            {
-                var entryPath = $"Cosmetics/CharacterCreator/{fileName}";
-                var entry = zip.GetEntry(entryPath);
-                
-                if (entry == null)
-                {
-                    Logger.Info("Cosmetics", $"Entry not found: {entryPath}");
-                    continue;
-                }
-                
-                using var stream = entry.Open();
-                using var reader = new StreamReader(stream);
-                var json = reader.ReadToEnd();
-                
-                var items = JsonSerializer.Deserialize<List<CosmeticItem>>(json, JsonOptions);
-                if (items != null)
-                {
-                    var ids = items
-                        .Where(item => !string.IsNullOrWhiteSpace(item.Id))
-                        .Select(item => item.Id!)
-                        .ToList();
-                    
-                    if (ids.Count > 0)
-                    {
-                        cosmetics[categoryName] = ids;
-                        Logger.Info("Cosmetics", $"Loaded {ids.Count} {categoryName} items");
-                    }
-                }
-            }
-            
-            Logger.Success("Cosmetics", $"Loaded cosmetics from {assetsZipPath}: {cosmetics.Count} categories");
-            return cosmetics;
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("Cosmetics", $"Failed to load cosmetics: {ex.Message}");
-            return null;
-        }
+        var normalizedBranch = UtilityService.NormalizeVersionType(branch);
+        var versionPath = ResolveInstancePath(normalizedBranch, version, preferExisting: true);
+        return _assetService.GetCosmeticsList(versionPath);
     }
 
     public List<int> GetInstalledVersionsForBranch(string branch)
@@ -1128,7 +641,7 @@ public class AppService : IDisposable
                     if (string.IsNullOrEmpty(name)) continue;
                     if (string.Equals(name, "latest", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (IsClientPresent(dir))
+                        if (_instanceService.IsClientPresent(dir))
                         {
                             result.Add(0);
                             Logger.Info("Version", $"Installed versions include latest for {normalizedBranch} at {dir}");
@@ -1138,7 +651,7 @@ public class AppService : IDisposable
 
                     if (int.TryParse(name, out int version))
                     {
-                        if (IsClientPresent(dir))
+                        if (_instanceService.IsClientPresent(dir))
                         {
                             result.Add(version);
                             Logger.Info("Version", $"Installed version detected: {normalizedBranch}/{version} at {dir}");
@@ -1164,7 +677,7 @@ public class AppService : IDisposable
 
                 if (string.Equals(suffix, "latest", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (IsClientPresent(dir))
+                    if (_instanceService.IsClientPresent(dir))
                     {
                         result.Add(0);
                         Logger.Info("Version", $"Installed legacy latest detected: {name} at {dir}");
@@ -1174,7 +687,7 @@ public class AppService : IDisposable
 
                 if (int.TryParse(suffix, out int version))
                 {
-                    if (IsClientPresent(dir))
+                    if (_instanceService.IsClientPresent(dir))
                     {
                         result.Add(version);
                         Logger.Info("Version", $"Installed legacy version detected: {name} at {dir}");
@@ -1195,7 +708,7 @@ public class AppService : IDisposable
         var latest = versions[0];
         var latestPath = GetLatestInstancePath(normalizedBranch);
         var info = _instanceService.LoadLatestInfo(normalizedBranch);
-        var baseOk = IsClientPresent(latestPath);
+        var baseOk = _instanceService.IsClientPresent(latestPath);
         if (!baseOk) return true;
         if (info == null)
         {
@@ -1335,7 +848,7 @@ public class AppService : IDisposable
 
             // Check if we need to download/install - verify all components
             // The game is installed if the Client executable exists - that's all we need to check
-            bool gameIsInstalled = IsClientPresent(versionPath);
+            bool gameIsInstalled = _instanceService.IsClientPresent(versionPath);
             
             Logger.Info("Download", $"=== INSTALL CHECK ===");
             Logger.Info("Download", $"Version path: {versionPath}");
@@ -1429,7 +942,7 @@ public class AppService : IDisposable
                         try
                         {
                             // Apply differential updates for each version step
-                            var patchesToApply = GetPatchSequence(installedVersion, latestVersion);
+                            var patchesToApply = _versionService.GetPatchSequence(installedVersion, latestVersion);
                             Logger.Info("Download", $"Patches to apply: {string.Join(" -> ", patchesToApply)}");
                             
                             for (int i = 0; i < patchesToApply.Count; i++)
@@ -1767,201 +1280,12 @@ public class AppService : IDisposable
 
     private void SendProgress(string stage, int progress, string message, long downloaded, long total)
     {
-        DownloadProgressChanged?.Invoke(stage, progress, message, downloaded, total);
-        
-        // Don't update Discord during download/install to avoid showing extraction messages
-        // Only update on complete or idle
-        if (stage == "complete")
-        {
-            _discordService.SetPresence(DiscordService.PresenceState.Idle);
-        }
+        _progressNotificationService.SendProgress(stage, progress, message, downloaded, total);
     }
 
     private async Task DownloadFileAsync(string url, string path, Action<int, long, long> progressCallback, CancellationToken cancellationToken = default)
     {
         await _downloadService.DownloadFileAsync(url, path, progressCallback, cancellationToken);
-    }
-
-    // Extract Assets.zip to the correct location for macOS
-    private async Task ExtractAssetsIfNeededAsync(string versionPath, Action<int, string> progressCallback)
-    {
-        // Check if Assets.zip exists
-        string assetsZip = Path.Combine(versionPath, "Assets.zip");
-        if (!File.Exists(assetsZip))
-        {
-            Logger.Info("Assets", "No Assets.zip found, skipping extraction");
-            progressCallback(100, "No assets extraction needed");
-            return;
-        }
-        
-        // Determine target path based on OS
-        string assetsDir;
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            assetsDir = Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "Assets");
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            assetsDir = Path.Combine(versionPath, "Client", "Assets");
-        }
-        else
-        {
-            assetsDir = Path.Combine(versionPath, "Client", "Assets");
-        }
-        
-        // Check if already extracted
-        if (Directory.Exists(assetsDir) && Directory.GetFiles(assetsDir, "*", SearchOption.AllDirectories).Length > 0)
-        {
-            Logger.Info("Assets", "Assets already extracted");
-            progressCallback(100, "Assets ready");
-            return;
-        }
-        
-        Logger.Info("Assets", $"Extracting Assets.zip to {assetsDir}...");
-        progressCallback(0, "Extracting game assets...");
-        
-        try
-        {
-            Directory.CreateDirectory(assetsDir);
-            
-            // Extract using ZipFile
-            await Task.Run(() =>
-            {
-                using var archive = ZipFile.OpenRead(assetsZip);
-                var totalEntries = archive.Entries.Count;
-                var extracted = 0;
-                
-                foreach (var entry in archive.Entries)
-                {
-                    if (string.IsNullOrEmpty(entry.Name)) continue;
-                    
-                    // Get relative path - Assets.zip may have "Assets/" prefix or not
-                    var relativePath = entry.FullName;
-                    if (relativePath.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
-                    {
-                        relativePath = relativePath.Substring(7);
-                    }
-                    else if (relativePath.StartsWith("Assets\\", StringComparison.OrdinalIgnoreCase))
-                    {
-                        relativePath = relativePath.Substring(7);
-                    }
-                    
-                    var destPath = Path.Combine(assetsDir, relativePath);
-                    var destDir = Path.GetDirectoryName(destPath);
-                    
-                    if (!string.IsNullOrEmpty(destDir))
-                    {
-                        Directory.CreateDirectory(destDir);
-                    }
-                    
-                    entry.ExtractToFile(destPath, true);
-                    extracted++;
-                    
-                    if (totalEntries > 0 && extracted % 100 == 0)
-                    {
-                        var progress = (int)((extracted * 100) / totalEntries);
-                        progressCallback(progress, $"Extracting assets... {progress}%");
-                    }
-                }
-            });
-            
-            // Optionally delete the zip after extraction to save space
-            try { File.Delete(assetsZip); } catch { }
-            
-            // On macOS, create symlink at root level for game compatibility
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                string rootAssetsLink = Path.Combine(versionPath, "Assets");
-                
-                try
-                {
-                    // Remove existing symlink/directory if it exists
-                    if (Directory.Exists(rootAssetsLink) || File.Exists(rootAssetsLink))
-                    {
-                        try 
-                        { 
-                            // Check if it's a symlink
-                            FileAttributes attrs = File.GetAttributes(rootAssetsLink);
-                            if ((attrs & FileAttributes.ReparsePoint) != 0)
-                            {
-                                // It's a symlink - delete it
-                                File.Delete(rootAssetsLink);
-                                Logger.Info("Assets", "Removed existing Assets symlink");
-                            }
-                            else if (Directory.Exists(rootAssetsLink))
-                            {
-                                // It's a real directory - delete it
-                                Directory.Delete(rootAssetsLink, true);
-                                Logger.Info("Assets", "Removed existing Assets directory");
-                            }
-                        } 
-                        catch (Exception ex)
-                        {
-                            Logger.Warning("Assets", $"Could not remove existing Assets: {ex.Message}");
-                        }
-                    }
-                    
-                    // Use relative path for symlink so it works even if directory moves
-                    string relativeAssetsPath = "Client/Hytale.app/Contents/Assets";
-                    
-                    // Create symlink using ln command - run from version directory
-                    var lnAssets = new ProcessStartInfo("ln", new[] { "-s", relativeAssetsPath, "Assets" })
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardError = true,
-                        RedirectStandardOutput = true,
-                        WorkingDirectory = versionPath
-                    };
-                    var lnProcess = Process.Start(lnAssets);
-                    if (lnProcess != null)
-                    {
-                        string errors = await lnProcess.StandardError.ReadToEndAsync();
-                        string output = await lnProcess.StandardOutput.ReadToEndAsync();
-                        await lnProcess.WaitForExitAsync();
-                        
-                        if (lnProcess.ExitCode == 0)
-                        {
-                            Logger.Success("Assets", $"Created Assets symlink: {rootAssetsLink} -> {relativeAssetsPath}");
-                            
-                            // Verify the symlink works
-                            if (Directory.Exists(rootAssetsLink))
-                            {
-                                Logger.Success("Assets", "Assets symlink verified - directory is accessible");
-                            }
-                            else
-                            {
-                                Logger.Error("Assets", "Assets symlink created but directory not accessible");
-                            }
-                        }
-                        else
-                        {
-                            Logger.Error("Assets", $"Symlink creation failed with exit code {lnProcess.ExitCode}");
-                            if (!string.IsNullOrEmpty(errors))
-                            {
-                                Logger.Error("Assets", $"Error output: {errors}");
-                            }
-                            if (!string.IsNullOrEmpty(output))
-                            {
-                                Logger.Info("Assets", $"Standard output: {output}");
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error("Assets", $"Failed to create Assets symlink: {ex.Message}");
-                }
-            }
-            
-            Logger.Success("Assets", "Assets extracted successfully");
-            progressCallback(100, "Assets extracted");
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("Assets", $"Failed to extract assets: {ex.Message}");
-            throw;
-        }
     }
 
     private async Task LaunchGameAsync(string versionPath, string branch)
@@ -2431,26 +1755,12 @@ exec env \
 
     private void SendGameStateEvent(string state, int? exitCode = null)
     {
-        try
-        {
-            GameStateChanged?.Invoke(state, exitCode ?? 0);
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning("Game", $"Failed to send game state event: {ex.Message}");
-        }
+        _progressNotificationService.SendGameStateEvent(state, exitCode);
     }
 
     private void SendErrorEvent(string type, string message, string? technical = null)
     {
-        try
-        {
-            ErrorOccurred?.Invoke(type, message, technical);
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning("Events", $"Failed to send error event: {ex.Message}");
-        }
+        _progressNotificationService.SendErrorEvent(type, message, technical);
     }
 
     // Check for launcher updates and emit event if available
@@ -2585,67 +1895,12 @@ exec env \
     /// Cleans news excerpt by removing HTML tags, duplicate title, and date prefixes.
     /// From PR #294
     /// </summary>
-    private static string CleanNewsExcerpt(string? rawExcerpt, string? title)
-    {
-        var excerpt = HttpUtility.HtmlDecode(rawExcerpt ?? "");
-        if (string.IsNullOrWhiteSpace(excerpt))
-        {
-            return "";
-        }
-
-        // Remove HTML tags
-        excerpt = Regex.Replace(excerpt, @"<[^>]+>", " ");
-        excerpt = Regex.Replace(excerpt, @"\s+", " ").Trim();
-
-        // Remove title prefix if present
-        if (!string.IsNullOrWhiteSpace(title))
-        {
-            var normalizedTitle = Regex.Replace(title.Trim(), @"\s+", " ");
-            var escapedTitle = Regex.Escape(normalizedTitle);
-            excerpt = Regex.Replace(excerpt, $@"^\s*{escapedTitle}\s*[:\-–—]?\s*", "", RegexOptions.IgnoreCase);
-        }
-
-        // Remove date prefixes like "January 30, 2026 –"
-        excerpt = Regex.Replace(excerpt, @"^\s*\p{L}+\s+\d{1,2},\s*\d{4}\s*[–—\-:]?\s*", "", RegexOptions.IgnoreCase);
-        excerpt = Regex.Replace(excerpt, @"^\s*\d{1,2}\s+\p{L}+\s+\d{4}\s*[–—\-:]?\s*", "", RegexOptions.IgnoreCase);
-        excerpt = Regex.Replace(excerpt, @"^[\-–—:\s]+", "");
-        
-        // Add space between lowercase and uppercase (fix run-together words)
-        excerpt = Regex.Replace(excerpt, @"(\p{Ll})(\p{Lu})", "$1: $2");
-
-        return excerpt.Trim();
-    }
-
     // Update - download latest launcher per platform instead of in-place update
     public async Task<bool> UpdateAsync(JsonElement[]? args) => 
         await _updateService.UpdateAsync(args);
 
     // Browser
-    public bool BrowserOpenURL(string url)
-    {
-        try
-        {
-            if (string.IsNullOrEmpty(url)) return false;
-            
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                Process.Start("open", url);
-            }
-            else
-            {
-                Process.Start("xdg-open", url);
-            }
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    public bool BrowserOpenURL(string url) => _browserService.OpenURL(url);
 
     // ========== Settings (delegated to SettingsService) ==========
     
@@ -2679,7 +1934,7 @@ exec env \
     /// <summary>
     /// Generates a random username for the onboarding flow.
     /// </summary>
-    public string GetRandomUsername() => GenerateRandomUsername();
+    public string GetRandomUsername() => UtilityService.GenerateRandomUsername();
     
     public bool ResetOnboarding() => _settingsService.ResetOnboarding();
     

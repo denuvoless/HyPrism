@@ -6,8 +6,9 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.IO.Compression;
+using HyPrism.Backend.Services.Core;
 
-namespace HyPrism.Backend;
+namespace HyPrism.Backend.Services.Game;
 
 /// <summary>
 /// Patches the HytaleClient binary to replace hytale.com domain references

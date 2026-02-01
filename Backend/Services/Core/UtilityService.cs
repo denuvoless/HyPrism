@@ -308,4 +308,64 @@ public class UtilityService
             Logger.Warning("Game", $"Failed to record app sign stamp: {ex.Message}");
         }
     }
+    
+    /// <summary>
+    /// Generates a random username for new users.
+    /// Format: Adjective + Noun + 4-digit number (max 16 chars total)
+    /// </summary>
+    public static string GenerateRandomUsername()
+    {
+        var random = new Random();
+        
+        // Short adjectives (max 5 chars)
+        var adjectives = new[] { 
+            "Happy", "Swift", "Brave", "Noble", "Quiet", "Bold", "Lucky", "Epic",
+            "Jolly", "Lunar", "Solar", "Azure", "Royal", "Foxy", "Wacky", "Zesty",
+            "Fizzy", "Dizzy", "Funky", "Jazzy", "Snowy", "Rainy", "Sunny", "Windy"
+        };
+        
+        // Short nouns (max 6 chars)
+        var nouns = new[] {
+            "Panda", "Tiger", "Wolf", "Dragon", "Knight", "Ranger", "Mage", "Fox",
+            "Bear", "Eagle", "Hawk", "Lion", "Falcon", "Raven", "Owl", "Shark",
+            "Cobra", "Viper", "Lynx", "Badger", "Otter", "Pirate", "Ninja", "Viking"
+        };
+        
+        var adj = adjectives[random.Next(adjectives.Length)];
+        var noun = nouns[random.Next(nouns.Length)];
+        var num = random.Next(1000, 9999);
+        
+        return $"{adj}{noun}{num}";
+    }
+
+    /// <summary>
+    /// Loads environment variables from a .env file in the application base directory.
+    /// Format: KEY=value (one per line, # for comments)
+    /// </summary>
+    public static void LoadEnvFile()
+    {
+        try
+        {
+            var envPath = Path.Combine(AppContext.BaseDirectory, ".env");
+            if (!File.Exists(envPath)) return;
+            
+            foreach (var line in File.ReadAllLines(envPath))
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("#")) continue;
+                
+                var parts = trimmed.Split('=', 2);
+                if (parts.Length == 2)
+                {
+                    var key = parts[0].Trim();
+                    var value = parts[1].Trim();
+                    // Remove quotes if present
+                    if (value.StartsWith('"') && value.EndsWith('"'))
+                        value = value.Substring(1, value.Length - 2);
+                    Environment.SetEnvironmentVariable(key, value);
+                }
+            }
+        }
+        catch { /* Ignore errors loading .env file */ }
+    }
 }

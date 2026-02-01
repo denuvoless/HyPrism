@@ -4,8 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using HyPrism.Backend.Services.Core;
 
-namespace HyPrism.Backend;
+namespace HyPrism.Backend.Services.Game;
 
 /// <summary>
 /// Service for authenticating with the custom auth server.

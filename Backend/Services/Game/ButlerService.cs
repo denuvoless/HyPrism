@@ -5,8 +5,9 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
+using HyPrism.Backend.Services.Core;
 
-namespace HyPrism.Backend;
+namespace HyPrism.Backend.Services.Game;
 
 public class ButlerService
 {

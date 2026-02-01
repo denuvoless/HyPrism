@@ -1,7 +1,9 @@
 using System;
+using HyPrism.Backend.Services.Core;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using HyPrism.Backend.Models;
 
@@ -18,10 +20,6 @@ public class InstanceService
     // Delegates to access AppService state
     private readonly Func<Config> _getConfig;
     private readonly Action<Config> _saveConfig;
-    private readonly Func<IEnumerable<string>> _getLegacyRoots;
-    private readonly Func<string, Config?> _loadConfigFromPath;
-    private readonly Func<string, Config?> _loadConfigFromToml;
-    private readonly Func<string, bool> _isClientPresent;
     
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -32,19 +30,11 @@ public class InstanceService
     public InstanceService(
         string appDir,
         Func<Config> getConfig,
-        Action<Config> saveConfig,
-        Func<IEnumerable<string>> getLegacyRoots,
-        Func<string, Config?> loadConfigFromPath,
-        Func<string, Config?> loadConfigFromToml,
-        Func<string, bool> isClientPresent)
+        Action<Config> saveConfig)
     {
         _appDir = appDir;
         _getConfig = getConfig;
         _saveConfig = saveConfig;
-        _getLegacyRoots = getLegacyRoots;
-        _loadConfigFromPath = loadConfigFromPath;
-        _loadConfigFromToml = loadConfigFromToml;
-        _isClientPresent = isClientPresent;
     }
 
     /// <summary>
@@ -182,7 +172,7 @@ public class InstanceService
             yield return root;
         }
 
-        foreach (var legacy in _getLegacyRoots())
+        foreach (var legacy in GetLegacyRoots())
         {
             // Check legacy naming: 'instance' (singular) and 'instances' (plural)
             foreach (var r in YieldIfExists(Path.Combine(legacy, "instance")))
@@ -266,7 +256,7 @@ public class InstanceService
         {
             var config = _getConfig();
             
-            foreach (var legacyRoot in _getLegacyRoots())
+            foreach (var legacyRoot in GetLegacyRoots())
             {
                 if (!Directory.Exists(legacyRoot)) continue;
 
@@ -276,8 +266,8 @@ public class InstanceService
                 var legacyTomlPath = Path.Combine(legacyRoot, "config.toml");
                 
                 // Load both JSON and TOML configs
-                var jsonConfig = _loadConfigFromPath(legacyConfigPath);
-                var tomlConfig = _loadConfigFromToml(legacyTomlPath);
+                var jsonConfig = LoadConfigFromPath(legacyConfigPath);
+                var tomlConfig = LoadConfigFromToml(legacyTomlPath);
                 
                 // Prefer TOML if it has a custom nick (not default), or prefer whichever has custom data
                 Config? legacyConfig = null;
@@ -518,7 +508,7 @@ public class InstanceService
                 }
 
                 // Skip if already exists in new location
-                if (Directory.Exists(targetVersion) && _isClientPresent(targetVersion))
+                if (Directory.Exists(targetVersion) && IsClientPresent(targetVersion))
                 {
                     Logger.Info("Migrate", $"Skipping {folderName} - already exists at {targetVersion}");
                     continue;
@@ -772,4 +762,230 @@ public class InstanceService
             return "release";
         return versionType;
     }
+    
+    /// <summary>
+    /// Checks if the game client executable exists at the specified version path.
+    /// Tries multiple layouts: new layout (Client/...) and legacy layout (game/Client/...).
+    /// </summary>
+    public bool IsClientPresent(string versionPath)
+    {
+        var subfolders = new[] { "", "game" };
+
+        foreach (var sub in subfolders)
+        {
+            string basePath = string.IsNullOrEmpty(sub) ? versionPath : Path.Combine(versionPath, sub);
+            string clientPath;
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                clientPath = Path.Combine(basePath, "Client", "Hytale.app", "Contents", "MacOS", "HytaleClient");
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                clientPath = Path.Combine(basePath, "Client", "HytaleClient.exe");
+            }
+            else
+            {
+                clientPath = Path.Combine(basePath, "Client", "HytaleClient");
+            }
+
+            if (File.Exists(clientPath))
+            {
+                Logger.Info("Version", $"IsClientPresent: found at {clientPath}");
+                return true;
+            }
+        }
+
+        Logger.Info("Version", $"IsClientPresent: not found in {versionPath}");
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if game assets are present at the specified version path.
+    /// </summary>
+    public bool AreAssetsPresent(string versionPath)
+    {
+        string assetsCheck;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            assetsCheck = Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "Assets");
+        }
+        else
+        {
+            assetsCheck = Path.Combine(versionPath, "Client", "Assets");
+        }
+
+        bool exists = Directory.Exists(assetsCheck) && Directory.EnumerateFileSystemEntries(assetsCheck).Any();
+        Logger.Info("Version", $"AreAssetsPresent: path={assetsCheck}, exists={exists}");
+        return exists;
+    }
+
+    /// <summary>
+    /// Gets the path to a specific instance version. Returns latest path if version is 0.
+    /// </summary>
+    public string GetInstancePath(string branch, int version)
+    {
+        if (version == 0)
+        {
+            return GetLatestInstancePath(branch);
+        }
+        string normalizedBranch = NormalizeVersionType(branch);
+        return Path.Combine(GetInstanceRoot(), normalizedBranch, version.ToString());
+    }
+
+    /// <summary>
+    /// Resolves the instance path, optionally preferring existing legacy paths.
+    /// </summary>
+    public string ResolveInstancePath(string branch, int version, bool preferExisting)
+    {
+        if (preferExisting)
+        {
+            var existing = FindExistingInstancePath(branch, version);
+            if (!string.IsNullOrWhiteSpace(existing))
+            {
+                return existing;
+            }
+        }
+
+        return GetInstancePath(branch, version);
+    }
+    
+    #region Legacy Config Migration
+
+    /// <summary>
+    /// Gets the list of legacy installation root directories to search for migrations.
+    /// </summary>
+    private IEnumerable<string> GetLegacyRoots()
+    {
+        var roots = new List<string>();
+        void Add(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            roots.Add(path);
+        }
+
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            Add(Path.Combine(appData, "hyprism"));
+            Add(Path.Combine(appData, "Hyprism"));
+            Add(Path.Combine(appData, "HyPrism")); // legacy casing
+            Add(Path.Combine(appData, "HyPrismLauncher"));
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            Add(Path.Combine(home, "Library", "Application Support", "hyprism"));
+            Add(Path.Combine(home, "Library", "Application Support", "Hyprism"));
+        }
+        else
+        {
+            var xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            if (!string.IsNullOrWhiteSpace(xdg))
+            {
+                Add(Path.Combine(xdg, "hyprism"));
+                Add(Path.Combine(xdg, "Hyprism"));
+            }
+            Add(Path.Combine(home, ".local", "share", "hyprism"));
+            Add(Path.Combine(home, ".local", "share", "Hyprism"));
+        }
+
+        return roots;
+    }
+
+    /// <summary>
+    /// Loads configuration from a JSON file at the specified path.
+    /// </summary>
+    private Config? LoadConfigFromPath(string path)
+    {
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<Config>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Loads configuration from a TOML file at the specified path.
+    /// </summary>
+    private Config? LoadConfigFromToml(string path)
+    {
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            var cfg = new Config();
+            foreach (var line in File.ReadAllLines(path))
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith("#")) continue;
+
+                static string Unquote(string value)
+                {
+                    value = value.Trim();
+                    // Handle double quotes
+                    if (value.StartsWith("\"") && value.EndsWith("\"") && value.Length >= 2)
+                    {
+                        return value.Substring(1, value.Length - 2);
+                    }
+                    // Handle single quotes (TOML style)
+                    if (value.StartsWith("'") && value.EndsWith("'") && value.Length >= 2)
+                    {
+                        return value.Substring(1, value.Length - 2);
+                    }
+                    return value;
+                }
+
+                var parts = trimmed.Split('=', 2, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length != 2) continue;
+
+                var key = parts[0].Trim().ToLowerInvariant();
+                var val = Unquote(parts[1]);
+
+                switch (key)
+                {
+                    case "nick":
+                    case "name":
+                    case "username":
+                        cfg.Nick = val;
+                        break;
+                    case "uuid":
+                        cfg.UUID = val;
+                        break;
+                    case "instance_directory":
+                    case "instancedirectory":
+                    case "instance_dir":
+                    case "instancepath":
+                    case "instance_path":
+                        cfg.InstanceDirectory = val;
+                        break;
+                    case "versiontype":
+                    case "branch":
+                        cfg.VersionType = NormalizeVersionType(val);
+                        break;
+                    case "selectedversion":
+                        if (int.TryParse(val, out var sel)) cfg.SelectedVersion = sel;
+                        break;
+                }
+            }
+            return cfg;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    #endregion
 }
+

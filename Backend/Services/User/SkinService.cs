@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using HyPrism.Backend.Models;
+using HyPrism.Backend.Services.Core;
 
 namespace HyPrism.Backend.Services.User;
 

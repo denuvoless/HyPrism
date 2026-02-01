@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace HyPrism.Backend;
+namespace HyPrism.Backend.Services.Core;
 
 public static class Logger
 {

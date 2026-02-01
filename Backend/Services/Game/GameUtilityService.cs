@@ -1,7 +1,10 @@
 using System;
+using HyPrism.Backend.Services.Core;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using System.Web;
 using HyPrism.Backend.Models;
 
 namespace HyPrism.Backend.Services.Game;
@@ -216,6 +219,44 @@ public class GameUtilityService
             Logger.Error("Files", $"Failed to open folder '{path}': {ex.Message}");
             return false;
         }
+    }
+
+    #endregion
+
+    #region News Utilities
+
+    /// <summary>
+    /// Очищает текст новостей от HTML тегов, префиксов заголовка и дат.
+    /// </summary>
+    public static string CleanNewsExcerpt(string? rawExcerpt, string? title)
+    {
+        var excerpt = HttpUtility.HtmlDecode(rawExcerpt ?? "");
+        if (string.IsNullOrWhiteSpace(excerpt))
+        {
+            return "";
+        }
+
+        // Remove HTML tags
+        excerpt = Regex.Replace(excerpt, @"<[^>]+>", " ");
+        excerpt = Regex.Replace(excerpt, @"\s+", " ").Trim();
+
+        // Remove title prefix if present
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            var normalizedTitle = Regex.Replace(title.Trim(), @"\s+", " ");
+            var escapedTitle = Regex.Escape(normalizedTitle);
+            excerpt = Regex.Replace(excerpt, $@"^\s*{escapedTitle}\s*[:\-–—]?\s*", "", RegexOptions.IgnoreCase);
+        }
+
+        // Remove date prefixes like "January 30, 2026 –"
+        excerpt = Regex.Replace(excerpt, @"^\s*\p{L}+\s+\d{1,2},\s*\d{4}\s*[–—\-:]?\s*", "", RegexOptions.IgnoreCase);
+        excerpt = Regex.Replace(excerpt, @"^\s*\d{1,2}\s+\p{L}+\s+\d{4}\s*[–—\-:]?\s*", "", RegexOptions.IgnoreCase);
+        excerpt = Regex.Replace(excerpt, @"^[\-–—:\s]+", "");
+        
+        // Add space between lowercase and uppercase (fix run-together words)
+        excerpt = Regex.Replace(excerpt, @"(\p{Ll})(\p{Lu})", "$1: $2");
+
+        return excerpt.Trim();
     }
 
     #endregion
