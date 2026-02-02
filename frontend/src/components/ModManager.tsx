@@ -171,11 +171,13 @@ export const ModManager: React.FC<ModManagerProps> = ({
   const [searchResults, setSearchResults] = useState<CurseForgeMod[]>([]);
   const [categories, setCategories] = useState<ModCategory[]>([]);
   const [selectedCategory, setSelectedCategory] = useState(0);
+  const [selectedSortField, setSelectedSortField] = useState(6); // Default: TotalDownloads
   const [isSearching, setIsSearching] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
   const [selectedBrowseMods, setSelectedBrowseMods] = useState<Set<number | string>>(new Set());
   const [highlightedBrowseMods, setHighlightedBrowseMods] = useState<Set<number | string>>(new Set());
 
@@ -227,6 +229,16 @@ export const ModManager: React.FC<ModManagerProps> = ({
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Sort options for CurseForge API
+  const sortOptions = [
+    { id: 1, name: t('Relevancy') },
+    { id: 2, name: t('Popularity') },
+    { id: 3, name: t('Latest update') },
+    { id: 11, name: t('Creation Date') },
+    { id: 6, name: t('Total Downloads') },
+  ];
 
   const instanceBranchLabel = currentBranch === GameBranch.RELEASE
     ? t('Release')
@@ -359,6 +371,9 @@ export const ModManager: React.FC<ModManagerProps> = ({
       if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node)) {
         setIsCategoryDropdownOpen(false);
       }
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target as Node)) {
+        setIsSortDropdownOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -377,8 +392,9 @@ export const ModManager: React.FC<ModManagerProps> = ({
         const pageSize = 20;
         // Categories as string array (empty if "all")
         const categoryFilter = selectedCategory === 0 ? [] : [selectedCategory.toString()];
-        // sortField: 2=Popularity, sortOrder: 2=desc
-        const result: any = await SearchMods(searchQuery, pageNum, pageSize, categoryFilter, 2, 2);
+        // sortField: 1=Featured, 2=Popularity, 3=LastUpdated, 6=TotalDownloads, 11=ReleasedDate
+        // sortOrder: 2=desc
+        const result: any = await SearchMods(searchQuery, pageNum, pageSize, categoryFilter, selectedSortField, 2);
         const mods = result?.Mods ?? result?.mods ?? [];
 
         if (resetResults) {
@@ -395,7 +411,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
       setIsSearching(false);
       setIsLoadingMore(false);
     },
-    [searchQuery, selectedCategory, currentPage]
+    [searchQuery, selectedCategory, selectedSortField, currentPage]
   );
 
   // Real-time search with debounce
@@ -415,7 +431,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery, selectedCategory, activeTab]);
+  }, [searchQuery, selectedCategory, selectedSortField, activeTab]);
 
   // Load more on scroll
   const handleScroll = useCallback(
@@ -1349,6 +1365,43 @@ export const ModManager: React.FC<ModManagerProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Sort dropdown */}
+            <div ref={sortDropdownRef} className="relative">
+              <button
+                onClick={() => setIsSortDropdownOpen(!isSortDropdownOpen)}
+                className="h-10 px-4 pr-10 rounded-xl bg-white/5 border border-white/10 text-white/80 text-sm hover:border-white/20 flex items-center gap-2 min-w-[160px] whitespace-nowrap"
+              >
+                <span className="text-white/50 mr-1">{t('Sort by')}</span>
+                <span className="truncate">{sortOptions.find(s => s.id === selectedSortField)?.name || t('Total Downloads')}</span>
+                <ChevronDown
+                  size={14}
+                  className={`absolute right-3 text-white/40 transition-transform ${isSortDropdownOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {isSortDropdownOpen && (
+                <div className="absolute top-full right-0 mt-2 z-[100] min-w-[180px] bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl overflow-hidden">
+                  {sortOptions.map((option) => (
+                    <button
+                      key={option.id}
+                      onClick={() => {
+                        setSelectedSortField(option.id);
+                        setIsSortDropdownOpen(false);
+                      }}
+                      className={`w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors flex items-center justify-between ${selectedSortField === option.id ? 'bg-white/5' : 'text-white/70'
+                        }`}
+                      style={selectedSortField === option.id ? { color: accentColor } : undefined}
+                    >
+                      {option.name}
+                      {selectedSortField === option.id && (
+                        <Check size={14} style={{ color: accentColor }} />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1658,6 +1711,23 @@ export const ModManager: React.FC<ModManagerProps> = ({
                     <p className="text-white/50 text-sm truncate">
                       {'authors' in selectedMod ? selectedMod.authors?.[0]?.name : 'author' in selectedMod ? selectedMod.author : ''}
                     </p>
+                    {/* Categories - below author name */}
+                    {(('categories' in selectedMod && selectedMod.categories && (selectedMod.categories as (string | { name: string })[]).length > 0)) && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                        {(selectedMod.categories as (string | { id: number; name: string })[]).map((cat, idx) => {
+                          const catName = typeof cat === 'string' ? cat : cat.name;
+                          return (
+                            <span
+                              key={idx}
+                              className="px-1.5 py-0.5 text-[10px] rounded font-medium"
+                              style={{ backgroundColor: `${accentColor}25`, color: accentColor }}
+                            >
+                              {t(catName)}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1670,27 +1740,6 @@ export const ModManager: React.FC<ModManagerProps> = ({
                       {'summary' in selectedMod ? selectedMod.summary : 'description' in selectedMod ? selectedMod.description : t('No description')}
                     </p>
                   </div>
-
-                  {/* Categories */}
-                  {(('categories' in selectedMod && selectedMod.categories && (selectedMod.categories as (string | { name: string })[]).length > 0)) && (
-                    <div>
-                      <h4 className="text-white/50 text-xs uppercase mb-2">{t('Categories')}</h4>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {(selectedMod.categories as (string | { id: number; name: string })[]).map((cat, idx) => {
-                          const catName = typeof cat === 'string' ? cat : cat.name;
-                          return (
-                            <span
-                              key={idx}
-                              className="px-2 py-1 text-xs rounded-lg font-medium"
-                              style={{ backgroundColor: `${accentColor}25`, color: accentColor }}
-                            >
-                              {t(catName)}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Screenshots - show for all mods */}
                   {screenshots && screenshots.length > 0 && (

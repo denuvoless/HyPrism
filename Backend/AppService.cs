@@ -9591,8 +9591,15 @@ rm -f ""$0""
                     
                     if (modData?.LatestFiles == null || modData.LatestFiles.Count == 0) continue;
                     
+                    // Filter out alpha files (ReleaseType == 3) unless ShowAlphaMods is enabled
+                    var availableFiles = modData.LatestFiles.AsEnumerable();
+                    if (!_config.ShowAlphaMods)
+                    {
+                        availableFiles = availableFiles.Where(f => f.ReleaseType != 3);
+                    }
+                    
                     // Find the latest file (highest file ID or most recent)
-                    var latestFile = modData.LatestFiles
+                    var latestFile = availableFiles
                         .OrderByDescending(f => f.FileDate)
                         .ThenByDescending(f => f.Id)
                         .FirstOrDefault();
@@ -9929,6 +9936,55 @@ rm -f ""$0""
     public string GetLauncherFolderPath()
     {
         return _appDir;
+    }
+
+    /// <summary>
+    /// Gets the Discord invite link from local config file or GitHub.
+    /// Falls back to a default link if fetch fails.
+    /// </summary>
+    public async Task<string> GetDiscordLinkAsync()
+    {
+        const string fallbackLink = "https://discord.gg/3U8KNbap3g";
+        
+        // First try to read from local assets/discord-link.txt
+        try
+        {
+            var localPath = Path.Combine(AppContext.BaseDirectory, "assets", "discord-link.txt");
+            if (File.Exists(localPath))
+            {
+                var link = File.ReadAllText(localPath).Trim();
+                if (!string.IsNullOrEmpty(link) && (link.StartsWith("https://discord.gg/") || link.StartsWith("https://discord.com/")))
+                {
+                    Logger.Info("Discord", $"Using local Discord link: {link}");
+                    return link;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Discord", $"Failed to read local Discord link: {ex.Message}");
+        }
+        
+        // Fallback: try to fetch from GitHub
+        try
+        {
+            const string configUrl = "https://raw.githubusercontent.com/yyyumeniku/HyPrism/main/assets/discord-link.txt";
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var response = await HttpClient.GetStringAsync(configUrl, cts.Token);
+            var link = response.Trim();
+            
+            if (!string.IsNullOrEmpty(link) && (link.StartsWith("https://discord.gg/") || link.StartsWith("https://discord.com/")))
+            {
+                Logger.Info("Discord", $"Using GitHub Discord link: {link}");
+                return link;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Discord", $"Failed to fetch Discord link from GitHub: {ex.Message}");
+        }
+        
+        return fallbackLink;
     }
 
     /// <summary>

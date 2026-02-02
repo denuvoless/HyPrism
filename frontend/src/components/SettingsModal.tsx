@@ -34,7 +34,8 @@ import {
     SetShowAlphaMods,
     ImportInstanceFromZip,
     InstallOptimizationMods,
-    GetLastExportPath
+    GetLastExportPath,
+    GetDiscordLink
 } from '@/api/backend';
 import type { InstalledVersionInfo } from '@/api/backend';
 import { useAccentColor } from '../contexts/AccentColorContext';
@@ -539,7 +540,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const openGitHub = () => BrowserOpenURL('https://github.com/yyyumeniku/HyPrism');
     const openBugReport = () => BrowserOpenURL('https://github.com/yyyumeniku/HyPrism/issues/new');
-    const openDiscord = () => BrowserOpenURL('https://discord.gg/3U8KNbap3g');
+    const openDiscord = async () => {
+        const link = await GetDiscordLink();
+        BrowserOpenURL(link);
+    };
 
     const currentLangConfig = LANGUAGE_CONFIG[i18n.language as Language] || LANGUAGE_CONFIG[Language.ENGLISH];
 

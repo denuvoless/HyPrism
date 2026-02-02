@@ -49,6 +49,10 @@
     <Content Include="jre.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="assets/discord-link.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>assets/discord-link.txt</Link>
+    </Content>
     <Content Include="assets/game-lang/**/*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>game-lang/%(RecursiveDir)%(Filename)%(Extension)</Link>

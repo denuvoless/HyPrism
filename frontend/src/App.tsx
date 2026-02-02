@@ -65,6 +65,7 @@ import {
   GetDisableNews,
   GetAccentColor,
   GetHasCompletedOnboarding,
+  GetDiscordLink,
 } from '@/api/backend';
 import appIcon from './assets/appicon.png';
 
@@ -1022,7 +1023,10 @@ const App: React.FC = () => {
             <div className="flex items-center gap-3">
               {/* Discord Button */}
               <button
-                onClick={() => BrowserOpenURL('https://discord.gg/3U8KNbap3g')}
+                onClick={async () => {
+                  const link = await GetDiscordLink();
+                  BrowserOpenURL(link);
+                }}
                 className="p-2 rounded-xl hover:bg-[#5865F2]/20 transition-all duration-150 cursor-pointer active:scale-95"
                 title={t('Join Discord')}
               >

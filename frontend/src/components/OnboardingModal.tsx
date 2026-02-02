@@ -25,7 +25,8 @@ import {
     SetHasCompletedOnboarding,
     GetRandomUsername,
     GetLauncherVersion,
-    SetBackgroundMode as SetBackgroundModeBackend
+    SetBackgroundMode as SetBackgroundModeBackend,
+    GetDiscordLink
 } from '@/api/backend';
 import { BrowserOpenURL } from '@/api/bridge';
 import { useAccentColor } from '../contexts/AccentColorContext';
@@ -346,7 +347,10 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     };
     
     const openGitHub = () => BrowserOpenURL('https://github.com/yyyumeniku/HyPrism');
-    const openDiscord = () => BrowserOpenURL('https://discord.gg/3U8KNbap3g');
+    const openDiscord = async () => {
+        const link = await GetDiscordLink();
+        BrowserOpenURL(link);
+    };
     const openBugReport = () => BrowserOpenURL('https://github.com/yyyumeniku/HyPrism/issues/new');
     
     const truncateName = (name: string, maxLength: number) => {

@@ -425,6 +425,7 @@ class Program
                         "OpenLauncherFolder" => app.OpenLauncherFolder(),
                         "DeleteLauncherData" => app.DeleteLauncherData(),
                         "GetLauncherFolderPath" => app.GetLauncherFolderPath(),
+                        "GetDiscordLink" => await app.GetDiscordLinkAsync(),
                         "GetTestAnnouncement" => app.GetTestAnnouncement(),
                         
                         // News settings

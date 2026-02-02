@@ -872,6 +872,12 @@ export const OpenLauncherFolder = () => callBackend<void>('OpenLauncherFolder');
 export const GetLauncherFolderPath = () => callBackend<string>('GetLauncherFolderPath');
 
 /**
+ * Gets the Discord invite link from a GitHub gist.
+ * Falls back to a default link if fetch fails.
+ */
+export const GetDiscordLink = () => callBackend<string>('GetDiscordLink');
+
+/**
  * Deletes all launcher data
  */
 export const DeleteLauncherData = () => callBackend<boolean>('DeleteLauncherData');
