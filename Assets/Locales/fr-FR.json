@@ -78,7 +78,6 @@
       "delete": "Supprimer l'instance"
     },
     "aboutSettings": {
-      "header": "À propos de HyPrism",
       "title": "Lanceur HyPrism",
       "version": "Version {0}",
       "description": "Un lanceur moderne pour Hytale"

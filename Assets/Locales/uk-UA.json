@@ -78,7 +78,6 @@
       "delete": "Видалити екземпляр"
     },
     "aboutSettings": {
-      "header": "Про HyPrism",
       "title": "Лаунчер HyPrism",
       "version": "Версія {0}",
       "description": "Сучасний лаунчер для Hytale"

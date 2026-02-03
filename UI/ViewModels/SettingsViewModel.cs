@@ -157,7 +157,6 @@ public class SettingsViewModel : ReactiveObject
     public IObservable<string> InstancesDelete { get; }
     
     // About
-    public IObservable<string> AboutHeader { get; }
     public IObservable<string> AboutTitle { get; }
     public IObservable<string> AboutVersion { get; }
     public IObservable<string> AboutDescription { get; }
@@ -402,7 +401,6 @@ public class SettingsViewModel : ReactiveObject
         InstancesDelete = loc.GetObservable("settings.instanceSettings.delete");
         
         // About
-        AboutHeader = loc.GetObservable("settings.aboutSettings.header");
         AboutTitle = loc.GetObservable("settings.aboutSettings.title");
         AboutVersion = loc.GetObservable("settings.aboutSettings.version")
             .Select(fmt => string.Format(fmt, _configService.Configuration.Version));

@@ -78,7 +78,6 @@
       "delete": "Instanz löschen"
     },
     "aboutSettings": {
-      "header": "Über HyPrism",
       "title": "HyPrism Launcher",
       "version": "Version {0}",
       "description": "Ein moderner Launcher für Hytale"

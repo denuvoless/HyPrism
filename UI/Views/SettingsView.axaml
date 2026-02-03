@@ -681,7 +681,7 @@
                                        HorizontalAlignment="Center" 
                                        Foreground="#555" 
                                        FontSize="12" 
-                                       Margin="0,10,0,5"/>
+                                       Margin="0,5,0,2"/>
 
                             <!-- Contributors -->
                             <ItemsControl ItemsSource="{Binding Contributors}" HorizontalAlignment="Center">

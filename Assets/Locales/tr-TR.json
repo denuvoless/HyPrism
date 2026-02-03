@@ -78,7 +78,6 @@
       "delete": "Örneği Sil"
     },
     "aboutSettings": {
-      "header": "HyPrism Hakkında",
       "title": "HyPrism Başlatıcısı",
       "version": "Sürüm {0}",
       "description": "Hytale için modern bir başlatıcı"

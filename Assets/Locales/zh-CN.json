@@ -80,7 +80,6 @@
       "delete": "删除实例"
     },
     "aboutSettings": {
-      "header": "关于 HyPrism",
       "title": "HyPrism 启动器",
       "version": "版本 {0}",
       "description": "现代化的 Hytale 启动器"

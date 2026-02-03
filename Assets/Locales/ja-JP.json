@@ -78,7 +78,6 @@
       "delete": "インスタンスを削除"
     },
     "aboutSettings": {
-      "header": "HyPrismについて",
       "title": "HyPrism ランチャー",
       "version": "バージョン {0}",
       "description": "Hytaleのためのモダンなランチャー"
