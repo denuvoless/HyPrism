@@ -4,13 +4,20 @@ using System.Reactive;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using HyPrism.Services;
+using HyPrism.Services.Core;
+using HyPrism.Services.Game;
+using HyPrism.Services.User;
 using ReactiveUI;
 
 namespace HyPrism.UI.ViewModels;
 
 public class ProfileEditorViewModel : ReactiveObject
 {
-    private readonly AppService _appService;
+    private readonly ConfigService _configService;
+    private readonly ProfileService _profileService;
+    private readonly SkinService _skinService;
+    private readonly FileService _fileService;
+
     private string _uuid = string.Empty;
     private string _username = string.Empty;
     private string? _avatarPreview;
@@ -23,9 +30,16 @@ public class ProfileEditorViewModel : ReactiveObject
     // Event for profile updates
     public event Action? ProfileUpdated;
     
-    public ProfileEditorViewModel(AppService appService)
+    public ProfileEditorViewModel(
+        ConfigService configService,
+        ProfileService profileService,
+        SkinService skinService,
+        FileService fileService)
     {
-        _appService = appService;
+        _configService = configService;
+        _profileService = profileService;
+        _skinService = skinService;
+        _fileService = fileService;
         
         // Commands
         EditUsernameCommand = ReactiveCommand.Create(StartEditingUsername);
@@ -38,9 +52,9 @@ public class ProfileEditorViewModel : ReactiveObject
         
         RandomizeUsernameCommand = ReactiveCommand.Create(RandomizeUsername);
         RandomizeUuidCommand = ReactiveCommand.Create(RandomizeUuid);
-        CopyUuidCommand = ReactiveCommand.Create(CopyUuid);
+        CopyUuidCommand = ReactiveCommand.CreateFromTask(CopyUuidAsync);
         
-        OpenAvatarFolderCommand = ReactiveCommand.CreateFromTask(OpenAvatarFolderAsync);
+        OpenAvatarFolderCommand = ReactiveCommand.Create(OpenAvatarFolder);
         RefreshAvatarCommand = ReactiveCommand.CreateFromTask(RefreshAvatarAsync);
         
         CloseCommand = ReactiveCommand.Create(() => { });
@@ -111,15 +125,16 @@ public class ProfileEditorViewModel : ReactiveObject
     public ICommand OpenAvatarFolderCommand { get; }
     public ICommand RefreshAvatarCommand { get; }
     
-    public ICommand CloseCommand { get; }
+    public ReactiveCommand<Unit, Unit> CloseCommand { get; }
     
     // Methods
     public async Task LoadProfileAsync()
     {
         try
         {
-            Uuid = _appService.Configuration.UUID ?? GenerateUuid();
-            Username = _appService.Configuration.Nick ?? "HyPrism";
+            var config = _configService.Configuration;
+            Uuid = config.UUID ?? GenerateUuid();
+            Username = config.Nick ?? "HyPrism";
             EditUsername = Username;
             EditUuid = Uuid;
             
@@ -146,7 +161,7 @@ public class ProfileEditorViewModel : ReactiveObject
         IsSaving = true;
         try
         {
-            _appService.SetNick(trimmed);
+            _profileService.SetNick(trimmed);
             Username = trimmed;
             IsEditingUsername = false;
             ProfileUpdated?.Invoke();
@@ -178,7 +193,7 @@ public class ProfileEditorViewModel : ReactiveObject
         IsSaving = true;
         try
         {
-            _appService.SetUUID(trimmed);
+            _profileService.SetUUID(trimmed);
             Uuid = trimmed;
             IsEditingUuid = false;
             
@@ -212,16 +227,24 @@ public class ProfileEditorViewModel : ReactiveObject
         EditUuid = GenerateUuid();
     }
     
-    private void CopyUuid()
+    // Copy UUID to clipboard
+    private async Task CopyUuidAsync()
     {
-        // TODO: Implement clipboard copy
+        if (Avalonia.Application.Current != null)
+        {
+            var topLevel = Avalonia.Application.Current.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow
+                : null;
+            
+            if (topLevel?.Clipboard != null)
+            {
+                await topLevel.Clipboard.SetTextAsync(Uuid);
+            }
+        }
     }
     
-    private async Task OpenAvatarFolderAsync()
-    {
-        // TODO: Implement opening avatar folder
-        await Task.CompletedTask;
-    }
+    private void OpenAvatarFolder() => _fileService.OpenAppFolder();
+    
     
     private async Task RefreshAvatarAsync()
     {

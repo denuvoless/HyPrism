@@ -4,20 +4,28 @@ using Avalonia.Markup.Xaml;
 using AsyncImageLoader;
 using AsyncImageLoader.Loaders;
 using HyPrism.UI.ViewModels;
-using HyPrism.UI.Services;
 using HyPrism.Services.Core;
 using HyPrism.Services;
+using Microsoft.Extensions.DependencyInjection;
+using System;
 
 namespace HyPrism.UI;
 
 public partial class App : Application
 {
+    // DI Container
+    public new static App? Current => Application.Current as App;
+    public IServiceProvider? Services { get; private set; }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
         
         // Initialize AsyncImageLoader
         ImageLoader.AsyncImageLoader = new RamCachedWebImageLoader();
+        
+        // Initialize DI
+        Services = Bootstrapper.Initialize();
     }
 
     public override void OnFrameworkInitializationCompleted()
@@ -37,9 +45,12 @@ public partial class App : Application
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // Resolve MainViewModel from the container
+            var mainVm = Services!.GetRequiredService<MainViewModel>();
+            
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainViewModel()
+                DataContext = mainVm
             };
         }
 

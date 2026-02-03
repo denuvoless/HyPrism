@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using HyPrism.Models;
 using HyPrism.Services.Core;
+using HyPrism.Services.Game;
 
 namespace HyPrism.Services.User;
 
@@ -14,27 +15,18 @@ namespace HyPrism.Services.User;
 public class UserIdentityService
 {
     // Delegates to access AppService state
-    private readonly Func<Config> _getConfig;
-    private readonly Action _saveConfig;
+    private readonly ConfigService _configService;
     private readonly SkinService _skinService;
-    private readonly Func<string, string> _normalizeVersionType;
-    private readonly Func<string, int, bool, string> _resolveInstancePath;
-    private readonly Func<string, string> _getInstanceUserDataPath;
+    private readonly InstanceService _instanceService;
 
     public UserIdentityService(
-        Func<Config> getConfig,
-        Action saveConfig,
+        ConfigService configService,
         SkinService skinService,
-        Func<string, string> normalizeVersionType,
-        Func<string, int, bool, string> resolveInstancePath,
-        Func<string, string> getInstanceUserDataPath)
+        InstanceService instanceService)
     {
-        _getConfig = getConfig;
-        _saveConfig = saveConfig;
+        _configService = configService;
         _skinService = skinService;
-        _normalizeVersionType = normalizeVersionType;
-        _resolveInstancePath = resolveInstancePath;
-        _getInstanceUserDataPath = getInstanceUserDataPath;
+        _instanceService = instanceService;
     }
 
     /// <summary>
@@ -43,7 +35,7 @@ public class UserIdentityService
     /// </summary>
     public string GetUuidForUser(string username)
     {
-        var config = _getConfig();
+        var config = _configService.Configuration;
         
         if (string.IsNullOrWhiteSpace(username))
         {
@@ -71,7 +63,7 @@ public class UserIdentityService
             Logger.Info("UUID", $"Recovered orphaned skin UUID for user '{username}': {orphanedUuid}");
             config.UserUuids[username] = orphanedUuid;
             config.UUID = orphanedUuid;
-            _saveConfig();
+            _configService.SaveConfig();
             return orphanedUuid;
         }
         
@@ -82,7 +74,7 @@ public class UserIdentityService
         // Also update the legacy UUID field for backwards compatibility
         config.UUID = newUuid;
         
-        _saveConfig();
+        _configService.SaveConfig();
         Logger.Info("UUID", $"Created new UUID for user '{username}': {newUuid}");
         
         return newUuid;
@@ -93,7 +85,7 @@ public class UserIdentityService
     /// </summary>
     public string GetCurrentUuid()
     {
-        var config = _getConfig();
+        var config = _configService.Configuration;
         return GetUuidForUser(config.Nick);
     }
     
@@ -103,7 +95,7 @@ public class UserIdentityService
     /// </summary>
     public List<UuidMapping> GetAllUuidMappings()
     {
-        var config = _getConfig();
+        var config = _configService.Configuration;
         config.UserUuids ??= new Dictionary<string, string>();
         
         var currentNick = config.Nick;
@@ -124,7 +116,7 @@ public class UserIdentityService
         if (string.IsNullOrWhiteSpace(uuid)) return false;
         if (!Guid.TryParse(uuid.Trim(), out var parsed)) return false;
         
-        var config = _getConfig();
+        var config = _configService.Configuration;
         config.UserUuids ??= new Dictionary<string, string>();
         
         // Remove any existing entry with same username (case-insensitive)
@@ -143,7 +135,7 @@ public class UserIdentityService
             config.UUID = parsed.ToString();
         }
         
-        _saveConfig();
+        _configService.SaveConfig();
         Logger.Info("UUID", $"Set custom UUID for user '{username}': {parsed}");
         return true;
     }
@@ -156,7 +148,7 @@ public class UserIdentityService
     {
         if (string.IsNullOrWhiteSpace(username)) return false;
         
-        var config = _getConfig();
+        var config = _configService.Configuration;
         
         // Don't allow deleting current user's UUID
         if (username.Equals(config.Nick, StringComparison.OrdinalIgnoreCase))
@@ -173,7 +165,7 @@ public class UserIdentityService
         if (existingKey != null)
         {
             config.UserUuids.Remove(existingKey);
-            _saveConfig();
+            _configService.SaveConfig();
             Logger.Info("UUID", $"Deleted UUID for user '{username}'");
             return true;
         }
@@ -187,7 +179,7 @@ public class UserIdentityService
     /// </summary>
     public string ResetCurrentUserUuid()
     {
-        var config = _getConfig();
+        var config = _configService.Configuration;
         var newUuid = Guid.NewGuid().ToString();
         config.UserUuids ??= new Dictionary<string, string>();
         
@@ -202,7 +194,7 @@ public class UserIdentityService
         config.UserUuids[config.Nick] = newUuid;
         config.UUID = newUuid;
         
-        _saveConfig();
+        _configService.SaveConfig();
         Logger.Info("UUID", $"Reset UUID for current user '{config.Nick}': {newUuid}");
         return newUuid;
     }
@@ -215,7 +207,7 @@ public class UserIdentityService
     {
         if (string.IsNullOrWhiteSpace(username)) return null;
         
-        var config = _getConfig();
+        var config = _configService.Configuration;
         config.UserUuids ??= new Dictionary<string, string>();
         
         // Find the username (case-insensitive)
@@ -227,7 +219,7 @@ public class UserIdentityService
             // Switch to existing username with its UUID
             config.Nick = existingKey; // Use original casing
             config.UUID = config.UserUuids[existingKey];
-            _saveConfig();
+            _configService.SaveConfig();
             Logger.Info("UUID", $"Switched to existing user '{existingKey}' with UUID {config.UUID}");
             return config.UUID;
         }
@@ -237,7 +229,7 @@ public class UserIdentityService
         config.Nick = username;
         config.UUID = newUuid;
         config.UserUuids[username] = newUuid;
-        _saveConfig();
+        _configService.SaveConfig();
         Logger.Info("UUID", $"Created new user '{username}' with UUID {newUuid}");
         return newUuid;
     }
@@ -251,7 +243,7 @@ public class UserIdentityService
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             var currentUuid = GetCurrentUuid();
             var orphanedUuid = _skinService.FindOrphanedSkinUuid();
             
@@ -262,9 +254,9 @@ public class UserIdentityService
             }
             
             // If the current UUID already has a skin, don't overwrite
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
-            var userDataPath = _getInstanceUserDataPath(versionPath);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+            var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");
             var avatarCacheDir = Path.Combine(userDataPath, "CachedAvatarPreviews");
             

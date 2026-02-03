@@ -140,6 +140,7 @@ public class LocalizationService : ReactiveObject
                 LoadLanguageInternal(lang);
             }
         }
+        Logger.Success("Localization", "All translations successfully loaded");
     }
 
     /// <summary>
@@ -180,8 +181,6 @@ public class LocalizationService : ReactiveObject
 
     private Dictionary<string, string>? LoadLanguageInternal(string languageCode)
     {
-         Logger.Info("Localization", $"Loading language from resources: {languageCode}");
-        
         var assembly = Assembly.GetExecutingAssembly();
         var resourceName = $"HyPrism.Assets.Locales.{languageCode}.json";
         
@@ -211,7 +210,6 @@ public class LocalizationService : ReactiveObject
                 _languageCache[languageCode] = translations;
             }
             
-            Logger.Info("Localization", $"Successfully loaded {translations.Count} translations for '{languageCode}'");
             return translations;
         }
         catch (Exception ex)

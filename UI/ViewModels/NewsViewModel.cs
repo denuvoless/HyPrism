@@ -14,7 +14,9 @@ namespace HyPrism.UI.ViewModels;
 
 public class NewsViewModel : ReactiveObject
 {
-    private readonly AppService _appService;
+    private readonly NewsService _newsService;
+    private readonly BrowserService _browserService;
+
     private readonly List<NewsItemResponse> _allNews = new();
     
     // Reactive Localization Properties
@@ -83,9 +85,10 @@ public class NewsViewModel : ReactiveObject
     public ReactiveCommand<string, Unit> SetFilterCommand { get; }
     public ReactiveCommand<string, Unit> OpenLinkCommand { get; }
     
-    public NewsViewModel(AppService appService)
+    public NewsViewModel(NewsService newsService, BrowserService browserService)
     {
-        _appService = appService;
+        _newsService = newsService;
+        _browserService = browserService;
         
         // Initialize reactive localization properties
         var loc = LocalizationService.Instance;
@@ -97,13 +100,16 @@ public class NewsViewModel : ReactiveObject
         
         RefreshCommand = ReactiveCommand.CreateFromTask(LoadNewsAsync);
         SetFilterCommand = ReactiveCommand.Create<string>(
-            filter => { ActiveFilter = filter; },
+            filter => 
+            { 
+                ActiveFilter = filter; 
+            },
             Observable.Return(true)); // Temporarily allow all
         OpenLinkCommand = ReactiveCommand.Create<string>(url =>
         {
             if (!string.IsNullOrEmpty(url))
             {
-                _appService.BrowserOpenURL(url);
+                _browserService.OpenURL(url);
             }
         });
         
@@ -117,7 +123,7 @@ public class NewsViewModel : ReactiveObject
         
         try
         {
-            var allNewsItems = await _appService.NewsService.GetNewsAsync(30, NewsSource.All);
+            var allNewsItems = await _newsService.GetNewsAsync(30, NewsSource.All);
             
             _allNews.Clear();
             _allNews.AddRange(allNewsItems);

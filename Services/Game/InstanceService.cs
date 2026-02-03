@@ -17,9 +17,8 @@ public class InstanceService
 {
     private readonly string _appDir;
     
-    // Delegates to access AppService state
-    private readonly Func<Config> _getConfig;
-    private readonly Action<Config> _saveConfig;
+    // Config Service dependency
+    private readonly ConfigService _configService;
     
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -27,15 +26,17 @@ public class InstanceService
         PropertyNameCaseInsensitive = true
     };
 
-    public InstanceService(
-        string appDir,
-        Func<Config> getConfig,
-        Action<Config> saveConfig)
+    public InstanceService(string appDir, ConfigService configService)
     {
         _appDir = appDir;
-        _getConfig = getConfig;
-        _saveConfig = saveConfig;
-    }
+        _configService = configService;
+    } 
+
+    // Helper to get current config
+    private Config GetConfig() => _configService.Configuration;
+    
+    // Helper to save config
+    private void SaveConfig(Config config) => _configService.SaveConfig();
 
     /// <summary>
     /// Get the root directory for all game instances.
@@ -43,7 +44,7 @@ public class InstanceService
     /// </summary>
     public string GetInstanceRoot()
     {
-        var config = _getConfig();
+        var config = GetConfig();
         var root = string.IsNullOrWhiteSpace(config.InstanceDirectory)
             ? Path.Combine(_appDir, "instances")
             : config.InstanceDirectory;
@@ -90,7 +91,7 @@ public class InstanceService
     /// </summary>
     public int ResolveVersionOrLatest(string branch, int version)
     {
-        var config = _getConfig();
+        var config = GetConfig();
         if (version > 0) return version;
         if (config.SelectedVersion > 0) return config.SelectedVersion;
 
@@ -254,7 +255,7 @@ public class InstanceService
     {
         try
         {
-            var config = _getConfig();
+            var config = GetConfig();
             
             foreach (var legacyRoot in GetLegacyRoots())
             {
@@ -364,7 +365,7 @@ public class InstanceService
 
                 if (updated)
                 {
-                    _saveConfig(config);
+                    SaveConfig(config);
                     
                     // Delete old config.toml after successful migration
                     if (File.Exists(legacyTomlPath))
@@ -987,5 +988,39 @@ public class InstanceService
     }
 
     #endregion
+
+    /// <summary>
+    /// Deletes a game instance by branch and version number.
+    /// Also removes latest.json for latest instances (version 0).
+    /// </summary>
+    public bool DeleteGame(string branch, int versionNumber)
+    {
+        try
+        {
+            string normalizedBranch = UtilityService.NormalizeVersionType(branch);
+            string versionPath = ResolveInstancePath(normalizedBranch, versionNumber, true);
+            
+            if (Directory.Exists(versionPath))
+            {
+                Directory.Delete(versionPath, true);
+            }
+            
+            if (versionNumber == 0)
+            {
+                var infoPath = GetLatestInfoPath(normalizedBranch);
+                if (File.Exists(infoPath))
+                {
+                    File.Delete(infoPath);
+                }
+            }
+            
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Game", $"Error deleting game: {ex.Message}");
+            return false;
+        }
+    }
 }
 

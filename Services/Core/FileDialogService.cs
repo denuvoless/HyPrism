@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -12,6 +13,101 @@ namespace HyPrism.Services.Core;
 /// </summary>
 public class FileDialogService
 {
+    /// <summary>
+    /// Opens a folder browser dialog and returns the selected path.
+    /// </summary>
+    public async Task<string?> BrowseFolderAsync(string? initialPath = null)
+    {
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                var script = $@"Add-Type -AssemblyName System.Windows.Forms; $dialog = New-Object System.Windows.Forms.FolderBrowserDialog; ";
+                if (!string.IsNullOrEmpty(initialPath) && Directory.Exists(initialPath))
+                    script += $@"$dialog.SelectedPath = '{initialPath.Replace("'", "''")}'; ";
+                script += @"if ($dialog.ShowDialog() -eq 'OK') { $dialog.SelectedPath }";
+                
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "powershell",
+                    Arguments = $"-NoProfile -Command \"{script}\"",
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using var process = Process.Start(psi);
+                if (process == null) return null;
+                
+                var output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
+                
+                return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                var initialDir = !string.IsNullOrEmpty(initialPath) && Directory.Exists(initialPath) 
+                    ? $"default location \"{initialPath}\"" 
+                    : "";
+                    
+                var script = $@"tell application ""Finder""
+                    activate
+                    set theFolder to choose folder with prompt ""Select Folder"" {initialDir}
+                    return POSIX path of theFolder
+                end tell";
+                
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "osascript",
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using var process = Process.Start(psi);
+                if (process == null) return null;
+                
+                await process.StandardInput.WriteAsync(script);
+                process.StandardInput.Close();
+                
+                var output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
+                
+                return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
+            }
+            else
+            {
+                // Linux - use zenity
+                var args = "--file-selection --directory --title=\"Select Folder\"";
+                if (!string.IsNullOrEmpty(initialPath) && Directory.Exists(initialPath))
+                    args += $" --filename=\"{initialPath}/\"";
+                    
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "zenity",
+                    Arguments = args,
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using var process = Process.Start(psi);
+                if (process == null) return null;
+                
+                var output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
+                
+                return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Files", $"Failed to browse folder: {ex.Message}");
+            return null;
+        }
+    }
+    
     /// <summary>
     /// Opens a native file dialog to browse for mod files.
     /// Supports multiple file selection across Windows, macOS, and Linux.

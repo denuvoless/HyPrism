@@ -14,21 +14,25 @@ namespace HyPrism.Services.Game;
 /// </summary>
 public class LanguageService
 {
-    private readonly Func<Task<List<int>>> _getVersionListRelease;
-    private readonly Func<Task<List<int>>> _getVersionListPreRelease;
-    private readonly Func<string, int, string> _getInstancePath;
-    private readonly Func<string, string> _getLatestInstancePath;
+    private readonly VersionService _versionService;
+    private readonly InstanceService _instanceService;
 
     public LanguageService(
-        Func<Task<List<int>>> getVersionListRelease,
-        Func<Task<List<int>>> getVersionListPreRelease,
-        Func<string, int, string> getInstancePath,
-        Func<string, string> getLatestInstancePath)
+        VersionService versionService,
+        InstanceService instanceService)
     {
-        _getVersionListRelease = getVersionListRelease;
-        _getVersionListPreRelease = getVersionListPreRelease;
-        _getInstancePath = getInstancePath;
-        _getLatestInstancePath = getLatestInstancePath;
+        _versionService = versionService;
+        _instanceService = instanceService;
+    }
+
+    private string GetLatestInstancePath(string branch)
+    {
+        var info = _instanceService.LoadLatestInfo(branch);
+        if (info != null)
+        {
+            return _instanceService.ResolveInstancePath(branch, info.Version, true);
+        }
+        return _instanceService.ResolveInstancePath(branch, 0, true);
     }
 
     /// <summary>
@@ -198,12 +202,12 @@ public class LanguageService
             try
             {
                 var versions = branch == "release" 
-                    ? await _getVersionListRelease() 
-                    : await _getVersionListPreRelease();
+                    ? await _versionService.GetVersionListAsync("release") 
+                    : await _versionService.GetVersionListAsync("pre-release");
                     
                 foreach (var version in versions)
                 {
-                    var instancePath = _getInstancePath(branch, version);
+                    var instancePath = _instanceService.ResolveInstancePath(branch, version, true);
                     var targetLangDir = Path.Combine(instancePath, "Client", "Data", "Shared", "language", gameLanguageCode);
 
                     if (!Directory.Exists(instancePath))
@@ -229,7 +233,7 @@ public class LanguageService
         {
             try
             {
-                var latestPath = _getLatestInstancePath(branch);
+                var latestPath = GetLatestInstancePath(branch);
                 if (Directory.Exists(latestPath))
                 {
                     var targetLangDir = Path.Combine(latestPath, "Client", "Data", "Shared", "language", gameLanguageCode);

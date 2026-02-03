@@ -23,41 +23,38 @@ public class UpdateService
     private const string LauncherVersion = "2.0.3";
     
     private readonly HttpClient _httpClient;
-    private readonly Config _config;
+    private readonly ConfigService _configService;
     private readonly VersionService _versionService;
-    private readonly Action<object>? _onUpdateAvailable;
-    private readonly Func<string, bool> _browserOpenUrl;
-    private readonly Func<string, string> _normalizeVersionType;
-    private readonly Func<string, LatestInstanceInfo?> _loadLatestInfo;
-    private readonly Action<string, int> _saveLatestInfo;
-    private readonly Func<string> _getLatestInstancePath;
-    private readonly Func<string, bool> _isClientPresent;
-    private readonly Func<string, int, bool, string> _resolveInstancePath;
+    private readonly InstanceService _instanceService;
+    private readonly BrowserService _browserService;
+
+    public event Action<object>? LauncherUpdateAvailable;
 
     public UpdateService(
         HttpClient httpClient,
-        Config config,
+        ConfigService configService,
         VersionService versionService,
-        Action<object>? onUpdateAvailable,
-        Func<string, bool> browserOpenUrl,
-        Func<string, string> normalizeVersionType,
-        Func<string, LatestInstanceInfo?> loadLatestInfo,
-        Action<string, int> saveLatestInfo,
-        Func<string> getLatestInstancePath,
-        Func<string, bool> isClientPresent,
-        Func<string, int, bool, string> resolveInstancePath)
+        InstanceService instanceService,
+        BrowserService browserService)
     {
         _httpClient = httpClient;
-        _config = config;
+        _configService = configService;
         _versionService = versionService;
-        _onUpdateAvailable = onUpdateAvailable;
-        _browserOpenUrl = browserOpenUrl;
-        _normalizeVersionType = normalizeVersionType;
-        _loadLatestInfo = loadLatestInfo;
-        _saveLatestInfo = saveLatestInfo;
-        _getLatestInstancePath = getLatestInstancePath;
-        _isClientPresent = isClientPresent;
-        _resolveInstancePath = resolveInstancePath;
+        _instanceService = instanceService;
+        _browserService = browserService;
+    }
+
+    private Config _config => _configService.Configuration;
+
+    private string GetLatestInstancePath()
+    {
+        var branch = UtilityService.NormalizeVersionType(_config.VersionType);
+        var info = _instanceService.LoadLatestInfo(branch);
+        if (info != null)
+        {
+            return _instanceService.ResolveInstancePath(branch, info.Version, true);
+        }
+        return _instanceService.ResolveInstancePath(branch, 0, true);
     }
 
     #region Public API
@@ -172,7 +169,7 @@ public class UpdateService
                     isBeta = launcherBranch == "beta"
                 };
                     
-                _onUpdateAvailable?.Invoke(updateInfo);
+                LauncherUpdateAvailable?.Invoke(updateInfo);
             }
             else
             {
@@ -232,7 +229,7 @@ public class UpdateService
             if (!targetRelease.HasValue || string.IsNullOrWhiteSpace(targetVersion))
             {
                 Logger.Error("Update", $"No suitable {(isBetaChannel ? "pre-release" : "release")} found");
-                _browserOpenUrl(ReleasesPageUrl);
+                _browserService.OpenURL(ReleasesPageUrl);
                 return false;
             }
             
@@ -260,7 +257,7 @@ public class UpdateService
             if (string.IsNullOrWhiteSpace(targetAsset))
             {
                 Logger.Warning("Update", "Unsupported OS for auto-download, opening releases page");
-                _browserOpenUrl(ReleasesPageUrl);
+                _browserService.OpenURL(ReleasesPageUrl);
                 return false;
             }
 
@@ -280,7 +277,7 @@ public class UpdateService
             if (string.IsNullOrWhiteSpace(downloadUrl) || string.IsNullOrWhiteSpace(assetName))
             {
                 Logger.Error("Update", "Could not find matching asset in latest release; opening releases page");
-                _browserOpenUrl(ReleasesPageUrl);
+                _browserService.OpenURL(ReleasesPageUrl);
                 return false;
             }
 
@@ -310,7 +307,7 @@ public class UpdateService
         catch (Exception ex)
         {
             Logger.Error("Update", $"Update failed: {ex.Message}");
-            _browserOpenUrl(ReleasesPageUrl);
+            _browserService.OpenURL(ReleasesPageUrl);
             return false;
         }
     }
@@ -322,16 +319,16 @@ public class UpdateService
     {
         try
         {
-            var normalizedBranch = _normalizeVersionType(branch);
+            var normalizedBranch = UtilityService.NormalizeVersionType(branch);
             var versions = await _versionService.GetVersionListAsync(normalizedBranch);
             if (versions.Count == 0) return false;
 
-            var info = _loadLatestInfo(normalizedBranch);
+            var info = _instanceService.LoadLatestInfo(normalizedBranch);
             
             if (info == null)
             {
                 // No version info, assume version 1 to force full update path
-                _saveLatestInfo(normalizedBranch, 1);
+                _instanceService.SaveLatestInfo(normalizedBranch, 1);
                 Logger.Info("Update", $"No version info found, set to v1 to force update");
             }
             else
@@ -346,7 +343,7 @@ public class UpdateService
                 }
                 // If somehow at or ahead of latest, force update by going back one version
                 int forcedVersion = Math.Max(1, latestVersion - 1);
-                _saveLatestInfo(normalizedBranch, forcedVersion);
+                _instanceService.SaveLatestInfo(normalizedBranch, forcedVersion);
                 Logger.Info("Update", $"Forced version to v{forcedVersion} to trigger update to v{latestVersion}");
             }
             
@@ -367,8 +364,8 @@ public class UpdateService
     {
         try
         {
-            var normalizedBranch = _normalizeVersionType(branch);
-            var info = _loadLatestInfo(normalizedBranch);
+            var normalizedBranch = UtilityService.NormalizeVersionType(branch);
+            var info = _instanceService.LoadLatestInfo(normalizedBranch);
             
             if (info == null)
             {
@@ -377,19 +374,19 @@ public class UpdateService
             }
             
             var currentVersion = info.Version;
-            var latestPath = _getLatestInstancePath();
+            var latestPath = GetLatestInstancePath();
             
-            if (!_isClientPresent(latestPath))
+            if (!_instanceService.IsClientPresent(latestPath))
             {
                 Logger.Warning("Update", "Cannot duplicate latest: instance not found");
                 return false;
             }
             
             // Get versioned instance path
-            var versionedPath = _resolveInstancePath(normalizedBranch, currentVersion, true);
+            var versionedPath = _instanceService.ResolveInstancePath(normalizedBranch, currentVersion, true);
             
             // Check if this version already exists
-            if (_isClientPresent(versionedPath))
+            if (_instanceService.IsClientPresent(versionedPath))
             {
                 Logger.Warning("Update", $"Version {currentVersion} already exists, skipping duplicate");
                 return false;

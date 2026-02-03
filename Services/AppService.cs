@@ -24,11 +24,16 @@ public class AppService : IDisposable
     private readonly string _configPath;
     private readonly string _appDir;
     private Config _config;
-    private Process? _gameProcess;
     private readonly ButlerService _butlerService;
     private readonly DiscordService _discordService;
-    private CancellationTokenSource? _downloadCts;
     private bool _disposed;
+    
+    // Wrapper for GameProcess state via GameProcessService
+    private Process? _gameProcess 
+    {
+        get => _gameProcessService?.GetGameProcess();
+        set => _gameProcessService?.SetGameProcess(value);
+    }
     
     // New services
     private readonly ConfigService _configService;
@@ -38,7 +43,8 @@ public class AppService : IDisposable
     private readonly DownloadService _downloadService;
     private readonly ModService _modService;
     private readonly LaunchService _launchService;
-    private readonly GameUtilityService _gameUtilityService;
+    private readonly GameProcessService _gameProcessService;
+    private readonly FileService _fileService;
     private readonly UpdateService _updateService;
     private readonly SkinService _skinService;
     private readonly InstanceService _instanceService;
@@ -52,6 +58,7 @@ public class AppService : IDisposable
     private readonly RosettaService _rosettaService;
     private readonly BrowserService _browserService;
     private readonly ProgressNotificationService _progressNotificationService;
+    private readonly GameSessionService _gameSessionService;
     
     // Exposed for ViewModel access
     public Config Configuration => _config;
@@ -82,11 +89,8 @@ public class AppService : IDisposable
     // Lock for mod manifest operations to prevent concurrent writes
     private static readonly SemaphoreSlim _modManifestLock = new(1, 1);
     
-    private static readonly HttpClient HttpClient = new()
-    {
-        // Use longer timeout for large file downloads - can be overridden per-request with cancellation tokens
-        Timeout = TimeSpan.FromMinutes(30)
-    };
+    // Replaced by instance field _httpClient in constructor
+    // private static readonly HttpClient HttpClient...
     
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -95,103 +99,215 @@ public class AppService : IDisposable
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    // Private field replaced by injected one, logic moved to constructor
+    private readonly HttpClient _httpClient; 
+
     static AppService()
     {
         UtilityService.LoadEnvFile();
-        HttpClient.DefaultRequestHeaders.Add("User-Agent", "HyPrism/1.0");
-        HttpClient.DefaultRequestHeaders.Add("Accept", "application/json");
     }
 
-    public AppService()
+    // --- Legacy Construction Support ---
+    private readonly struct LegacyDeps
     {
+        public readonly ConfigService Config;
+        public readonly HttpClient Client;
+        public readonly ProfileService Profile;
+        public readonly DownloadService Download;
+        public readonly VersionService Version;
+        public readonly NewsService News;
+        
+        // New Services
+        public readonly ModService Mod;
+        public readonly LaunchService Launch;
+        public readonly InstanceService Instance;
+        public readonly BrowserService Browser;
+        public readonly DiscordService Discord;
+        public readonly RosettaService Rosetta;
+        public readonly FileDialogService FileDialog;
+        public readonly ButlerService Butler;
+        public readonly SettingsService Settings;
+        public readonly AssetService Asset;
+        public readonly AvatarService Avatar;
+        public readonly SkinService Skin;
+        public readonly UserIdentityService UserIdentity;
+        public readonly ProfileManagementService ProfileMan;
+        public readonly LanguageService Language;
+        public readonly GameProcessService GameProcess;
+        public readonly FileService File;
+        public readonly UpdateService Update;
+        public readonly ProgressNotificationService Progress;
+        public readonly GameSessionService GameSession;
+
+        public LegacyDeps(
+            ConfigService cfg, HttpClient cli, ProfileService prof, 
+            DownloadService dl, VersionService ver, NewsService news,
+            ModService mod, LaunchService launch, InstanceService inst,
+            BrowserService browser, DiscordService discord, RosettaService rosetta,
+            FileDialogService fileDialog, ButlerService butler, SettingsService settings,
+            AssetService asset, AvatarService avatar, SkinService skin, UserIdentityService uid,
+            ProfileManagementService pm, LanguageService lang, GameProcessService gameProc, FileService file,
+            UpdateService update, ProgressNotificationService progress, GameSessionService gameSession)
+        {
+            Config = cfg; Client = cli; Profile = prof; Download = dl; Version = ver; News = news;
+            Mod = mod; Launch = launch; Instance = inst;
+            Browser = browser; Discord = discord; Rosetta = rosetta; FileDialog = fileDialog; Butler = butler;
+            Settings = settings;
+            Asset = asset;
+            Avatar = avatar;
+            Skin = skin;
+            UserIdentity = uid;
+            ProfileMan = pm;
+            Language = lang;
+            GameProcess = gameProc;
+            File = file;
+            Update = update;
+            Progress = progress;
+            GameSession = gameSession;
+        }
+    }
+
+    private static LegacyDeps BuildLegacy()
+    {
+        var appDir = UtilityService.GetEffectiveAppDir();
+        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        client.DefaultRequestHeaders.Add("User-Agent", "HyPrism/1.0");
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+
+        var config = new ConfigService(appDir);
+        var instance = new InstanceService(appDir, config);
+        var appPath = new AppPathConfiguration(appDir);
+        var skin = new SkinService(appPath, config, instance);
+        var uid = new UserIdentityService(config, skin, instance);
+        var pm = new ProfileManagementService(appPath, config, skin, instance, uid);
+        var ver = new VersionService(appDir, client, config);
+        var lang = new LanguageService(ver, instance);
+        var file = new FileService(appPath);
+        var gameProc = new GameProcessService();
+        var browser = new BrowserService();
+        var update = new UpdateService(client, config, ver, instance, browser);
+        var discord = new DiscordService();
+        var progress = new ProgressNotificationService(discord);
+        var launch = new LaunchService(appDir, client);
+        var mod = new ModService(client, appDir);
+        // ... (truncated for brevity in thought process)
+        var download = new DownloadService(client);
+        var butler = new ButlerService(appDir);
+        var settings = new SettingsService(config);
+        
+        var gameSession = new GameSessionService(
+            config, instance, ver, update, launch, butler, download, mod, skin, uid, gameProc, progress, discord, client, appPath
+        );
+        
+        // Manual wiring for legacy
+        return new LegacyDeps(
+            config,
+            client,
+            new ProfileService(appDir, config),
+            download,
+            ver,
+            new NewsService(client),
+            mod,
+            launch,
+            instance,
+            browser,
+            discord,
+            new RosettaService(),
+            new FileDialogService(),
+            butler,
+            settings,
+            new AssetService(instance, appDir),
+            new AvatarService(instance, appDir),
+            skin,
+            uid,
+            pm,
+            lang,
+            gameProc,
+            file,
+            update,
+            progress,
+            gameSession
+        );
+    }
+
+    // Legacy Constructor
+    public AppService() : this(BuildLegacy()) { }
+
+    // Private helper constructor to unpack struct
+    private AppService(LegacyDeps d) : this(
+        d.Config, d.Client, d.Profile, d.Download, d.Version, d.News,
+        d.Mod, d.Launch, d.Instance, d.Browser, d.Discord, d.Rosetta, d.FileDialog, d.Butler, d.Settings,
+        d.Asset, d.Avatar, d.Skin, d.UserIdentity, d.ProfileMan, d.Language, d.GameProcess, d.File, d.Update, d.Progress, d.GameSession) { }
+
+    // --- Main DI Constructor ---
+    public AppService(
+        ConfigService configService, 
+        HttpClient httpClient,
+        ProfileService profileService,
+        DownloadService downloadService,
+        VersionService versionService,
+        NewsService newsService,
+        // New Injections
+        ModService modService,
+        LaunchService launchService,
+        InstanceService instanceService,
+        BrowserService browserService,
+        DiscordService discordService,
+        RosettaService rosettaService,
+        FileDialogService fileDialogService,
+        ButlerService butlerService,
+        SettingsService settingsService,
+        AssetService assetService,
+        AvatarService avatarService,
+        SkinService skinService,
+        UserIdentityService userIdentityService,
+        ProfileManagementService profileManagementService,
+        LanguageService languageService,
+        GameProcessService gameProcessService,
+        FileService fileService,
+        UpdateService updateService,
+        ProgressNotificationService progressNotificationService,
+        GameSessionService gameSessionService)
+    {
+        _httpClient = httpClient;
         _appDir = UtilityService.GetEffectiveAppDir();
         Directory.CreateDirectory(_appDir);
         _configPath = Path.Combine(_appDir, "config.json");
         
-        // Initialize ConfigService - it will load and migrate config
-        _configService = new ConfigService(_appDir);
+        // --- Core Services (Injected) ---
+        _configService = configService;
         _config = _configService.Configuration;
         
-        // Initialize other services
-        _profileService = new ProfileService(_appDir, _configService);
-        _newsService = new NewsService();
-        _versionService = new VersionService(_appDir, HttpClient, _configService);
-        _downloadService = new DownloadService(HttpClient);
-        _modService = new ModService(HttpClient, _appDir);
-        _launchService = new LaunchService(_appDir, HttpClient);
-        _instanceService = new InstanceService(
-            _appDir,
-            () => _config,
-            SaveConfigInternal);
-        _gameUtilityService = new GameUtilityService(
-            _appDir,
-            _config,
-            UtilityService.NormalizeVersionType,
-            ResolveInstancePath,
-            branch => _instanceService.GetLatestInfoPath(branch),
-            GetInstancePath,
-            GetProfilesFolder,
-            UtilityService.SanitizeFileName,
-            () => _gameProcess,
-            p => _gameProcess = p!);
+        // --- Phase 2 Injected Services ---
+        _profileService = profileService;
+        _downloadService = downloadService;
+        _versionService = versionService;
+        _newsService = newsService;
         
-        _updateService = new UpdateService(
-            HttpClient,
-            _config,
-            _versionService,
-            obj => LauncherUpdateAvailable?.Invoke(obj),
-            BrowserOpenURL,
-            UtilityService.NormalizeVersionType,
-            branch => _instanceService.LoadLatestInfo(branch),
-            (branch, version) => _instanceService.SaveLatestInfo(branch, version),
-            () => GetLatestInstancePath(UtilityService.NormalizeVersionType(_config.VersionType)),
-            path => _instanceService.IsClientPresent(path),
-            (branch, version, createIfMissing) => ResolveInstancePath(branch, version, createIfMissing));
-        _skinService = new SkinService(
-            UtilityService.NormalizeVersionType,
-            ResolveInstancePath,
-            path => _instanceService.GetInstanceUserDataPath(path),
-            () => _config,
-            SaveConfig,
-            GetProfilesFolder,
-            UtilityService.SanitizeFileName);
-        _userIdentityService = new UserIdentityService(
-            () => _config,
-            SaveConfig,
-            _skinService,
-            UtilityService.NormalizeVersionType,
-            ResolveInstancePath,
-            path => _instanceService.GetInstanceUserDataPath(path));
-        _profileManagementService = new ProfileManagementService(
-            _appDir,
-            () => _config,
-            SaveConfig,
-            _skinService,
-            UtilityService.NormalizeVersionType,
-            ResolveInstancePath,
-            path => _instanceService.GetInstanceUserDataPath(path),
-            GetCurrentUuid);
-        _settingsService = new SettingsService(
-            () => _config,
-            SaveConfig);
-        _fileDialogService = new FileDialogService();
-        _languageService = new LanguageService(
-            async () => await GetVersionListAsync("release"),
-            async () => await GetVersionListAsync("pre-release"),
-            GetInstancePath,
-            GetLatestInstancePath);
-        _assetService = new AssetService(_instanceService, _appDir);
-        _avatarService = new AvatarService(_instanceService, _appDir);
-        _rosettaService = new RosettaService();
-        _browserService = new BrowserService();
+        // --- Phase 3 Injected Services ---
+        _modService = modService;
+        _launchService = launchService;
+        _instanceService = instanceService;
+        _browserService = browserService;
+        _discordService = discordService;
+        _rosettaService = rosettaService;
+        _fileDialogService = fileDialogService;
+        _butlerService = butlerService;
+        _settingsService = settingsService;
+        _assetService = assetService;
+        _avatarService = avatarService;
+        _skinService = skinService;
+        _userIdentityService = userIdentityService;
+        _profileManagementService = profileManagementService;
+        _languageService = languageService;
+        _gameProcessService = gameProcessService;
+        _fileService = fileService;
+        _updateService = updateService;
+        _progressNotificationService = progressNotificationService;
+        _gameSessionService = gameSessionService;
         
-        // Initialize LocalizationService singleton
-        LocalizationService.Instance.CurrentLanguage = _config.Language;
-        
-        // Initialize after DiscordService (needed below)
-        _butlerService = new ButlerService(_appDir);
-        _discordService = new DiscordService();
-        _progressNotificationService = new ProgressNotificationService(_discordService);
+        // Subscribe to events
+        _updateService.LauncherUpdateAvailable += (obj) => LauncherUpdateAvailable?.Invoke(obj);
         
         // Update placeholder names to random ones immediately
         if (_config.Nick == "Hyprism" || _config.Nick == "HyPrism" || _config.Nick == "Player")
@@ -289,17 +405,7 @@ public class AppService : IDisposable
         SaveConfigInternal(_config);
     }
     
-    public void SetLanguage(string languageCode)
-    {
-        var availableLanguages = LocalizationService.GetAvailableLanguages();
-        if (availableLanguages.ContainsKey(languageCode))
-        {
-            _config.Language = languageCode;
-            LocalizationService.Instance.CurrentLanguage = languageCode;
-            SaveConfig();
-            Logger.Info("Localization", $"Language changed to: {languageCode}");
-        }
-    }
+    public void SetLanguage(string languageCode) => _settingsService.SetLanguage(languageCode);
     
     /// <summary>
     /// Attempts to recover orphaned skin data on startup.
@@ -806,940 +912,7 @@ public class AppService : IDisposable
     }
 
     // Game
-    public async Task<DownloadProgress> DownloadAndLaunchAsync()
-    {
-        try
-        {
-            _downloadCts = new CancellationTokenSource();
-            
-            string branch = UtilityService.NormalizeVersionType(_config.VersionType);
-            var versions = await GetVersionListAsync(branch);
-            if (versions.Count == 0)
-            {
-                return new DownloadProgress { Error = "No versions available for this branch" };
-            }
-
-            bool isLatestInstance = _config.SelectedVersion == 0;
-            int targetVersion = _config.SelectedVersion > 0 ? _config.SelectedVersion : versions[0];
-            if (!versions.Contains(targetVersion))
-            {
-                targetVersion = versions[0];
-            }
-
-            string versionPath = ResolveInstancePath(branch, isLatestInstance ? 0 : targetVersion, preferExisting: true);
-            Directory.CreateDirectory(versionPath);
-
-            // Check if we need to download/install - verify all components
-            // The game is installed if the Client executable exists - that's all we need to check
-            bool gameIsInstalled = _instanceService.IsClientPresent(versionPath);
-            
-            Logger.Info("Download", $"=== INSTALL CHECK ===");
-            Logger.Info("Download", $"Version path: {versionPath}");
-            Logger.Info("Download", $"Is latest instance: {isLatestInstance}");
-            Logger.Info("Download", $"Target version: {targetVersion}");
-            Logger.Info("Download", $"Client exists (game installed): {gameIsInstalled}");
-            
-            // If game is already installed, check for updates then launch
-            if (gameIsInstalled)
-            {
-                Logger.Success("Download", "Game is already installed");
-                
-                // Check if we need a differential update (only for latest instance)
-                if (isLatestInstance)
-                {
-                    var info = _instanceService.LoadLatestInfo(branch);
-                    int installedVersion = info?.Version ?? 0;
-                    int latestVersion = versions[0];
-                    
-                    // If no latest.json exists, we need to determine the installed version
-                    if (installedVersion == 0)
-                    {
-                        // First, check if there's a Butler receipt which indicates the game was installed via Butler
-                        var receiptPath = Path.Combine(versionPath, ".itch", "receipt.json.gz");
-                        bool hasButlerReceipt = File.Exists(receiptPath);
-                        
-                        if (hasButlerReceipt)
-                        {
-                            // Butler receipt exists - the game was installed/patched by Butler
-                            // Check if we have any cached PWR files that indicate a version
-                            var cacheDir = Path.Combine(_appDir, "cache");
-                            if (Directory.Exists(cacheDir))
-                            {
-                                var pwrFiles = Directory.GetFiles(cacheDir, $"{branch}_patch_*.pwr")
-                                    .Concat(Directory.GetFiles(cacheDir, $"{branch}_*.pwr"))
-                                    .Select(f => Path.GetFileNameWithoutExtension(f))
-                                    .SelectMany(n => {
-                                        // Try to extract version from filename patterns like "release_patch_7" or "release_7"
-                                        var parts = n.Split('_');
-                                        var versions = new List<int>();
-                                        foreach (var part in parts)
-                                        {
-                                            if (int.TryParse(part, out var v) && v > 0)
-                                            {
-                                                versions.Add(v);
-                                            }
-                                        }
-                                        return versions;
-                                    })
-                                    .OrderByDescending(v => v)
-                                    .ToList();
-                                
-                                if (pwrFiles.Count > 0)
-                                {
-                                    // The highest version in cache is likely the installed version
-                                    installedVersion = pwrFiles[0];
-                                    Logger.Info("Download", $"Detected installed version from cache: v{installedVersion}");
-                                    // Save the detected version
-                                    _instanceService.SaveLatestInfo(branch, installedVersion);
-                                }
-                            }
-                            
-                            // If still no version detected but receipt exists, don't assume anything
-                            // User can click UPDATE button if they want to ensure they're on latest
-                            if (installedVersion == 0)
-                            {
-                                // Game has Butler receipt but no version info - don't assume version
-                                // Just launch as-is, user can click UPDATE if needed
-                                Logger.Info("Download", $"Butler receipt exists but no version info, launching as-is (user can UPDATE manually)");
-                            }
-                        }
-                        else
-                        {
-                            // No Butler receipt - this is a legacy installation or was installed differently
-                            // Don't assume version, just launch as-is
-                            Logger.Info("Download", $"No Butler receipt, launching current installation as-is (user can UPDATE manually)");
-                        }
-                        
-                        // Only save if we actually detected a version from cache
-                        // Don't assume latest - that breaks update detection
-                    }
-                    
-                    Logger.Info("Download", $"Installed version: {installedVersion}, Latest version: {latestVersion}");
-                    
-                    // Only apply differential update if we're BEHIND the latest version
-                    if (installedVersion > 0 && installedVersion < latestVersion)
-                    {
-                        Logger.Info("Download", $"Differential update available: {installedVersion} -> {latestVersion}");
-                        SendProgress("update", 0, $"Updating game from v{installedVersion} to v{latestVersion}...", 0, 0);
-                        
-                        try
-                        {
-                            // Apply differential updates for each version step
-                            var patchesToApply = _versionService.GetPatchSequence(installedVersion, latestVersion);
-                            Logger.Info("Download", $"Patches to apply: {string.Join(" -> ", patchesToApply)}");
-                            
-                            for (int i = 0; i < patchesToApply.Count; i++)
-                            {
-                                int patchVersion = patchesToApply[i];
-                                ThrowIfCancelled();
-                                
-                                // Progress: each patch gets an equal share of 0-90%
-                                int baseProgress = (i * 90) / patchesToApply.Count;
-                                int progressPerPatch = 90 / patchesToApply.Count;
-                                
-                                SendProgress("update", baseProgress, $"Downloading patch {i + 1}/{patchesToApply.Count} (v{patchVersion})...", 0, 0);
-                                
-                                // Ensure Butler is installed
-                                await _butlerService.EnsureButlerInstalledAsync((p, m) => { });
-                                
-                                // Download the PWR patch
-                                var patchOs = UtilityService.GetOS();
-                                var patchArch = UtilityService.GetArch();
-                                var patchBranchType = UtilityService.NormalizeVersionType(branch);
-                                string patchUrl = $"https://game-patches.hytale.com/patches/{patchOs}/{patchArch}/{patchBranchType}/0/{patchVersion}.pwr";
-                                string patchPwrPath = Path.Combine(_appDir, "cache", $"{branch}_patch_{patchVersion}.pwr");
-                                
-                                Directory.CreateDirectory(Path.GetDirectoryName(patchPwrPath)!);
-                                Logger.Info("Download", $"Downloading patch: {patchUrl}");
-                                
-                                // Check if patch file is very large (> 500MB) - might indicate wrong version detection
-                                // In that case, we should fall back to the existing installation
-                                try
-                                {
-                                    using var headRequest = new HttpRequestMessage(HttpMethod.Head, patchUrl);
-                                    using var headResponse = await HttpClient.SendAsync(headRequest);
-                                    
-                                    if (!headResponse.IsSuccessStatusCode)
-                                    {
-                                        Logger.Warning("Download", $"Patch file not found at {patchUrl}, skipping differential update");
-                                        throw new Exception("Patch file not available");
-                                    }
-                                    
-                                    var contentLength = headResponse.Content.Headers.ContentLength ?? 0;
-                                    Logger.Info("Download", $"Patch file size: {contentLength / 1024 / 1024} MB");
-                                    
-                                    // If patch is > 500MB, something is wrong - patches should be small
-                                    if (contentLength > 500 * 1024 * 1024)
-                                    {
-                                        Logger.Warning("Download", $"Patch file is too large ({contentLength / 1024 / 1024} MB), likely wrong version detection");
-                                        throw new Exception("Patch file unexpectedly large - version detection may be incorrect");
-                                    }
-                                }
-                                catch (HttpRequestException)
-                                {
-                                    Logger.Warning("Download", $"Cannot check patch file at {patchUrl}, skipping differential update");
-                                    throw new Exception("Cannot access patch file");
-                                }
-                                
-                                await DownloadFileAsync(patchUrl, patchPwrPath, (progress, downloaded, total) =>
-                                {
-                                    int mappedProgress = baseProgress + (int)(progress * 0.5 * progressPerPatch / 100);
-                                    SendProgress("update", mappedProgress, $"Downloading patch {i + 1}/{patchesToApply.Count}... {progress}%", downloaded, total);
-                                }, _downloadCts.Token);
-                                
-                                ThrowIfCancelled();
-                                
-                                // Apply the patch using Butler (differential update)
-                                int applyBaseProgress = baseProgress + (progressPerPatch / 2);
-                                SendProgress("update", applyBaseProgress, $"Applying patch {i + 1}/{patchesToApply.Count}...", 0, 0);
-                                
-                                await _butlerService.ApplyPwrAsync(patchPwrPath, versionPath, (progress, message) =>
-                                {
-                                    int mappedProgress = applyBaseProgress + (int)(progress * 0.5 * progressPerPatch / 100);
-                                    SendProgress("update", mappedProgress, message, 0, 0);
-                                }, _downloadCts.Token);
-                                
-                                // Clean up patch file
-                                if (File.Exists(patchPwrPath))
-                                {
-                                    try { File.Delete(patchPwrPath); } catch { }
-                                }
-                                
-                                // Save progress after each patch
-                                _instanceService.SaveLatestInfo(branch, patchVersion);
-                                Logger.Success("Download", $"Patch {patchVersion} applied successfully");
-                            }
-                            
-                            Logger.Success("Download", $"Differential update complete: now at v{latestVersion}");
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Error("Download", $"Differential update failed: {ex.Message}");
-                            // Don't update latest.json - keep the old version so user can try UPDATE again
-                            // Just launch the game as-is with whatever version is installed
-                            Logger.Warning("Download", "Keeping current version, user can try UPDATE again later");
-                        }
-                    }
-                    else if (installedVersion >= latestVersion)
-                    {
-                        Logger.Info("Download", "Already at latest version, no update needed");
-                        // Ensure latest.json is correct
-                        _instanceService.SaveLatestInfo(branch, latestVersion);
-                    }
-                }
-                
-                // Ensure VC++ Redistributable is installed on Windows before launching
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    SendProgress("install", 94, "Checking Visual C++ Runtime...", 0, 0);
-                    try
-                    {
-                        await _launchService.EnsureVCRedistInstalledAsync((progress, message) =>
-                        {
-                            int mappedProgress = 94 + (int)(progress * 0.02);
-                            SendProgress("install", mappedProgress, message, 0, 0);
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Warning("VCRedist", $"VC++ install warning: {ex.Message}");
-                        // Don't fail - continue anyway
-                    }
-                }
-                
-                // Just ensure JRE is available (download if needed, but don't touch the game)
-                string jrePath = _launchService.GetJavaPath();
-                if (!File.Exists(jrePath))
-                {
-                    Logger.Info("Download", "JRE missing, installing...");
-                    SendProgress("install", 96, "Installing Java Runtime...", 0, 0);
-                    try
-                    {
-                        await _launchService.EnsureJREInstalledAsync((progress, message) =>
-                        {
-                            int mappedProgress = 96 + (int)(progress * 0.03);
-                            SendProgress("install", mappedProgress, message, 0, 0);
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error("JRE", $"JRE install failed: {ex.Message}");
-                        return new DownloadProgress { Error = $"Failed to install Java Runtime: {ex.Message}" };
-                    }
-                }
-                
-                SendProgress("complete", 100, "Launching game...", 0, 0);
-                try
-                {
-                    await LaunchGameAsync(versionPath, branch);
-                    return new DownloadProgress { Success = true, Progress = 100 };
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error("Game", $"Launch failed: {ex.Message}");
-                    SendErrorEvent("launch", "Failed to launch game", ex.ToString());
-                    return new DownloadProgress { Error = $"Failed to launch game: {ex.Message}" };
-                }
-            }
-            
-            // Game is NOT installed - need to download
-            Logger.Info("Download", "Game not installed, starting download...");
-
-            SendProgress("download", 0, "Preparing download...", 0, 0);
-            
-            // First, ensure Butler is installed (0-5% progress)
-            try
-            {
-                await _butlerService.EnsureButlerInstalledAsync((progress, message) =>
-                {
-                    // Map butler install progress to 0-5%
-                    int mappedProgress = (int)(progress * 0.05);
-                    SendProgress("download", mappedProgress, message, 0, 0);
-                });
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("Download", $"Butler install failed: {ex.Message}");
-                return new DownloadProgress { Error = $"Failed to install Butler: {ex.Message}" };
-            }
-
-            ThrowIfCancelled();
-            
-            // Download PWR file (5-70% progress)
-            string osName = UtilityService.GetOS();
-            string arch = UtilityService.GetArch();
-            string apiVersionType = UtilityService.NormalizeVersionType(branch);
-            string downloadUrl = $"https://game-patches.hytale.com/patches/{osName}/{arch}/{apiVersionType}/0/{targetVersion}.pwr";
-            string pwrPath = Path.Combine(_appDir, "cache", $"{branch}_{(isLatestInstance ? "latest" : "version")}_{targetVersion}.pwr");
-            
-            Directory.CreateDirectory(Path.GetDirectoryName(pwrPath)!);
-            
-            Logger.Info("Download", $"Downloading: {downloadUrl}");
-            
-            await DownloadFileAsync(downloadUrl, pwrPath, (progress, downloaded, total) =>
-            {
-                // Map download progress to 5-65%
-                int mappedProgress = 5 + (int)(progress * 0.60);
-                SendProgress("download", mappedProgress, $"Downloading... {progress}%", downloaded, total);
-            }, _downloadCts.Token);
-            
-            // Extract PWR file using Butler (65-85% progress)
-            SendProgress("install", 65, "Installing game with Butler...", 0, 0);
-            
-            try
-            {
-                await _butlerService.ApplyPwrAsync(pwrPath, versionPath, (progress, message) =>
-                {
-                    // Map install progress (0-100) to 65-85%
-                    int mappedProgress = 65 + (int)(progress * 0.20);
-                    SendProgress("install", mappedProgress, message, 0, 0);
-                }, _downloadCts.Token);
-                
-                // Clean up PWR file after successful extraction
-                if (File.Exists(pwrPath))
-                {
-                    try { File.Delete(pwrPath); } catch { }
-                }
-                
-                // Skip assets extraction on install to match legacy layout
-                ThrowIfCancelled();
-            }
-            catch (OperationCanceledException)
-            {
-                // Re-throw cancellation to be handled by outer catch
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("Download", $"PWR extraction failed: {ex.Message}");
-                return new DownloadProgress { Error = $"Failed to install game: {ex.Message}" };
-            }
-
-            if (isLatestInstance)
-            {
-                _instanceService.SaveLatestInfo(branch, targetVersion);
-            }
-            
-            SendProgress("complete", 95, "Download complete!", 0, 0);
-
-            // Ensure VC++ Redistributable is installed on Windows before launching
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                SendProgress("install", 95, "Checking Visual C++ Runtime...", 0, 0);
-                try
-                {
-                    await _launchService.EnsureVCRedistInstalledAsync((progress, message) =>
-                    {
-                        int mappedProgress = 95 + (int)(progress * 0.01);
-                        SendProgress("install", mappedProgress, message, 0, 0);
-                    });
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warning("VCRedist", $"VC++ install warning: {ex.Message}");
-                    // Don't fail - continue anyway
-                }
-            }
-
-            // Ensure JRE is installed before launching
-            SendProgress("install", 96, "Checking Java Runtime...", 0, 0);
-            try
-            {
-                await _launchService.EnsureJREInstalledAsync((progress, message) =>
-                {
-                    int mappedProgress = 96 + (int)(progress * 0.03); // 96-99%
-                    SendProgress("install", mappedProgress, message, 0, 0);
-                });
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("JRE", $"JRE install failed: {ex.Message}");
-                return new DownloadProgress { Error = $"Failed to install Java Runtime: {ex.Message}" };
-            }
-
-            ThrowIfCancelled();
-
-            SendProgress("complete", 100, "Launching game...", 0, 0);
-
-            // Launch the game
-            try
-            {
-                await LaunchGameAsync(versionPath, branch);
-                return new DownloadProgress { Success = true, Progress = 100 };
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("Game", $"Launch failed: {ex.Message}");
-                SendErrorEvent("launch", "Failed to launch game", ex.ToString());
-                return new DownloadProgress { Error = $"Failed to launch game: {ex.Message}" };
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            Logger.Warning("Download", "Download cancelled");
-            try
-            {
-                SendProgress("cancelled", 0, "Cancelled", 0, 0);
-            }
-            catch { }
-            return new DownloadProgress { Error = "Download cancelled" };
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("Download", $"Error: {ex.Message}");
-            return new DownloadProgress { Error = ex.Message };
-        }
-        finally
-        {
-            _downloadCts = null;
-        }
-    }
-
-    public bool CancelDownload()
-    {
-        Logger.Info("Download", "CancelDownload called");
-        if (_downloadCts != null)
-        {
-            Logger.Info("Download", "Cancelling download...");
-            _downloadCts.Cancel();
-            Logger.Info("Download", "Download cancellation requested");
-            return true;
-        }
-        Logger.Warning("Download", "No download in progress to cancel");
-        return false;
-    }
-
-    private void ThrowIfCancelled()
-    {
-        if (_downloadCts?.IsCancellationRequested == true)
-        {
-            throw new OperationCanceledException();
-        }
-    }
-
-    private void SendProgress(string stage, int progress, string message, long downloaded, long total)
-    {
-        _progressNotificationService.SendProgress(stage, progress, message, downloaded, total);
-    }
-
-    private async Task DownloadFileAsync(string url, string path, Action<int, long, long> progressCallback, CancellationToken cancellationToken = default)
-    {
-        await _downloadService.DownloadFileAsync(url, path, progressCallback, cancellationToken);
-    }
-
-    private async Task LaunchGameAsync(string versionPath, string branch)
-    {
-        Logger.Info("Game", $"Preparing to launch from {versionPath}");
-        
-        string executable;
-        string workingDir;
-        string gameDir = versionPath;
-        
-        // Determine client path based on OS
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            executable = Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "MacOS", "HytaleClient");
-            // Set working directory to the MacOS folder where the executable is located
-            workingDir = Path.Combine(versionPath, "Client", "Hytale.app", "Contents", "MacOS");
-            
-            if (!File.Exists(executable))
-            {
-                Logger.Error("Game", $"Game client not found at {executable}");
-                throw new Exception($"Game client not found at {executable}");
-            }
-        }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            executable = Path.Combine(versionPath, "Client", "HytaleClient.exe");
-            workingDir = Path.Combine(versionPath, "Client");
-            
-            if (!File.Exists(executable))
-            {
-                Logger.Error("Game", $"Game client not found at {executable}");
-                throw new Exception($"Game client not found at {executable}");
-            }
-        }
-        else
-        {
-            // Linux
-            executable = Path.Combine(versionPath, "Client", "HytaleClient");
-            workingDir = Path.Combine(versionPath, "Client");
-            
-            if (!File.Exists(executable))
-            {
-                Logger.Error("Game", $"Game client not found at {executable}");
-                throw new Exception($"Game client not found at {executable}");
-            }
-        }
-
-        // On macOS, clear quarantine attributes BEFORE patching
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-        {
-            string appBundle = Path.Combine(versionPath, "Client", "Hytale.app");
-            UtilityService.ClearMacQuarantine(appBundle);
-            Logger.Info("Game", "Cleared macOS quarantine attributes before patching");
-        }
-
-        // Patch binary to accept custom auth server tokens
-        // The auth domain is "sessions.sanasol.ws" but we need to patch "hytale.com" -> "sanasol.ws"
-        // so that sessions.hytale.com becomes sessions.sanasol.ws
-        // NOTE: Patching is needed even in offline/insecure mode because the game still validates domains
-        bool enablePatching = true;
-        if (enablePatching && !string.IsNullOrWhiteSpace(_config.AuthDomain))
-        {
-            try
-            {
-                // Extract the base domain from auth domain (e.g., "sessions.sanasol.ws" -> "sanasol.ws")
-                string baseDomain = _config.AuthDomain;
-                if (baseDomain.StartsWith("sessions."))
-                {
-                    baseDomain = baseDomain.Substring("sessions.".Length);
-                }
-                
-                Logger.Info("Game", $"Patching binary: hytale.com -> {baseDomain}");
-                var patcher = new ClientPatcher(baseDomain);
-                
-                // Patch client binary first
-                var patchResult = patcher.EnsureClientPatched(versionPath, (msg, progress) =>
-                {
-                    if (progress.HasValue)
-                    {
-                        Logger.Info("Patcher", $"{msg} ({progress}%)");
-                    }
-                    else
-                    {
-                        Logger.Info("Patcher", msg);
-                    }
-                });
-                
-                // Also patch server JAR (required for singleplayer to work)
-                Logger.Info("Game", $"Patching server JAR: sessions.hytale.com -> sessions.{baseDomain}");
-                var serverPatchResult = patcher.PatchServerJar(versionPath, (msg, progress) =>
-                {
-                    if (progress.HasValue)
-                    {
-                        Logger.Info("Patcher", $"{msg} ({progress}%)");
-                    }
-                    else
-                    {
-                        Logger.Info("Patcher", msg);
-                    }
-                });
-                
-                if (patchResult.Success)
-                {
-                    if (patchResult.AlreadyPatched)
-                    {
-                        Logger.Info("Game", "Client binary already patched");
-                    }
-                    else if (patchResult.PatchCount > 0)
-                    {
-                        Logger.Success("Game", $"Client binary patched successfully ({patchResult.PatchCount} occurrences)");
-                        
-                        // Re-sign the binary after patching (macOS requirement)
-                        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                        {
-                            try
-                            {
-                                Logger.Info("Game", "Re-signing patched binary...");
-                                string appBundle = Path.Combine(versionPath, "Client", "Hytale.app");
-                                bool signed = ClientPatcher.SignMacOSBinary(appBundle);
-                                if (signed)
-                                {
-                                    Logger.Success("Game", "Binary re-signed successfully");
-                                }
-                                else
-                                {
-                                    Logger.Warning("Game", "Binary signing failed - game may not launch");
-                                }
-                            }
-                            catch (Exception signEx)
-                            {
-                                Logger.Warning("Game", $"Error re-signing binary: {signEx.Message}");
-                            }
-                        }
-                    }
-                    else
-                    {
-                        Logger.Info("Game", "No client patches needed - binary uses unknown encoding or already patched");
-                    }
-                }
-                else
-                {
-                    Logger.Warning("Game", $"Client binary patching failed: {patchResult.Error}");
-                    Logger.Info("Game", "Continuing launch anyway - may not connect to custom auth server");
-                }
-                
-                // Log server JAR patch result
-                if (serverPatchResult.Success)
-                {
-                    if (serverPatchResult.AlreadyPatched)
-                    {
-                        Logger.Info("Game", "Server JAR already patched");
-                    }
-                    else if (serverPatchResult.PatchCount > 0)
-                    {
-                        Logger.Success("Game", $"Server JAR patched successfully ({serverPatchResult.PatchCount} occurrences)");
-                    }
-                    else if (!string.IsNullOrEmpty(serverPatchResult.Warning))
-                    {
-                        Logger.Info("Game", $"Server JAR: {serverPatchResult.Warning}");
-                    }
-                }
-                else
-                {
-                    Logger.Warning("Game", $"Server JAR patching failed: {serverPatchResult.Error}");
-                    Logger.Info("Game", "Singleplayer may not work properly");
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning("Game", $"Error during binary patching: {ex.Message}");
-                Logger.Info("Game", "Continuing launch anyway - may not connect to custom auth server");
-            }
-        }
-
-        // STEP 1: Determine UUID to use for this session
-        // Use the username->UUID mapping to ensure consistent UUIDs across sessions
-        // This is the key fix for skin persistence - each username always gets the same UUID
-        string sessionUuid = GetUuidForUser(_config.Nick);
-        Logger.Info("Game", $"Using UUID for user '{_config.Nick}': {sessionUuid}");
-
-        // STEP 2: Fetch auth token - only if OnlineMode is enabled
-        // If user wants offline mode, skip token fetching entirely
-        string? identityToken = null;
-        string? sessionToken = null;
-        
-        if (_config.OnlineMode && !string.IsNullOrWhiteSpace(_config.AuthDomain))
-        {
-            Logger.Info("Game", $"Online mode enabled - fetching auth tokens from {_config.AuthDomain}...");
-            
-            try
-            {
-                var authService = new AuthService(HttpClient, _config.AuthDomain);
-                
-                // Use sessionUuid (which may be fresh/random) for auth
-                var tokenResult = await authService.GetGameSessionTokenAsync(sessionUuid, _config.Nick);
-                
-                if (tokenResult.Success && !string.IsNullOrEmpty(tokenResult.Token))
-                {
-                    identityToken = tokenResult.Token;
-                    sessionToken = tokenResult.SessionToken ?? tokenResult.Token; // Fallback to identity token
-                    Logger.Success("Game", "Identity token obtained successfully");
-                    Logger.Success("Game", "Session token obtained successfully");
-                }
-                else
-                {
-                    Logger.Warning("Game", $"Could not get auth token: {tokenResult.Error}");
-                    Logger.Info("Game", "Will try launching with offline mode instead");
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("Game", $"Error fetching auth token: {ex.Message}");
-                Logger.Info("Game", "Will try launching with offline mode instead");
-            }
-        }
-
-        // Get Java path
-        string javaPath = _launchService.GetJavaPath();
-        if (!File.Exists(javaPath))
-        {
-            Logger.Error("Game", $"Java not found at {javaPath}");
-            throw new Exception($"Java not found at {javaPath}");
-        }
-        
-        // Verify Java is executable by running --version
-        try
-        {
-            var javaCheck = new ProcessStartInfo(javaPath, "--version")
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            };
-            var javaProcess = Process.Start(javaCheck);
-            if (javaProcess != null)
-            {
-                string javaOutput = await javaProcess.StandardOutput.ReadToEndAsync();
-                await javaProcess.WaitForExitAsync();
-                if (javaProcess.ExitCode == 0)
-                {
-                    Logger.Success("Game", $"Java verified: {javaOutput.Split('\n')[0]}");
-                }
-                else
-                {
-                    Logger.Warning("Game", $"Java check returned exit code {javaProcess.ExitCode}");
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Warning("Game", $"Could not verify Java: {ex.Message}");
-        }
-
-        // Use per-instance UserData folder - this keeps skins/settings with the game instance
-        string userDataDir = _instanceService.GetInstanceUserDataPath(versionPath);
-        Directory.CreateDirectory(userDataDir);
-        
-        // Restore current profile's skin data before launching the game
-        // This ensures the player's custom skin is loaded from their profile
-        var currentProfile = _config.Profiles?.FirstOrDefault(p => p.UUID == sessionUuid);
-        string? skinCachePath = null;
-        if (currentProfile != null)
-        {
-            _skinService.RestoreProfileSkinData(currentProfile);
-            Logger.Info("Game", $"Restored skin data for profile '{currentProfile.Name}'");
-            
-            // Start skin protection - this watches the skin file and restores it if the game overwrites it
-            // The game may fetch skin data from the server on startup which could overwrite our local cache
-            skinCachePath = Path.Combine(userDataDir, "CachedPlayerSkins", $"{currentProfile.UUID}.json");
-            if (File.Exists(skinCachePath))
-            {
-                _skinService.StartSkinProtection(currentProfile, skinCachePath);
-            }
-        }
-
-        Logger.Info("Game", $"Launching: {executable}");
-        Logger.Info("Game", $"Java: {javaPath}");
-        Logger.Info("Game", $"AppDir: {gameDir}");
-        Logger.Info("Game", $"UserData: {userDataDir}");
-        Logger.Info("Game", $"Online Mode: {_config.OnlineMode}");
-        Logger.Info("Game", $"Session UUID: {sessionUuid}");
-
-        // On macOS/Linux, create a launch script to run with clean environment
-        ProcessStartInfo startInfo;
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            // Windows: Use ArgumentList for proper escaping
-            startInfo = new ProcessStartInfo
-            {
-                FileName = executable,
-                WorkingDirectory = workingDir,
-                UseShellExecute = false,
-                CreateNoWindow = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false
-            };
-            
-            // Add arguments using ArgumentList for proper Windows escaping
-            startInfo.ArgumentList.Add("--app-dir");
-            startInfo.ArgumentList.Add(gameDir);
-            startInfo.ArgumentList.Add("--user-dir");
-            startInfo.ArgumentList.Add(userDataDir);
-            startInfo.ArgumentList.Add("--java-exec");
-            startInfo.ArgumentList.Add(javaPath);
-            startInfo.ArgumentList.Add("--name");
-            startInfo.ArgumentList.Add(_config.Nick);
-            
-            // Add auth mode based on user's OnlineMode preference
-            // If OnlineMode is OFF, always use offline mode regardless of tokens
-            // If OnlineMode is ON and we have tokens, use authenticated mode
-            if (_config.OnlineMode && !string.IsNullOrEmpty(identityToken) && !string.IsNullOrEmpty(sessionToken))
-            {
-                startInfo.ArgumentList.Add("--auth-mode");
-                startInfo.ArgumentList.Add("authenticated");
-                startInfo.ArgumentList.Add("--uuid");
-                startInfo.ArgumentList.Add(sessionUuid);
-                startInfo.ArgumentList.Add("--identity-token");
-                startInfo.ArgumentList.Add(identityToken);
-                startInfo.ArgumentList.Add("--session-token");
-                startInfo.ArgumentList.Add(sessionToken);
-                Logger.Info("Game", $"Using authenticated mode with session UUID: {sessionUuid}");
-            }
-            else
-            {
-                // Offline mode - either user selected it or no tokens available
-                startInfo.ArgumentList.Add("--auth-mode");
-                startInfo.ArgumentList.Add("offline");
-                startInfo.ArgumentList.Add("--uuid");
-                startInfo.ArgumentList.Add(sessionUuid);
-                Logger.Info("Game", $"Using offline mode with UUID: {sessionUuid}");
-            }
-            
-            // Log the arguments for debugging
-            Logger.Info("Game", $"Windows launch args: {string.Join(" ", startInfo.ArgumentList)}");
-        }
-        else
-        {
-            // Build arguments for the launch script - use only documented game arguments
-            var gameArgs = new List<string>
-            {
-                $"--app-dir \"{gameDir}\"",
-                $"--user-dir \"{userDataDir}\"",
-                $"--java-exec \"{javaPath}\"",
-                $"--name \"{_config.Nick}\""
-            };
-            
-            // Add auth mode based on user's OnlineMode preference
-            if (_config.OnlineMode && !string.IsNullOrEmpty(identityToken) && !string.IsNullOrEmpty(sessionToken))
-            {
-                gameArgs.Add("--auth-mode authenticated");
-                gameArgs.Add($"--uuid \"{sessionUuid}\"");
-                gameArgs.Add($"--identity-token \"{identityToken}\"");
-                gameArgs.Add($"--session-token \"{sessionToken}\"");
-                Logger.Info("Game", $"Using authenticated mode with session UUID: {sessionUuid}");
-            }
-            else
-            {
-                // Offline mode - either user selected it or no tokens available
-                gameArgs.Add("--auth-mode offline");
-                gameArgs.Add($"--uuid \"{sessionUuid}\"");
-                Logger.Info("Game", $"Using offline mode with UUID: {sessionUuid}");
-            }
-            
-            // macOS/Linux: Use env to run with completely clean environment
-            // This prevents .NET runtime environment variables from interfering
-            string argsString = string.Join(" ", gameArgs);
-            string launchScript = Path.Combine(versionPath, "launch.sh");
-            
-            string homeDir = Environment.GetEnvironmentVariable("HOME") ?? "/Users/" + Environment.UserName;
-            string userName = Environment.GetEnvironmentVariable("USER") ?? Environment.UserName;
-            
-            // Get the Client directory for LD_LIBRARY_PATH (needed for shared libraries like SDL3_image.so)
-            string clientDir = Path.Combine(versionPath, "Client");
-            
-            // Write the launch script with env to start with empty environment
-            string scriptContent = $@"#!/bin/bash
-# Launch script generated by HyPrism
-# Uses env to clear ALL environment variables before launching game
-
-# Set LD_LIBRARY_PATH to include Client directory for shared libraries (SDL3_image.so, etc.)
-CLIENT_DIR=""{clientDir}""
-
-exec env \
-    HOME=""{homeDir}"" \
-    USER=""{userName}"" \
-    PATH=""/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin"" \
-    SHELL=""/bin/zsh"" \
-    TMPDIR=""{Path.GetTempPath().TrimEnd('/')}"" \
-    LD_LIBRARY_PATH=""$CLIENT_DIR:$LD_LIBRARY_PATH"" \
-    ""{executable}"" {argsString}
-";
-            File.WriteAllText(launchScript, scriptContent);
-            
-            // Make it executable
-            var chmod = new ProcessStartInfo
-            {
-                FileName = "/bin/chmod",
-                Arguments = $"+x \"{launchScript}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            Process.Start(chmod)?.WaitForExit();
-            
-            // Use /bin/bash to run the script
-            startInfo = new ProcessStartInfo
-            {
-                FileName = "/bin/bash",
-                WorkingDirectory = workingDir,
-                UseShellExecute = false,
-                CreateNoWindow = false,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false
-            };
-            startInfo.ArgumentList.Add(launchScript);
-            
-            Logger.Info("Game", $"Launch script: {launchScript}");
-        }
-        
-        try
-        {
-            _gameProcess = Process.Start(startInfo);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error("Game", $"Failed to start game process: {ex.Message}");
-            SendErrorEvent("launch", "Failed to start game", ex.Message);
-            throw new Exception($"Failed to start game: {ex.Message}");
-        }
-        
-        if (_gameProcess == null)
-        {
-            Logger.Error("Game", "Process.Start returned null - game failed to launch");
-            SendErrorEvent("launch", "Failed to start game", "Process.Start returned null");
-            throw new Exception("Failed to start game process");
-        }
-        
-        Logger.Success("Game", $"Game started with PID: {_gameProcess.Id}");
-        
-        // Set Discord presence to Playing
-        _discordService.SetPresence(DiscordService.PresenceState.Playing, $"Playing as {_config.Nick}");
-        
-        // Notify frontend that game has launched
-        SendGameStateEvent("started");
-        
-        // Handle process exit in background
-        _ = Task.Run(async () =>
-        {
-            await _gameProcess.WaitForExitAsync();
-            var exitCode = _gameProcess.ExitCode;
-            Logger.Info("Game", $"Game process exited with code: {exitCode}");
-            _gameProcess = null;
-            
-            // Stop skin protection first - allow normal skin file operations now
-            _skinService.StopSkinProtection();
-            
-            // Backup current profile's skin data after game exits (save any changes made during gameplay)
-            _skinService.BackupProfileSkinData(GetCurrentUuid());
-            
-            // Set Discord presence back to Idle
-            _discordService.SetPresence(DiscordService.PresenceState.Idle);
-            
-            // Notify frontend that game has exited with exit code
-            SendGameStateEvent("stopped", exitCode);
-        });
-    }
-
-    private void SendGameStateEvent(string state, int? exitCode = null)
-    {
-        _progressNotificationService.SendGameStateEvent(state, exitCode);
-    }
+    public async Task<DownloadProgress> DownloadAndLaunchAsync() => await _gameSessionService.DownloadAndLaunchAsync();
 
     private void SendErrorEvent(string type, string message, string? technical = null)
     {
@@ -1750,19 +923,19 @@ exec env \
     public async Task CheckForLauncherUpdatesAsync() => 
         await _updateService.CheckForLauncherUpdatesAsync();
 
-    public bool IsGameRunning() => _gameUtilityService.IsGameRunning();
+    public bool IsGameRunning() => _gameProcessService.IsGameRunning();
 
     public List<string> GetRecentLogs(int count = 10)
     {
         return Logger.GetRecentLogs(count);
     }
 
-    public bool ExitGame() => _gameUtilityService.ExitGame();
+    public bool ExitGame() => _gameProcessService.ExitGame();
 
-    public bool DeleteGame(string branch, int versionNumber) => _gameUtilityService.DeleteGame(branch, versionNumber);
+    public bool DeleteGame(string branch, int versionNumber) => _instanceService.DeleteGame(branch, versionNumber);
 
     // Folder
-    public bool OpenFolder() => _gameUtilityService.OpenFolder();
+    public bool OpenFolder() => _fileService.OpenAppFolder();
 
     public Task<string?> SelectInstanceDirectoryAsync()
     {
@@ -1946,7 +1119,11 @@ exec env \
     /// <summary>
     /// Opens the instance folder in the file manager.
     /// </summary>
-    public bool OpenInstanceFolder(string branch, int version) => _gameUtilityService.OpenInstanceFolder(branch, version);
+    public bool OpenInstanceFolder(string branch, int version) 
+    {
+         var path = _instanceService.ResolveInstancePath(UtilityService.NormalizeVersionType(branch), version, true);
+         return _fileService.OpenFolder(path);
+    }
 
     // CurseForge API constants
     private const string CurseForgeBaseUrl = "https://api.curseforge.com/v1";
@@ -2105,7 +1282,7 @@ exec env \
             // Download archive
             _progressNotificationService.SendProgress("wrapper-install", 0, "Downloading HyPrism...", 0, 100);
             
-            var response = await HttpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+            var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode)
             {
                 Console.WriteLine($"Failed to download: {response.StatusCode}");
@@ -2238,7 +1415,7 @@ exec env \
     {
         try
         {
-            var response = await HttpClient.GetStringAsync("https://api.github.com/repos/yyyumeniku/HyPrism/releases/latest");
+            var response = await _httpClient.GetStringAsync("https://api.github.com/repos/yyyumeniku/HyPrism/releases/latest");
             var doc = JsonDocument.Parse(response);
             if (doc.RootElement.TryGetProperty("tag_name", out var tagName))
             {

@@ -1,5 +1,5 @@
 using ReactiveUI;
-using HyPrism.Services;
+using HyPrism.Services.Game;
 using HyPrism.Models;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
@@ -11,7 +11,8 @@ namespace HyPrism.UI.ViewModels;
 
 public class ModManagerViewModel : ReactiveObject
 {
-    private readonly AppService _appService;
+    private readonly ModService _modService;
+    private readonly InstanceService _instanceService;
     private readonly string _branch;
     private readonly int _version;
 
@@ -71,9 +72,10 @@ public class ModManagerViewModel : ReactiveObject
     public ReactiveCommand<Unit, Unit> CloseCommand { get; }
     public ReactiveCommand<Unit, Unit> SearchCommand { get; }
 
-    public ModManagerViewModel(AppService appService, string branch, int version)
+    public ModManagerViewModel(ModService modService, InstanceService instanceService, string branch, int version)
     {
-        _appService = appService;
+        _modService = modService;
+        _instanceService = instanceService;
         _branch = branch;
         _version = version;
         
@@ -91,7 +93,7 @@ public class ModManagerViewModel : ReactiveObject
         SearchResults.Clear();
         try 
         {
-             var result = await _appService.SearchModsAsync(_searchQuery, 0, 20, System.Array.Empty<string>(), 2, 1);
+             var result = await _modService.SearchModsAsync(_searchQuery, 0, 20, System.Array.Empty<string>(), 2, 1);
              await Dispatcher.UIThread.InvokeAsync(() => 
              {
                  SearchResults = new ObservableCollection<ModInfo>(result.Mods);
@@ -112,7 +114,8 @@ public class ModManagerViewModel : ReactiveObject
         IsLoading = true;
         try 
         {
-             var mods = await Task.Run(() => _appService.GetInstanceInstalledMods(_branch, _version));
+             var instancePath = _instanceService.GetInstancePath(_branch, _version);
+             var mods = await Task.Run(() => _modService.GetInstanceInstalledMods(instancePath));
              await Dispatcher.UIThread.InvokeAsync(() => 
              {
                  InstalledMods = new ObservableCollection<InstalledMod>(mods);

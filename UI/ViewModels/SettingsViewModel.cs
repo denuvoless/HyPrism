@@ -25,8 +25,11 @@ public class LanguageItem
 
 public class SettingsViewModel : ReactiveObject
 {
-    private readonly AppService _appService;
-    public LocalizationService Localization => _appService.Localization;
+    private readonly SettingsService _settingsService;
+    private readonly ConfigService _configService;
+    private readonly FileDialogService _fileDialogService;
+    
+    public LocalizationService Localization { get; }
 
     // Reactive Localization Properties - will update automatically when language changes
     public IObservable<string> SettingsTitle { get; }
@@ -53,10 +56,9 @@ public class SettingsViewModel : ReactiveObject
         get => _nick;
         set
         {
-            if (_appService.SetNick(value))
-            {
-                this.RaiseAndSetIfChanged(ref _nick, value);
-            }
+            _configService.Configuration.Nick = value;
+            _configService.SaveConfig();
+            this.RaiseAndSetIfChanged(ref _nick, value);
         }
     }
 
@@ -66,23 +68,21 @@ public class SettingsViewModel : ReactiveObject
         get => _uuid;
         set
         {
-            if (_appService.SetUUID(value))
-            {
-                this.RaiseAndSetIfChanged(ref _uuid, value);
-            }
+            _configService.Configuration.UUID = value;
+            _configService.SaveConfig();
+            this.RaiseAndSetIfChanged(ref _uuid, value);
         }
     }
 
     // General
     public bool CloseAfterLaunch
     {
-        get => _appService.Configuration.CloseAfterLaunch;
+        get => _settingsService.GetCloseAfterLaunch();
         set
         {
-            if (_appService.Configuration.CloseAfterLaunch != value)
+            if (_settingsService.GetCloseAfterLaunch() != value)
             {
-                _appService.Configuration.CloseAfterLaunch = value;
-                _appService.SaveConfig();
+                _settingsService.SetCloseAfterLaunch(value);
                 this.RaisePropertyChanged();
             }
         }
@@ -90,13 +90,12 @@ public class SettingsViewModel : ReactiveObject
 
     public bool DisableNews
     {
-        get => _appService.Configuration.DisableNews;
+        get => _settingsService.GetDisableNews();
         set
         {
-            if (_appService.Configuration.DisableNews != value)
+            if (_settingsService.GetDisableNews() != value)
             {
-                _appService.Configuration.DisableNews = value;
-                _appService.SaveConfig();
+                _settingsService.SetDisableNews(value);
                 this.RaisePropertyChanged();
             }
         }
@@ -124,7 +123,7 @@ public class SettingsViewModel : ReactiveObject
             this.RaiseAndSetIfChanged(ref _selectedBranchItem, value);
             if (value != null)
             {
-                _appService.SetLauncherBranch(value.Value);
+                _settingsService.SetLauncherBranch(value.Value);
             }
         }
     }
@@ -141,7 +140,7 @@ public class SettingsViewModel : ReactiveObject
             this.RaiseAndSetIfChanged(ref _selectedLanguageItem, value);
             if (value != null)
             {
-                _appService.SetLanguage(value.Code);
+                _settingsService.SetLanguage(value.Code);
             }
         }
     }
@@ -153,12 +152,19 @@ public class SettingsViewModel : ReactiveObject
     public ReactiveCommand<Unit, Unit> RandomizeUuidCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyUuidCommand { get; }
 
-    public SettingsViewModel(AppService appService)
+    public SettingsViewModel(
+        SettingsService settingsService,
+        ConfigService configService,
+        FileDialogService fileDialogService,
+        LocalizationService localizationService)
     {
-        _appService = appService;
+        _settingsService = settingsService;
+        _configService = configService;
+        _fileDialogService = fileDialogService;
+        Localization = localizationService;
         
         // Initialize reactive localization properties - these will update automatically
-        var loc = LocalizationService.Instance;
+        var loc = Localization;
         SettingsTitle = loc.GetObservable("settings.title");
         MyProfile = loc.GetObservable("settings.myProfile");
         General = loc.GetObservable("settings.general");
@@ -175,16 +181,16 @@ public class SettingsViewModel : ReactiveObject
             .ToList();
         
         // Initialize properties
-        _nick = _appService.GetNick();
-        _uuid = _appService.GetUUID();
-        _launcherDataDirectory = _appService.GetLauncherDataDirectory();
+        _nick = _configService.Configuration.Nick;
+        _uuid = _configService.Configuration.UUID ?? "";
+        _launcherDataDirectory = _settingsService.GetLauncherDataDirectory();
         
         // Initialize branch selection
-        var currentBranch = _appService.GetLauncherBranch();
+        var currentBranch = _settingsService.GetLauncherBranch();
         _selectedBranchItem = BranchItems.FirstOrDefault(b => b.Value == currentBranch) ?? BranchItems[0];
         
         // Initialize language selection
-        var currentLanguage = _appService.Configuration.Language;
+        var currentLanguage = _configService.Configuration.Language;
         _selectedLanguageItem = LanguageItems.FirstOrDefault(l => l.Code == currentLanguage) ?? LanguageItems.First(l => l.Code == "en-US");
         
         SwitchTabCommand = ReactiveCommand.Create<string>(tab => ActiveTab = tab);
@@ -196,10 +202,10 @@ public class SettingsViewModel : ReactiveObject
 
     private async Task BrowseLauncherDataAsync()
     {
-        var result = await _appService.BrowseFolder();
+        var result = await _fileDialogService.BrowseFolderAsync();
         if (!string.IsNullOrEmpty(result))
         {
-            var setResult = await _appService.SetLauncherDataDirectoryAsync(result);
+            var setResult = await _settingsService.SetLauncherDataDirectoryAsync(result);
             if (!string.IsNullOrEmpty(setResult))
             {
                 LauncherDataDirectory = setResult;

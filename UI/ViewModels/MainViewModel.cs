@@ -1,580 +1,134 @@
 using ReactiveUI;
+using System;
 using System.Reactive;
+using System.Reactive.Linq;
+using System.Threading.Tasks;
+using Avalonia.Threading;
 using HyPrism.Services;
 using HyPrism.Services.Core;
-using HyPrism.Models;
-using System.Threading.Tasks;
-using System;
-using Avalonia.Threading;
-using System.Collections.ObjectModel;
-using System.Linq;
-using System.Reactive.Linq;
-using HyPrism.UI.ViewModels.Dashboard;
+using HyPrism.Services.Game;
+using HyPrism.Services.User;
 
 namespace HyPrism.UI.ViewModels;
 
 public class MainViewModel : ReactiveObject
 {
-    public AppService AppService { get; }
-    public LocalizationService Localization => AppService.Localization;
+    private readonly NewsService _newsService;
+    private readonly AppService _appService;
 
-    // Partial ViewModels
-    public HeaderViewModel HeaderViewModel { get; }
-    public GameControlViewModel GameControlViewModel { get; }
+    // --- Core Architecture ---
+    // The Loading Screen is distinct and effectively "covers" the application
+    public LoadingViewModel LoadingViewModel { get; set; }
 
-    // User Profile - MOVED to HeaderViewModel
-    
-    // Status
-    private bool _isGameRunning;
+    // The Dashboard contains all the main application UI (Header, Game Controls, News, Overlays)
+    public DashboardViewModel DashboardViewModel { get; private set; }
 
-    public bool IsGameRunning
-    {
-        get => _isGameRunning;
-        set => this.RaiseAndSetIfChanged(ref _isGameRunning, value);
-    }
+    // --- State Observables for Window Host ---
+    private readonly ObservableAsPropertyHelper<bool> _isLoading;
+    public bool IsLoading => _isLoading.Value;    
+    
+    // Controls the opacity of the Dashboard container based on loading state
+    private readonly ObservableAsPropertyHelper<double> _mainContentOpacity;
+    public double MainContentOpacity => _mainContentOpacity.Value;
 
-    private bool _isDownloading;
-    public bool IsDownloading
-    {
-        get => _isDownloading;
-        set => this.RaiseAndSetIfChanged(ref _isDownloading, value);
-    }
+    public bool DisableNews => true; // Moved logic to dashboard, stub for init
 
-    private double _progressValue; // 0-100
-    public double ProgressValue
+    public MainViewModel(
+        AppService appService,
+        // We inject all services to pass them down to the Dashboard
+        // Ideally we would use a Factory or DI container resolution for the child, 
+        // but passing them is fine for now.
+        GameSessionService gameSessionService,
+        ModService modService,
+        InstanceService instanceService,
+        ConfigService configService,
+        FileService fileService,
+        ProgressNotificationService progressService,
+        BrowserService browserService,
+        NewsService newsService,
+        SettingsService settingsService,
+        FileDialogService fileDialogService,
+        ProfileService profileService,
+        SkinService skinService)
     {
-        get => _progressValue;
-        set => this.RaiseAndSetIfChanged(ref _progressValue, value);
-    }
+        _newsService = newsService;
+        _appService = appService; // Keep for now if needed
 
-    private string _progressText = "Ready";
-    public string ProgressText
-    {
-        get => _progressText;
-        set => this.RaiseAndSetIfChanged(ref _progressText, value);
-    }
-
-    private string _downloadSpeedText = "";
-    public string DownloadSpeedText
-    {
-        get => _downloadSpeedText;
-        set => this.RaiseAndSetIfChanged(ref _downloadSpeedText, value);
-    }
-    
-    private string _progressIconPath = "/Assets/Icons/download-cloud.svg";
-    public string ProgressIconPath
-    {
-        get => _progressIconPath;
-        set => this.RaiseAndSetIfChanged(ref _progressIconPath, value);
-    }
-    
-    private double _overlayOpacity = 1.0;
-    public double OverlayOpacity
-    {
-        get => _overlayOpacity;
-        set => this.RaiseAndSetIfChanged(ref _overlayOpacity, value);
-    }
-    
-    // Versioning - MOVED to GameControlViewModel
-
-    // Overlays
-    private bool _isSettingsOpen;
-    public bool IsSettingsOpen
-    {
-        get => _isSettingsOpen;
-        set
-        {
-            if (_isSettingsOpen != value)
-            {
-                _isSettingsOpen = value;
-                this.RaisePropertyChanged();
-                
-                if (value)
-                {
-                    _isConfigOpen = false;
-                    this.RaisePropertyChanged(nameof(IsModsOpen));
-                    _isProfileEditorOpen = false;
-                    this.RaisePropertyChanged(nameof(IsProfileEditorOpen));
-                }
-            }
-        }
-    }
-
-    private bool _isConfigOpen; // For ModManager or others
-    public bool IsModsOpen
-    {
-        get => _isConfigOpen;
-        set
-        {
-            if (_isConfigOpen != value)
-            {
-                _isConfigOpen = value;
-                this.RaisePropertyChanged();
-                
-                if (value)
-                {
-                    _isSettingsOpen = false;
-                    this.RaisePropertyChanged(nameof(IsSettingsOpen));
-                    _isProfileEditorOpen = false;
-                    this.RaisePropertyChanged(nameof(IsProfileEditorOpen));
-                }
-            }
-        }
-    }
-    
-    private bool _isProfileEditorOpen;
-    public bool IsProfileEditorOpen
-    {
-        get => _isProfileEditorOpen;
-        set
-        {
-            if (_isProfileEditorOpen != value)
-            {
-                _isProfileEditorOpen = value;
-                this.RaisePropertyChanged();
-                
-                if (value)
-                {
-                    _isSettingsOpen = false;
-                    this.RaisePropertyChanged(nameof(IsSettingsOpen));
-                    _isConfigOpen = false;
-                    this.RaisePropertyChanged(nameof(IsModsOpen));
-                }
-            }
-        }
-    }
-    
-    private bool _isLoading = true;
-    public bool IsLoading
-    {
-        get => _isLoading;
-        set => this.RaiseAndSetIfChanged(ref _isLoading, value);
-    }
-    
-    private double _mainContentOpacity = 0;
-    public double MainContentOpacity
-    {
-        get => _mainContentOpacity;
-        set => this.RaiseAndSetIfChanged(ref _mainContentOpacity, value);
-    }
-
-    private readonly ObservableAsPropertyHelper<bool> _isOverlayOpen;
-    public bool IsOverlayOpen => _isOverlayOpen.Value;
-    
-    // Child ViewModels for Overlays
-    private LoadingViewModel? _loadingViewModel;
-    public LoadingViewModel? LoadingViewModel
-    {
-        get => _loadingViewModel;
-        set => this.RaiseAndSetIfChanged(ref _loadingViewModel, value);
-    }
-    
-    private SettingsViewModel? _settingsViewModel;
-    public SettingsViewModel? SettingsViewModel
-    {
-        get => _settingsViewModel;
-        set => this.RaiseAndSetIfChanged(ref _settingsViewModel, value);
-    }
-
-    private ModManagerViewModel? _modManagerViewModel;
-    public ModManagerViewModel? ModManagerViewModel
-    {
-        get => _modManagerViewModel;
-        set => this.RaiseAndSetIfChanged(ref _modManagerViewModel, value);
-    }
-    
-    private ProfileEditorViewModel? _profileEditorViewModel;
-    public ProfileEditorViewModel? ProfileEditorViewModel
-    {
-        get => _profileEditorViewModel;
-        set => this.RaiseAndSetIfChanged(ref _profileEditorViewModel, value);
-    }
-    
-    private NewsViewModel? _newsViewModel;
-    public NewsViewModel? NewsViewModel
-    {
-        get => _newsViewModel;
-        set => this.RaiseAndSetIfChanged(ref _newsViewModel, value);
-    }
-    
-    // Error Modal
-    private bool _isErrorModalOpen;
-    public bool IsErrorModalOpen
-    {
-        get => _isErrorModalOpen;
-        set => this.RaiseAndSetIfChanged(ref _isErrorModalOpen, value);
-    }
-    
-    private string _errorTitle = "";
-    public string ErrorTitle
-    {
-        get => _errorTitle;
-        set => this.RaiseAndSetIfChanged(ref _errorTitle, value);
-    }
-    
-    private string _errorMessage = "";
-    public string ErrorMessage
-    {
-        get => _errorMessage;
-        set => this.RaiseAndSetIfChanged(ref _errorMessage, value);
-    }
-    
-    private string _errorTrace = "";
-    public string ErrorTrace
-    {
-        get => _errorTrace;
-        set => this.RaiseAndSetIfChanged(ref _errorTrace, value);
-    }
-
-    // Branch collection moved to GameControlViewModel
-    
-    // News
-    public ObservableCollection<NewsItemResponse> News { get; } = new();
-    
-    private bool _isLoadingNews;
-    public bool IsLoadingNews
-    {
-        get => _isLoadingNews;
-        set => this.RaiseAndSetIfChanged(ref _isLoadingNews, value);
-    }
-
-    // Commands
-    // MOVED many commands to partial VMs
-    public ReactiveCommand<Unit, Unit> RefreshNewsCommand { get; }
-    public ReactiveCommand<string, Unit> OpenNewsLinkCommand { get; }
-    public ReactiveCommand<Unit, Unit> CloseErrorModalCommand { get; }
-    public ReactiveCommand<Unit, Unit> CopyErrorCommand { get; }
-    public ReactiveCommand<Unit, Unit> ToggleMusicCommand { get; }
-    
-    public MainViewModel()
-    {
-        // Initialize loading screen
         LoadingViewModel = new LoadingViewModel();
         
-        AppService = new AppService();
-        // Nick initialization moved to HeaderViewModel
-        
-        // Initialize reactive localization properties
-        // Moved to child VMs (AppVersion -> Header, Play -> Control)
-        
         // Output properties
-        _isOverlayOpen = this.WhenAnyValue(
-                x => x.IsSettingsOpen, 
-                x => x.IsModsOpen, 
-                x => x.IsProfileEditorOpen,
-                x => x.IsErrorModalOpen,
-                (s, m, p, e) => s || m || p || e)
-            .ToProperty(this, x => x.IsOverlayOpen);
+        _isLoading = this.WhenAnyValue(x => x.LoadingViewModel.IsLoading)
+            .ToProperty(this, x => x.IsLoading, scheduler: RxApp.MainThreadScheduler);
             
-        // Setup Partial ViewModels Actions
-        Action toggleSettingsAction = () => 
-        {
-            IsSettingsOpen = !IsSettingsOpen;
-        };
+        // Use scheduler to ensure UI thread update
+        _mainContentOpacity = this.WhenAnyValue(x => x.LoadingViewModel.IsLoading)
+            .Select(isLoading => isLoading ? 0.0 : 1.0)
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .ToProperty(this, x => x.MainContentOpacity, scheduler: RxApp.MainThreadScheduler);
 
-        Action toggleProfileEditorAction = () =>
-        {
-             _ = ToggleProfileEditorAsync();
-        };
-        
-        Action<string, int> toggleModsAction = (branchName, version) =>
-        {
-            if (!IsModsOpen)
-            {
-                var branch = branchName?.ToLower().Replace(" ", "-") ?? "release"; 
-                ModManagerViewModel = new ModManagerViewModel(AppService, branch, version);
-                ModManagerViewModel.CloseCommand.Subscribe(_ => IsModsOpen = false);
-            }
-            IsModsOpen = !IsModsOpen;
-        };
-        
-        // Initialize Child ViewModels
-        HeaderViewModel = new HeaderViewModel(AppService, toggleProfileEditorAction, toggleSettingsAction);
-        GameControlViewModel = new GameControlViewModel(AppService, toggleModsAction, LaunchAsync);
-        
-        // Initialize child VMs
-        SettingsViewModel = new SettingsViewModel(AppService);
-        SettingsViewModel.CloseCommand.Subscribe(_ => IsSettingsOpen = false);
-        
-        NewsViewModel = new NewsViewModel(AppService);
+        // Create the Dashboard ViewModel which encapsulates the main app logic
+        DashboardViewModel = new DashboardViewModel(
+            appService,
+            gameSessionService,
+            modService,
+            instanceService,
+            configService,
+            fileService,
+            progressService,
+            browserService,
+            newsService,
+            settingsService,
+            fileDialogService,
+            profileService,
+            skinService
+        );
 
-        // Commands
-        RefreshNewsCommand = ReactiveCommand.CreateFromTask(LoadNewsAsync);
-        OpenNewsLinkCommand = ReactiveCommand.Create<string>(url => 
-        {
-            if (!string.IsNullOrEmpty(url))
-            {
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = url,
-                        UseShellExecute = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                }
-                catch { }
-            }
-        });
-        
-        CloseErrorModalCommand = ReactiveCommand.Create(() => 
-        {
-            IsErrorModalOpen = false;
-        });
-        
-        CopyErrorCommand = ReactiveCommand.Create(() =>
-        {
-            var errorText = $"Error: {ErrorTitle}\nMessage: {ErrorMessage}\nTrace:\n{ErrorTrace}";
-            // TODO: Copy to clipboard
-            return Unit.Default;
-        });
-        
-        ToggleMusicCommand = ReactiveCommand.Create(ToggleMusic);
-        
-        // Event subscriptions need to be marshaled to UI thread
-        AppService.DownloadProgressChanged += (state, progress, speed, dl, total) => 
-            Dispatcher.UIThread.Post(() => OnDownloadProgress(state, progress, speed, dl, total));
-            
-        AppService.GameStateChanged += (state, code) => 
-            Dispatcher.UIThread.Post(() => OnGameStateChanged(state, code));
-            
-        AppService.ErrorOccurred += (title, msg, trace) => 
-            Dispatcher.UIThread.Post(() => OnError(title, msg, trace));
-        
-        // Initialize application data asynchronously
-        _ = InitializeAsync();
+        // Start App Initialization sequence
+        InitializeAppAsync();
     }
     
-    private async Task ToggleProfileEditorAsync()
-    {
-        if (!IsProfileEditorOpen)
-        {
-            ProfileEditorViewModel = new ProfileEditorViewModel(AppService);
-            // Close command handling
-            var closeCmd = ProfileEditorViewModel.CloseCommand as ReactiveCommand<Unit, Unit>;
-            closeCmd?.Subscribe(_ => IsProfileEditorOpen = false);
-            // Profile update handling
-            ProfileEditorViewModel.ProfileUpdated += () => HeaderViewModel.RefreshNick();
-            await ProfileEditorViewModel.LoadProfileAsync();
-        }
-        IsProfileEditorOpen = !IsProfileEditorOpen;
-    }
+    // --- Initialization ---
 
-    
-    private async Task InitializeAsync()
+    private async void InitializeAppAsync()
     {
         try
         {
-            // Load initial news and music state
-            await LoadNewsAsync();
-            await LoadMusicStateAsync();
-            
-            // Simulate minimum loading time for smooth UX
-            await Task.Delay(3000);
-            
-            // Complete loading screen animation
+            // Initial delay to let UI render frame
+            await Task.Delay(100);
+
             if (LoadingViewModel != null)
             {
-                await LoadingViewModel.CompleteLoadingAsync();
+                LoadingViewModel.Update("loading", "Loading Localization...", 20);
+                await Task.Delay(300);
+
+                // TODO: Read this setting from DashboardViewModel if possible or service
+                // For now, assuming we want to load news
+                bool disableNews = false; 
+
+                if (!disableNews)
+                {
+                    LoadingViewModel.Update("loading", "Loading News...", 60);
+                    // Fetch more items to populate cache for dashboard
+                    var newsTask = _newsService.GetNewsAsync(30);
+                    var timeoutTask = Task.Delay(3000); 
+                    
+                    await Task.WhenAny(newsTask, timeoutTask);
+                }
+                
+                LoadingViewModel.Update("complete", "Ready!", 100);
+                await Task.Delay(200);
             }
-            
-            // Hide loading screen and fade in main content simultaneously
-            IsLoading = false;
-            MainContentOpacity = 1;
         }
         catch (Exception ex)
         {
-            Logger.Error("MainViewModel", $"Initialization error: {ex.Message}");
-            // Still hide loading screen even if there's an error
-            IsLoading = false;
-        }
-    }
-
-    private async void OnDownloadProgress(string state, double progress, string speed, long downloaded, long total)
-    {
-        IsDownloading = true;
-        ProgressValue = progress; // Already in 0-100 range
-        
-        // Reset opacity when showing overlay
-        if (OverlayOpacity < 1.0)
-            OverlayOpacity = 1.0;
-        
-        // Change icon based on state
-        var stateLower = state.ToLower();
-        
-        // Handle "complete" state - show success message and hide overlay
-        if (stateLower == "complete")
-        {
-            ProgressIconPath = "/Assets/Icons/smile.svg";
-            ProgressText = "Launched!";
-            ProgressValue = 100;
-            DownloadSpeedText = "";
-            
-            // Wait 4 seconds
-            await Task.Delay(4000);
-            
-            // Fade out
-            OverlayOpacity = 0;
-            await Task.Delay(500); // Wait for fade animation
-            
-            // Hide overlay
-            IsDownloading = false;
-            ProgressValue = 0;
-            return;
-        }
-        
-        // Normal state handling
-        ProgressText = state;
-        DownloadSpeedText = speed;
-        
-        if (stateLower.Contains("download") || stateLower.Contains("загрузк"))
-            ProgressIconPath = "/Assets/Icons/download-cloud.svg";
-        else if (stateLower.Contains("patch") || stateLower.Contains("патч") || stateLower.Contains("extract") || stateLower.Contains("распак"))
-            ProgressIconPath = "/Assets/Icons/wrench.svg";
-        else if (stateLower.Contains("launch") || stateLower.Contains("запуск") || stateLower.Contains("start"))
-            ProgressIconPath = "/Assets/Icons/rocket.svg";
-    }
-
-    private async void OnGameStateChanged(string state, int code)
-    {
-        // Adjust logic based on actual AppService notification codes
-        // Assuming code > 0 is running state or similar
-        var stateLower = state.ToLower();
-        IsGameRunning = stateLower.Contains("running") || stateLower.Contains("playing");
-        
-        if (IsGameRunning)
-        {
-            // Show success animation before hiding
-            ProgressIconPath = "/Assets/Icons/smile.svg";
-            ProgressText = "Launched!";
-            ProgressValue = 100;
-            DownloadSpeedText = "";
-            
-            // Wait 4 seconds
-            await Task.Delay(4000);
-            
-            // Fade out
-            OverlayOpacity = 0;
-            await Task.Delay(500); // Wait for fade animation
-            
-            // Hide overlay
-            IsDownloading = false;
-            ProgressValue = 0;
-        }
-        else if (!IsDownloading)
-        {
-            ProgressValue = 0;
-            DownloadSpeedText = "";
-        }
-    }
-
-    private void OnError(string title, string message, string? trace)
-    {
-         ProgressText = $"Error: {message}";
-         IsDownloading = false;
-         
-         // Show error modal
-         ErrorTitle = title;
-         ErrorMessage = message;
-         ErrorTrace = trace ?? "";
-         IsErrorModalOpen = true;
-    }
-
-    private async Task LaunchAsync()
-    {
-        if (IsGameRunning) return;
-        
-        try 
-        {
-            // Reset state
-            IsDownloading = true;
-            ProgressText = "Preparing...";
-            
-            await AppService.DownloadAndLaunchAsync();
-        }
-        catch (Exception ex)
-        {
-            OnError("Launch Error", ex.Message, ex.StackTrace);
+             Services.Core.Logger.Error("Startup", $"Initialization error: {ex.Message}");
         }
         finally
         {
-             // If game started, logic is handled by event. 
-        }
-    }
-    
-    private async Task LoadNewsAsync()
-    {
-        if (AppService.Configuration.DisableNews) return;
-        
-        IsLoadingNews = true;
-        try
-        {
-            var newsItems = await AppService.GetNewsAsync(10);
-            
-            Dispatcher.UIThread.Post(() =>
+            if (LoadingViewModel != null)
             {
-                News.Clear();
-                if (newsItems != null)
-                {
-                    foreach (var item in newsItems)
-                    {
-                        News.Add(item);
-                    }
-                }
-            });
+                 await LoadingViewModel.CompleteLoadingAsync();
+            }
         }
-        catch
-        {
-            // Ignore news loading errors
-        }
-        finally
-        {
-            IsLoadingNews = false;
-        }
-    }
-    
-    // Music Player
-    private bool _isMusicEnabled;
-    public bool IsMusicEnabled
-    {
-        get => _isMusicEnabled;
-        set => this.RaiseAndSetIfChanged(ref _isMusicEnabled, value);
-    }
-    
-    private double _volumeScale = 1.0;
-    public double VolumeScale
-    {
-        get => _volumeScale;
-        set => this.RaiseAndSetIfChanged(ref _volumeScale, value);
-    }
-    
-    public string MusicTooltip => IsMusicEnabled ? "Music: ON" : "Music: OFF";
-    
-    private void ToggleMusic()
-    {
-        IsMusicEnabled = !IsMusicEnabled;
-        AppService.SetMusicEnabled(IsMusicEnabled);
-        
-        // Animate volume icon
-        if (IsMusicEnabled)
-        {
-            Task.Run(async () =>
-            {
-                for (int i = 0; i < 3; i++)
-                {
-                    Dispatcher.UIThread.Post(() => VolumeScale = 1.2);
-                    await Task.Delay(150);
-                    Dispatcher.UIThread.Post(() => VolumeScale = 1.0);
-                    await Task.Delay(150);
-                }
-            });
-        }
-        
-        this.RaisePropertyChanged(nameof(MusicTooltip));
-    }
-    
-    private async Task LoadMusicStateAsync()
-    {
-        IsMusicEnabled = await AppService.GetMusicEnabledAsync();
     }
 }

@@ -59,7 +59,7 @@ public class DiscordService : IDisposable
             
             _client.OnReady += (sender, e) =>
             {
-                Logger.Info("Discord", $"Connected to Discord as {e.User.Username}");
+                Logger.Success("Discord", $"Connected to Discord as {e.User.Username}");
                 _enabled = true;
             };
             

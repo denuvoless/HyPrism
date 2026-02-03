@@ -2,10 +2,9 @@ using System;
 using Avalonia;
 using Avalonia.Media;
 using HyPrism.Services;
-using HyPrism.Services.Core;
 using ReactiveUI;
 
-namespace HyPrism.UI.Services;
+namespace HyPrism.Services.Core;
 
 public class ThemeService : ReactiveObject
 {

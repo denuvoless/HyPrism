@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:HyPrism.UI.ViewModels"
+             xmlns:buttons="using:HyPrism.UI.Components.Buttons"
              xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Avalonia.Svg.Skia"
              x:Class="HyPrism.UI.Views.ModManagerView"
              x:DataType="vm:ModManagerViewModel">
@@ -52,9 +53,9 @@
                     </StackPanel>
                 </StackPanel>
                 
-                <Button Grid.Column="2" Command="{Binding CloseCommand}" Margin="0,0,20,0" Width="32" Height="32" Background="Transparent" Foreground="White" Padding="8" CornerRadius="16">
-                    <svg:Svg Path="/Assets/Icons/x.svg" Width="14" Height="14"/>
-                </Button>
+                <buttons:CloseButton Grid.Column="2" 
+                                     Command="{Binding CloseCommand}" 
+                                     Margin="0,0,20,0"/>
             </Grid>
 
             <!-- Content -->

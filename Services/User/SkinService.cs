@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using HyPrism.Models;
 using HyPrism.Services.Core;
+using HyPrism.Services.Game;
 
 namespace HyPrism.Services.User;
 
@@ -20,31 +21,27 @@ public class SkinService : IDisposable
     private bool _skinProtectionEnabled;
     private readonly object _skinProtectionLock = new object();
 
-    // Delegates to access AppService state
-    private readonly Func<string, string> _normalizeVersionType;
-    private readonly Func<string, int, bool, string> _resolveInstancePath;
-    private readonly Func<string, string> _getInstanceUserDataPath;
-    private readonly Func<Config> _getConfig;
-    private readonly Action _saveConfig;
-    private readonly Func<string> _getProfilesFolder;
-    private readonly Func<string, string> _sanitizeFileName;
+    // Delegates to access AppService state - REPLACED BY DI SERVICES
+    private readonly ConfigService _configService;
+    private readonly InstanceService _instanceService;
+    private readonly string _appDir;
 
     public SkinService(
-        Func<string, string> normalizeVersionType,
-        Func<string, int, bool, string> resolveInstancePath,
-        Func<string, string> getInstanceUserDataPath,
-        Func<Config> getConfig,
-        Action saveConfig,
-        Func<string> getProfilesFolder,
-        Func<string, string> sanitizeFileName)
+        AppPathConfiguration appPath,
+        ConfigService configService,
+        InstanceService instanceService)
     {
-        _normalizeVersionType = normalizeVersionType;
-        _resolveInstancePath = resolveInstancePath;
-        _getInstanceUserDataPath = getInstanceUserDataPath;
-        _getConfig = getConfig;
-        _saveConfig = saveConfig;
-        _getProfilesFolder = getProfilesFolder;
-        _sanitizeFileName = sanitizeFileName;
+        _appDir = appPath.AppDir;
+        _configService = configService;
+        _instanceService = instanceService;
+    }
+
+    // Helper for Profiles Path
+    private string GetProfilesFolder()
+    {
+        var path = Path.Combine(_appDir, "Profiles");
+        Directory.CreateDirectory(path);
+        return path;
     }
 
     #region Skin Protection
@@ -213,7 +210,7 @@ public class SkinService : IDisposable
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             var currentUuid = config.UUID;
             if (string.IsNullOrEmpty(currentUuid) || string.IsNullOrEmpty(config.Nick))
             {
@@ -221,9 +218,9 @@ public class SkinService : IDisposable
             }
             
             // Get the current instance's UserData path
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
-            var userDataPath = _getInstanceUserDataPath(versionPath);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+            var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");
             var avatarCacheDir = Path.Combine(userDataPath, "CachedAvatarPreviews");
             
@@ -295,7 +292,7 @@ public class SkinService : IDisposable
             // Set current user to use orphaned UUID
             config.UserUuids[config.Nick] = orphanedUuid;
             config.UUID = orphanedUuid;
-            _saveConfig();
+            _configService.SaveConfig();
             
             Logger.Success("Startup", $"Recovered orphaned skin! User '{config.Nick}' now uses UUID {orphanedUuid}");
         }
@@ -312,11 +309,11 @@ public class SkinService : IDisposable
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             // Get the current instance's UserData path
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
-            var userDataPath = _getInstanceUserDataPath(versionPath);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+            var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");
             
             if (!Directory.Exists(skinCacheDir))
@@ -401,7 +398,7 @@ public class SkinService : IDisposable
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             var orphanedUuid = FindOrphanedSkinUuid();
             
             if (string.IsNullOrEmpty(orphanedUuid))
@@ -411,9 +408,9 @@ public class SkinService : IDisposable
             }
             
             // If the current UUID already has a skin, don't overwrite
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
-            var userDataPath = _getInstanceUserDataPath(versionPath);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+            var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");
             var avatarCacheDir = Path.Combine(userDataPath, "CachedAvatarPreviews");
             
@@ -465,7 +462,7 @@ public class SkinService : IDisposable
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             // Find the profile by UUID
             var profile = config.Profiles?.FirstOrDefault(p => p.UUID == uuid);
             if (profile == null)
@@ -473,15 +470,15 @@ public class SkinService : IDisposable
                 return;
             }
             
-            var profilesDir = _getProfilesFolder();
-            var safeName = _sanitizeFileName(profile.Name);
+            var profilesDir = GetProfilesFolder();
+            var safeName = UtilityService.SanitizeFileName(profile.Name);
             var profileDir = Path.Combine(profilesDir, safeName);
             Directory.CreateDirectory(profileDir);
             
             // Get game UserData path
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
-            var userDataPath = _getInstanceUserDataPath(versionPath);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+            var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             
             // Backup skin JSON
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");
@@ -521,9 +518,9 @@ public class SkinService : IDisposable
     {
         try
         {
-            var config = _getConfig();
-            var profilesDir = _getProfilesFolder();
-            var safeName = _sanitizeFileName(profile.Name);
+            var config = _configService.Configuration;
+            var profilesDir = GetProfilesFolder();
+            var safeName = UtilityService.SanitizeFileName(profile.Name);
             var profileDir = Path.Combine(profilesDir, safeName);
             
             if (!Directory.Exists(profileDir))
@@ -533,9 +530,9 @@ public class SkinService : IDisposable
             }
             
             // Get game UserData path
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
-            var userDataPath = _getInstanceUserDataPath(versionPath);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+            var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             
             // Restore skin JSON
             var skinBackupPath = Path.Combine(profileDir, "skin.json");
@@ -572,11 +569,11 @@ public class SkinService : IDisposable
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             // Get game UserData path
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
-            var userDataPath = _getInstanceUserDataPath(versionPath);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+            var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             
             // Copy skin JSON
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");

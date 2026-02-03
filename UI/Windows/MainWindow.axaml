@@ -4,10 +4,6 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:HyPrism.UI.ViewModels"
         xmlns:views="using:HyPrism.UI.Views"
-        xmlns:dashboard="using:HyPrism.UI.Components.Dashboard"
-        xmlns:layouts="using:HyPrism.UI.Components.Layouts"
-        xmlns:btn="using:HyPrism.UI.Components.Buttons"
-        xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Avalonia.Svg.Skia"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
         x:Class="HyPrism.UI.MainWindow"
         x:DataType="vm:MainViewModel"
@@ -39,58 +35,18 @@
     </Design.DataContext>
     
     <Grid>
-        <!-- Content Root with Blur Effect and Fade In -->
-        <Grid Tag="{Binding IsOverlayOpen}" Opacity="{Binding MainContentOpacity}">
-            <Grid.Styles>
-                <Style Selector="Grid[Tag=True]">
-                    <Setter Property="Effect" Value="blur(16)"/>
-                </Style>
-            </Grid.Styles>
+        <!-- Dashboard Content (The Main App) -->
+        <!-- Only visible when loaded to prevent glitches -->
+        <Grid Opacity="{Binding MainContentOpacity}">
             <Grid.Transitions>
                 <Transitions>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.8" Easing="CubicEaseInOut"/>
                 </Transitions>
             </Grid.Transitions>
-
-            <!-- Background -->
-            <Image Source="/Assets/bg_1.jpg" Stretch="UniformToFill"/>
-            <Rectangle Fill="#CC090909"/> 
-        
-            <!-- Main Layout Grid -->
-            <views:DashboardView />
+            <views:DashboardView DataContext="{Binding DashboardViewModel}" />
         </Grid>
 
-        <!-- Settings Overlay -->
-        <Grid Classes="overlay-layer" Tag="{Binding IsSettingsOpen}" ZIndex="100">
-            <Border Background="#B3000000"/>
-            <layouts:ModalWrapper IsOpen="{Binding IsSettingsOpen}">
-                <views:SettingsView DataContext="{Binding SettingsViewModel}" Width="900" Height="650" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-            </layouts:ModalWrapper>
-        </Grid>
-        
-        <!-- Mods Overlay -->
-        <Grid Classes="overlay-layer" Tag="{Binding IsModsOpen}" ZIndex="100">
-            <Border Background="#B3000000"/>
-            <layouts:ModalWrapper IsOpen="{Binding IsModsOpen}">
-                <views:ModManagerView DataContext="{Binding ModManagerViewModel}" Width="1100" Height="750" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-            </layouts:ModalWrapper>
-        </Grid>
-        
-        <!-- Profile Editor Overlay -->
-        <Grid Classes="overlay-layer" Tag="{Binding IsProfileEditorOpen}" ZIndex="100">
-            <Border Background="#B3000000"/>
-            <layouts:ModalWrapper IsOpen="{Binding IsProfileEditorOpen}">
-                <views:ProfileEditorView DataContext="{Binding ProfileEditorViewModel}" Width="700" Height="600" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-            </layouts:ModalWrapper>
-        </Grid>
-        
-        <!-- Update/Download Progress Overlay -->
-        <views:UpdateOverlayView/>
-
-        <!-- Error Modal -->
-        <views:ErrorModalView/>
-        
-        <!-- Loading Screen (Curtain Animation) -->
+        <!-- Loading Screen (Global Curtain) -->
         <Grid IsVisible="{Binding IsLoading}" ZIndex="1000" Name="LoadingScreen">
             <Grid.Transitions>
                 <Transitions>

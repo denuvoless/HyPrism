@@ -4,13 +4,15 @@ using System.Reactive;
 using ReactiveUI;
 using HyPrism.Services;
 using HyPrism.Services.Core;
+using HyPrism.Services.Game;
 using System.Threading.Tasks;
 
 namespace HyPrism.UI.ViewModels.Dashboard;
 
 public class GameControlViewModel : ReactiveObject
 {
-    private readonly AppService _appService;
+    private readonly InstanceService _instanceService;
+    private readonly FileService _fileService;
 
     // Commands
     public ReactiveCommand<Unit, Unit> ToggleModsCommand { get; }
@@ -39,9 +41,14 @@ public class GameControlViewModel : ReactiveObject
     public IObservable<string> MainBuyIt { get; }
     public IObservable<string> MainPlay { get; }
 
-    public GameControlViewModel(AppService appService, Action<string, int> toggleMods, Func<Task> launchAction)
+    public GameControlViewModel(
+        InstanceService instanceService,
+        FileService fileService, 
+        Action<string, int> toggleMods, 
+        Func<Task> launchAction)
     {
-        _appService = appService;
+        _instanceService = instanceService;
+        _fileService = fileService;
 
         var loc = LocalizationService.Instance;
         MainEducational = loc.GetObservable("main.educational");
@@ -53,7 +60,10 @@ public class GameControlViewModel : ReactiveObject
         OpenFolderCommand = ReactiveCommand.Create(() =>  
         {
             var branch = SelectedBranch?.ToLower().Replace(" ", "-") ?? "release";
-            _appService.OpenInstanceFolder(branch, SelectedVersion);
+            // Logic moved from GameUtilityService
+            string branchNormalized = UtilityService.NormalizeVersionType(branch);
+            var path = _instanceService.ResolveInstancePath(branchNormalized, SelectedVersion, true);
+            _fileService.OpenFolder(path);
         });
 
         LaunchCommand = ReactiveCommand.CreateFromTask(launchAction);

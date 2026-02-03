@@ -12,29 +12,46 @@ namespace HyPrism.Services.Core;
 /// </summary>
 public class SettingsService
 {
-    private readonly Func<Config> _getConfig;
-    private readonly Action _saveConfig;
+    private readonly ConfigService _configService;
     
-    public SettingsService(Func<Config> getConfig, Action saveConfig)
+    public SettingsService(ConfigService configService)
     {
-        _getConfig = getConfig;
-        _saveConfig = saveConfig;
+        _configService = configService;
     }
     
+    // ========== Localization Settings (Language) ==========
+    
+    public string GetLanguage() => _configService.Configuration.Language;
+
+    public bool SetLanguage(string languageCode)
+    {
+        var availableLanguages = LocalizationService.GetAvailableLanguages();
+        if (availableLanguages.ContainsKey(languageCode))
+        {
+            _configService.Configuration.Language = languageCode;
+            // Update the singleton which drives the UI
+            LocalizationService.Instance.CurrentLanguage = languageCode;
+            _configService.SaveConfig();
+            Logger.Info("Config", $"Language changed to: {languageCode}");
+            return true;
+        }
+        return false;
+    }
+
     // ========== Music Settings ==========
     
-    public bool GetMusicEnabled() => _getConfig().MusicEnabled;
+    public bool GetMusicEnabled() => _configService.Configuration.MusicEnabled;
     
     public bool SetMusicEnabled(bool enabled)
     {
-        _getConfig().MusicEnabled = enabled;
-        _saveConfig();
+        _configService.Configuration.MusicEnabled = enabled;
+        _configService.SaveConfig();
         return true;
     }
 
     // ========== Launcher Branch (release/beta update channel) ==========
     
-    public string GetLauncherBranch() => _getConfig().LauncherBranch;
+    public string GetLauncherBranch() => _configService.Configuration.LauncherBranch;
     
     public bool SetLauncherBranch(string branch)
     {
@@ -43,48 +60,48 @@ public class SettingsService
         {
             normalizedBranch = "release";
         }
-        _getConfig().LauncherBranch = normalizedBranch;
-        _saveConfig();
+        _configService.Configuration.LauncherBranch = normalizedBranch;
+        _configService.SaveConfig();
         Logger.Info("Config", $"Launcher branch set to: {normalizedBranch}");
         return true;
     }
 
     // ========== Close After Launch Setting ==========
     
-    public bool GetCloseAfterLaunch() => _getConfig().CloseAfterLaunch;
+    public bool GetCloseAfterLaunch() => _configService.Configuration.CloseAfterLaunch;
     
     public bool SetCloseAfterLaunch(bool enabled)
     {
-        _getConfig().CloseAfterLaunch = enabled;
-        _saveConfig();
+        _configService.Configuration.CloseAfterLaunch = enabled;
+        _configService.SaveConfig();
         Logger.Info("Config", $"Close after launch set to: {enabled}");
         return true;
     }
 
     // ========== Discord Announcements Settings ==========
     
-    public bool GetShowDiscordAnnouncements() => _getConfig().ShowDiscordAnnouncements;
+    public bool GetShowDiscordAnnouncements() => _configService.Configuration.ShowDiscordAnnouncements;
     
     public bool SetShowDiscordAnnouncements(bool enabled)
     {
-        _getConfig().ShowDiscordAnnouncements = enabled;
-        _saveConfig();
+        _configService.Configuration.ShowDiscordAnnouncements = enabled;
+        _configService.SaveConfig();
         Logger.Info("Config", $"Show Discord announcements set to: {enabled}");
         return true;
     }
 
     public bool IsAnnouncementDismissed(string announcementId)
     {
-        return _getConfig().DismissedAnnouncementIds.Contains(announcementId);
+        return _configService.Configuration.DismissedAnnouncementIds.Contains(announcementId);
     }
 
     public bool DismissAnnouncement(string announcementId)
     {
-        var config = _getConfig();
+        var config = _configService.Configuration;
         if (!config.DismissedAnnouncementIds.Contains(announcementId))
         {
             config.DismissedAnnouncementIds.Add(announcementId);
-            _saveConfig();
+            _configService.SaveConfig();
             Logger.Info("Discord", $"Announcement {announcementId} dismissed");
         }
         return true;
@@ -92,24 +109,24 @@ public class SettingsService
 
     // ========== News Settings ==========
     
-    public bool GetDisableNews() => _getConfig().DisableNews;
+    public bool GetDisableNews() => _configService.Configuration.DisableNews;
     
     public bool SetDisableNews(bool disabled)
     {
-        _getConfig().DisableNews = disabled;
-        _saveConfig();
+        _configService.Configuration.DisableNews = disabled;
+        _configService.SaveConfig();
         Logger.Info("Config", $"News disabled set to: {disabled}");
         return true;
     }
 
     // ========== Background Settings ==========
     
-    public string GetBackgroundMode() => _getConfig().BackgroundMode;
+    public string GetBackgroundMode() => _configService.Configuration.BackgroundMode;
     
     public bool SetBackgroundMode(string mode)
     {
-        _getConfig().BackgroundMode = mode;
-        _saveConfig();
+        _configService.Configuration.BackgroundMode = mode;
+        _configService.SaveConfig();
         Logger.Info("Config", $"Background mode set to: {mode}");
         return true;
     }
@@ -130,24 +147,24 @@ public class SettingsService
 
     // ========== Accent Color Settings ==========
     
-    public string GetAccentColor() => _getConfig().AccentColor;
+    public string GetAccentColor() => _configService.Configuration.AccentColor;
     
     public bool SetAccentColor(string color)
     {
-        _getConfig().AccentColor = color;
-        _saveConfig();
+        _configService.Configuration.AccentColor = color;
+        _configService.SaveConfig();
         Logger.Info("Config", $"Accent color set to: {color}");
         return true;
     }
 
     // ========== Onboarding State ==========
     
-    public bool GetHasCompletedOnboarding() => _getConfig().HasCompletedOnboarding;
+    public bool GetHasCompletedOnboarding() => _configService.Configuration.HasCompletedOnboarding;
     
     public bool SetHasCompletedOnboarding(bool completed)
     {
-        _getConfig().HasCompletedOnboarding = completed;
-        _saveConfig();
+        _configService.Configuration.HasCompletedOnboarding = completed;
+        _configService.SaveConfig();
         Logger.Info("Config", $"Onboarding completed: {completed}");
         return true;
     }
@@ -157,27 +174,27 @@ public class SettingsService
     /// </summary>
     public bool ResetOnboarding()
     {
-        _getConfig().HasCompletedOnboarding = false;
-        _saveConfig();
+        _configService.Configuration.HasCompletedOnboarding = false;
+        _configService.SaveConfig();
         Logger.Info("Config", "Onboarding reset - will show on next launch");
         return true;
     }
 
     // ========== Online Mode Settings ==========
     
-    public bool GetOnlineMode() => _getConfig().OnlineMode;
+    public bool GetOnlineMode() => _configService.Configuration.OnlineMode;
     
     public bool SetOnlineMode(bool online)
     {
-        _getConfig().OnlineMode = online;
-        _saveConfig();
+        _configService.Configuration.OnlineMode = online;
+        _configService.SaveConfig();
         Logger.Info("Config", $"Online mode set to: {online}");
         return true;
     }
     
     // ========== Auth Domain Settings ==========
     
-    public string GetAuthDomain() => _getConfig().AuthDomain;
+    public string GetAuthDomain() => _configService.Configuration.AuthDomain;
     
     public bool SetAuthDomain(string domain)
     {
@@ -185,15 +202,15 @@ public class SettingsService
         {
             domain = "sessions.sanasol.ws";
         }
-        _getConfig().AuthDomain = domain;
-        _saveConfig();
+        _configService.Configuration.AuthDomain = domain;
+        _configService.SaveConfig();
         Logger.Info("Config", $"Auth domain set to: {domain}");
         return true;
     }
 
     // ========== Launcher Data Directory Settings ==========
     
-    public string GetLauncherDataDirectory() => _getConfig().LauncherDataDirectory;
+    public string GetLauncherDataDirectory() => _configService.Configuration.LauncherDataDirectory;
     
     public Task<string?> SetLauncherDataDirectoryAsync(string path)
     {
@@ -202,8 +219,8 @@ public class SettingsService
             // If path is empty or whitespace, clear the custom launcher data directory
             if (string.IsNullOrWhiteSpace(path))
             {
-                _getConfig().LauncherDataDirectory = "";
-                _saveConfig();
+                _configService.Configuration.LauncherDataDirectory = "";
+                _configService.SaveConfig();
                 Logger.Success("Config", "Launcher data directory cleared, will use default on next restart");
                 return Task.FromResult<string?>(null);
             }
@@ -216,8 +233,8 @@ public class SettingsService
             }
 
             // Just save the path, the change takes effect on next restart
-            _getConfig().LauncherDataDirectory = expanded;
-            _saveConfig();
+            _configService.Configuration.LauncherDataDirectory = expanded;
+            _configService.SaveConfig();
 
             Logger.Success("Config", $"Launcher data directory set to {expanded} (takes effect on restart)");
             return Task.FromResult<string?>(expanded);

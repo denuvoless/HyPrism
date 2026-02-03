@@ -33,6 +33,9 @@ public class ProgressNotificationService
             _discordService.SetPresence(DiscordService.PresenceState.Idle);
         }
     }
+
+    public void ReportDownloadProgress(string stage, int progress, string message, long downloaded, long total) 
+        => SendProgress(stage, progress, message, downloaded, total);
     
     /// <summary>
     /// Sends game state change notification.
@@ -54,12 +57,14 @@ public class ProgressNotificationService
                 break;
         }
     }
-    
-    /// <summary>
-    /// Sends error notification.
-    /// </summary>
+
+    public void ReportGameStateChanged(string state, int? exitCode = null) => SendGameStateEvent(state, exitCode);
+
     public void SendErrorEvent(string type, string message, string? technical = null)
     {
         ErrorOccurred?.Invoke(type, message, technical);
     }
+    
+    public void ReportError(string type, string message, string? technical = null) 
+        => SendErrorEvent(type, message, technical);
 }

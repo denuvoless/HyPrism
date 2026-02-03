@@ -23,51 +23,71 @@ public enum NewsSource
 public class NewsService
 {
     private readonly HttpClient _httpClient;
+    private readonly string _appIconPath = "avares://HyPrism/Assets/logo.png";
+
+    // DI Constructor
+    public NewsService(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+        
+        // Ensure headers are set if they aren't already
+        if (!_httpClient.DefaultRequestHeaders.Contains("User-Agent"))
+        {
+            _httpClient.DefaultRequestHeaders.Add("User-Agent", "HyPrism/1.0");
+        }
+    }
     private const string HytaleNewsUrl = "https://hytale.com/api/blog/post/published";
     private const string HyPrismReleasesUrl = "https://api.github.com/repos/yyyumeniku/HyPrism/releases";
-    private readonly string _appIconPath;
     
     // Cache for HyPrism news to avoid GitHub API rate limits
     private List<NewsItemResponse>? _hyprismNewsCache;
     private DateTime _hyprismCacheTime = DateTime.MinValue;
+    private static readonly SemaphoreSlim _hyprismLock = new(1, 1);
+    
+    // Cache for Hytale news
+    private List<NewsItemResponse>? _hytaleNewsCache;
+    private DateTime _hytaleCacheTime = DateTime.MinValue;
+    private static readonly SemaphoreSlim _hytaleLock = new(1, 1);
+    
     private const int CacheExpirationMinutes = 30;
     
-    public NewsService(string appIconPath = "avares://HyPrism/Assets/logo.png")
-    {
-        _httpClient = new HttpClient();
-        _httpClient.DefaultRequestHeaders.Add("User-Agent", "HyPrism/2.0");
-        _httpClient.Timeout = TimeSpan.FromSeconds(10);
-        _appIconPath = appIconPath;
-    }
+    // Legacy constructor removed in favor of DI
     
     public async Task<List<NewsItemResponse>> GetNewsAsync(int count = 10, NewsSource source = NewsSource.All)
     {
         try
         {
             var allNews = new List<(NewsItemResponse item, DateTime dateTime)>();
+            var tasks = new List<Task<List<NewsItemResponse>>>();
 
-            // Fetch Hytale news
+            Task<List<NewsItemResponse>>? hytaleTask = null;
             if (source == NewsSource.All || source == NewsSource.Hytale)
             {
-                var hytaleNews = await GetHytaleNewsAsync(count);
-                allNews.AddRange(hytaleNews.Select(n => (n, ParseDate(n.Date))));
+                hytaleTask = GetHytaleNewsAsync(count);
+                tasks.Add(hytaleTask);
             }
 
-            // Fetch HyPrism news
+            Task<List<NewsItemResponse>>? hyprismTask = null;
             if (source == NewsSource.All || source == NewsSource.HyPrism)
             {
-                var hyprismNews = await GetHyPrismNewsAsync(count);
-                allNews.AddRange(hyprismNews.Select(n => (n, ParseDate(n.Date))));
+                hyprismTask = GetHyPrismNewsAsync(count);
+                tasks.Add(hyprismTask);
             }
 
-            // Sort by date descending and take requested count
+            await Task.WhenAll(tasks);
+
+            if (hytaleTask != null)
+                allNews.AddRange((await hytaleTask).Select(n => (n, ParseDate(n.Date))));
+            
+            if (hyprismTask != null)
+                allNews.AddRange((await hyprismTask).Select(n => (n, ParseDate(n.Date))));
+
             var sortedNews = allNews
                 .OrderByDescending(x => x.dateTime)
                 .Take(count)
                 .Select(x => x.item)
                 .ToList();
 
-            Logger.Success("News", $"Successfully fetched {sortedNews.Count} news items (source: {source})");
             return sortedNews;
         }
         catch (Exception ex)
@@ -79,12 +99,37 @@ public class NewsService
 
     private async Task<List<NewsItemResponse>> GetHytaleNewsAsync(int count)
     {
+        if (_hytaleNewsCache != null && _hytaleNewsCache.Count >= count && (DateTime.Now - _hytaleCacheTime).TotalMinutes < CacheExpirationMinutes)
+            return _hytaleNewsCache.Take(count).ToList();
+
+        await _hytaleLock.WaitAsync();
         try
         {
+            if (_hytaleNewsCache != null && _hytaleNewsCache.Count >= count && (DateTime.Now - _hytaleCacheTime).TotalMinutes < CacheExpirationMinutes)
+                return _hytaleNewsCache.Take(count).ToList();
+
+            return await GetHytaleNewsInternalAsync(count);
+        }
+        finally
+        {
+            _hytaleLock.Release();
+        }
+    }
+
+    private async Task<List<NewsItemResponse>> GetHytaleNewsInternalAsync(int count)
+    {
+        try
+        {
+            // Check cache
+            if (_hytaleNewsCache != null && 
+                _hytaleNewsCache.Count >= count && 
+                (DateTime.Now - _hytaleCacheTime).TotalMinutes < CacheExpirationMinutes)
+            {
+                return _hytaleNewsCache.Take(count).ToList();
+            }
+
             Logger.Info("News", "Fetching news from Hytale API...");
             var response = await _httpClient.GetStringAsync(HytaleNewsUrl);
-            
-            Logger.Info("News", $"Received response, length: {response.Length}");
             
             var jsonDoc = JsonDocument.Parse(response);
             
@@ -112,18 +157,6 @@ public class NewsService
                 
                 try
                 {
-                    if (itemCount == 0)
-                    {
-                        try
-                        {
-                            Logger.Info("News", $"First post keys: {string.Join(", ", post.EnumerateObject().Select(p => p.Name))}");
-                        }
-                        catch (Exception logEx)
-                        {
-                            Logger.Warning("News", $"Failed to log post keys: {logEx.Message}");
-                        }
-                    }
-                    
                     var title = post.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
                     var excerpt = post.TryGetProperty("bodyExcerpt", out var excerptProp) ? excerptProp.GetString() : null;
                     
@@ -192,6 +225,14 @@ public class NewsService
                 }
             }
             
+            // Update Cache (only if we fetched enough to be useful for caching, e.g. at least 5)
+            if (news.Count > 0)
+            {
+               _hytaleNewsCache = news;
+               _hytaleCacheTime = DateTime.Now;
+               Logger.Success("News", "Successfully fetched Hytale news");
+            }
+
             return news;
         }
         catch (Exception ex)
@@ -202,6 +243,25 @@ public class NewsService
     }
 
     private async Task<List<NewsItemResponse>> GetHyPrismNewsAsync(int count)
+    {
+        if (_hyprismNewsCache != null && (DateTime.Now - _hyprismCacheTime).TotalMinutes < CacheExpirationMinutes)
+            return _hyprismNewsCache.Take(count).ToList();
+            
+        await _hyprismLock.WaitAsync();
+        try
+        {
+            if (_hyprismNewsCache != null && (DateTime.Now - _hyprismCacheTime).TotalMinutes < CacheExpirationMinutes)
+                return _hyprismNewsCache.Take(count).ToList();
+                
+            return await GetHyPrismNewsInternalAsync(count);
+        }
+        finally
+        {
+            _hyprismLock.Release();
+        }
+    }
+
+    private async Task<List<NewsItemResponse>> GetHyPrismNewsInternalAsync(int count)
     {
         // Check cache first
         if (_hyprismNewsCache != null && (DateTime.Now - _hyprismCacheTime).TotalMinutes < CacheExpirationMinutes)
@@ -268,6 +328,7 @@ public class NewsService
             // Update cache
             _hyprismNewsCache = news;
             _hyprismCacheTime = DateTime.Now;
+            Logger.Success("News", "Successfully fetched HyPrism news");
             
             return news;
         }
@@ -292,7 +353,7 @@ public class NewsService
     /// <summary>
     /// Cleans news excerpt by removing HTML tags, duplicate title, and date prefixes.
     /// </summary>
-    private static string CleanNewsExcerpt(string? rawExcerpt, string? title)
+    public static string CleanNewsExcerpt(string? rawExcerpt, string? title)
     {
         var excerpt = HttpUtility.HtmlDecode(rawExcerpt ?? "");
         if (string.IsNullOrWhiteSpace(excerpt))

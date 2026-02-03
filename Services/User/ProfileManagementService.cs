@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using HyPrism.Models;
 using HyPrism.Services.Core;
+using HyPrism.Services.Game;
 
 namespace HyPrism.Services.User;
 
@@ -15,40 +16,31 @@ namespace HyPrism.Services.User;
 public class ProfileManagementService
 {
     private readonly string _appDir;
-    private readonly Func<Config> _getConfig;
-    private readonly Action _saveConfig;
+    private readonly ConfigService _configService;
     private readonly SkinService _skinService;
-    private readonly Func<string, string> _normalizeVersionType;
-    private readonly Func<string, int, bool, string> _resolveInstancePath;
-    private readonly Func<string, string> _getInstanceUserDataPath;
-    private readonly Func<string> _getCurrentUuid;
-    
+    private readonly InstanceService _instanceService;
+    private readonly UserIdentityService _userIdentityService;
+
     public ProfileManagementService(
-        string appDir,
-        Func<Config> getConfig,
-        Action saveConfig,
+        AppPathConfiguration appPath,
+        ConfigService configService,
         SkinService skinService,
-        Func<string, string> normalizeVersionType,
-        Func<string, int, bool, string> resolveInstancePath,
-        Func<string, string> getInstanceUserDataPath,
-        Func<string> getCurrentUuid)
+        InstanceService instanceService,
+        UserIdentityService userIdentityService)
     {
-        _appDir = appDir;
-        _getConfig = getConfig;
-        _saveConfig = saveConfig;
+        _appDir = appPath.AppDir;
+        _configService = configService;
         _skinService = skinService;
-        _normalizeVersionType = normalizeVersionType;
-        _resolveInstancePath = resolveInstancePath;
-        _getInstanceUserDataPath = getInstanceUserDataPath;
-        _getCurrentUuid = getCurrentUuid;
+        _instanceService = instanceService;
+        _userIdentityService = userIdentityService;
     }
-    
+
     /// <summary>
     /// Gets all saved profiles, filtering out any with null/empty names.
     /// </summary>
     public List<Profile> GetProfiles()
     {
-        var config = _getConfig();
+        var config = _configService.Configuration;
         
         // Clean up any null/empty profiles first
         if (config.Profiles != null)
@@ -61,7 +53,7 @@ public class ProfileManagementService
             {
                 Logger.Info("Profile", $"Cleaned up {config.Profiles.Count - validProfiles.Count} invalid profiles");
                 config.Profiles = validProfiles;
-                _saveConfig();
+                _configService.SaveConfig();
             }
         }
         
@@ -75,7 +67,7 @@ public class ProfileManagementService
     /// </summary>
     public int GetActiveProfileIndex()
     {
-        return _getConfig().ActiveProfileIndex;
+        return _configService.Configuration.ActiveProfileIndex;
     }
     
     /// <summary>
@@ -115,11 +107,11 @@ public class ProfileManagementService
                 CreatedAt = DateTime.UtcNow
             };
             
-            var config = _getConfig();
+            var config = _configService.Configuration;
             config.Profiles ??= new List<Profile>();
             config.Profiles.Add(profile);
             Logger.Info("Profile", $"Profile added to list. Total profiles: {config.Profiles.Count}");
-            _saveConfig();
+            _configService.SaveConfig();
             Logger.Info("Profile", $"Config saved to disk");
             
             // Save profile to disk folder
@@ -148,7 +140,7 @@ public class ProfileManagementService
                 return false;
             }
             
-            var config = _getConfig();
+            var config = _configService.Configuration;
             var index = config.Profiles?.FindIndex(p => p.Id == profileId) ?? -1;
             if (index < 0)
             {
@@ -168,7 +160,7 @@ public class ProfileManagementService
                 config.ActiveProfileIndex--;
             }
             
-            _saveConfig();
+            _configService.SaveConfig();
             
             // Delete profile folder from disk (pass name for name-based folder)
             DeleteProfileFromDisk(profileId, profile.Name);
@@ -191,14 +183,14 @@ public class ProfileManagementService
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             if (config.Profiles == null || index < 0 || index >= config.Profiles.Count)
             {
                 return false;
             }
             
             // First, backup current profile's skin data before switching
-            var currentUuid = _getCurrentUuid();
+            var currentUuid = _userIdentityService.GetCurrentUuid();
             if (!string.IsNullOrWhiteSpace(currentUuid))
             {
                 _skinService.BackupProfileSkinData(currentUuid);
@@ -221,7 +213,7 @@ public class ProfileManagementService
             // Switch mods symlink to the new profile's mods folder
             SwitchProfileModsSymlink(profile);
             
-            _saveConfig();
+            _configService.SaveConfig();
             
             Logger.Success("Profile", $"Switched to profile '{profile.Name}'");
             return true;
@@ -240,7 +232,7 @@ public class ProfileManagementService
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             var profile = config.Profiles?.FirstOrDefault(p => p.Id == profileId);
             if (profile == null)
             {
@@ -265,7 +257,7 @@ public class ProfileManagementService
                 config.Nick = profile.Name;
             }
             
-            _saveConfig();
+            _configService.SaveConfig();
             
             // Update profile on disk
             UpdateProfileOnDisk(profile);
@@ -286,8 +278,8 @@ public class ProfileManagementService
     /// </summary>
     public Profile? SaveCurrentAsProfile()
     {
-        var config = _getConfig();
-        var uuid = _getCurrentUuid();
+        var config = _configService.Configuration;
+        var uuid = _userIdentityService.GetCurrentUuid();
         var name = config.Nick;
         
         if (string.IsNullOrWhiteSpace(uuid) || string.IsNullOrWhiteSpace(name))
@@ -301,7 +293,7 @@ public class ProfileManagementService
         {
             // Update existing profile
             existing.Name = name;
-            _saveConfig();
+            _configService.SaveConfig();
             UpdateProfileOnDisk(existing);
             return existing;
         }
@@ -324,7 +316,7 @@ public class ProfileManagementService
                 return null;
             }
             
-            var config = _getConfig();
+            var config = _configService.Configuration;
             var sourceProfile = config.Profiles?.FirstOrDefault(p => p.Id == profileId);
             if (sourceProfile == null)
             {
@@ -355,7 +347,7 @@ public class ProfileManagementService
             
             config.Profiles ??= new List<Profile>();
             config.Profiles.Add(newProfile);
-            _saveConfig();
+            _configService.SaveConfig();
             
             // Save profile to disk
             SaveProfileToDisk(newProfile);
@@ -380,9 +372,9 @@ public class ProfileManagementService
             // Copy UserData from source profile if it exists
             try
             {
-                var branch = _normalizeVersionType(config.VersionType);
-                var versionPath = _resolveInstancePath(branch, 0, true);
-                var userDataPath = _getInstanceUserDataPath(versionPath);
+                var branch = UtilityService.NormalizeVersionType(config.VersionType);
+                var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+                var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
                 
                 if (Directory.Exists(userDataPath))
                 {
@@ -456,7 +448,7 @@ public class ProfileManagementService
                 return null;
             }
             
-            var config = _getConfig();
+            var config = _configService.Configuration;
             var sourceProfile = config.Profiles?.FirstOrDefault(p => p.Id == profileId);
             if (sourceProfile == null)
             {
@@ -487,7 +479,7 @@ public class ProfileManagementService
             
             config.Profiles ??= new List<Profile>();
             config.Profiles.Add(newProfile);
-            _saveConfig();
+            _configService.SaveConfig();
             
             // Save profile to disk
             SaveProfileToDisk(newProfile);
@@ -552,7 +544,7 @@ public class ProfileManagementService
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             if (config.ActiveProfileIndex < 0 || config.Profiles == null ||
                 config.ActiveProfileIndex >= config.Profiles.Count)
             {
@@ -603,7 +595,7 @@ public class ProfileManagementService
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             if (config.ActiveProfileIndex < 0 || config.Profiles == null || 
                 config.ActiveProfileIndex >= config.Profiles.Count)
             {
@@ -614,8 +606,8 @@ public class ProfileManagementService
             var profile = config.Profiles[config.ActiveProfileIndex];
             
             // Check if the game instance folder exists
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = Path.Combine(versionPath, "UserData");
             var gameModsPath = Path.Combine(userDataPath, "Mods");
             
@@ -691,10 +683,10 @@ public class ProfileManagementService
     {
         try
         {
-            var config = _getConfig();
+            var config = _configService.Configuration;
             // Get the game's UserData/Mods path
-            var branch = _normalizeVersionType(config.VersionType);
-            var versionPath = _resolveInstancePath(branch, 0, true);
+            var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = Path.Combine(versionPath, "UserData");
             var gameModsPath = Path.Combine(userDataPath, "Mods");
             

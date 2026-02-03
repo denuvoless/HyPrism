@@ -8,7 +8,7 @@ namespace HyPrism.UI.ViewModels.Dashboard;
 
 public class HeaderViewModel : ReactiveObject
 {
-    private readonly AppService _appService;
+    private readonly ConfigService _configService;
     
     // Commands exposed to UI
     public ReactiveCommand<Unit, Unit> ToggleProfileEditorCommand { get; }
@@ -24,10 +24,13 @@ public class HeaderViewModel : ReactiveObject
     
     public IObservable<string> AppVersion { get; }
 
-    public HeaderViewModel(AppService appService, Action toggleProfileEditor, Action toggleSettings)
+    public HeaderViewModel(
+        ConfigService configService,
+        Action toggleProfileEditor, 
+        Action toggleSettings)
     {
-        _appService = appService;
-        _nick = _appService.Configuration.Nick;
+        _configService = configService;
+        _nick = _configService.Configuration.Nick;
         
         // Localization
         var loc = LocalizationService.Instance;
@@ -40,6 +43,6 @@ public class HeaderViewModel : ReactiveObject
 
     public void RefreshNick()
     {
-        Nick = _appService.Configuration.Nick;
+        Nick = _configService.Configuration.Nick;
     }
 }

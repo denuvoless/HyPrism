@@ -230,4 +230,10 @@ public class ProfileService
         
         return true;
     }
+
+    public string GetProfilePath(Profile profile)
+    {
+        var safeName = UtilityService.SanitizeFileName(profile.Name);
+        return Path.Combine(_appDataPath, "Profiles", safeName);
+    }
 }

@@ -23,6 +23,34 @@ public class LoadingViewModel : ReactiveObject
         get => _isLoading;
         set => this.RaiseAndSetIfChanged(ref _isLoading, value);
     }
+
+    // Alias for IsLoading or visibility control
+    public bool IsVisible
+    {
+        get => _isLoading;
+        set => IsLoading = value;
+    }
+
+    private string _currentState = "";
+    public string CurrentState
+    {
+        get => _currentState;
+        set => this.RaiseAndSetIfChanged(ref _currentState, value);
+    }
+
+    private double _progress;
+    public double Progress
+    {
+        get => _progress;
+        set => this.RaiseAndSetIfChanged(ref _progress, value);
+    }
+    
+    public void Update(string state, string message, double progress)
+    {
+        CurrentState = state;
+        LoadingText = message;
+        Progress = progress;
+    }
     
     public string LoadingText
     {
