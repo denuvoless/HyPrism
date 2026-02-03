@@ -788,12 +788,12 @@ public class InstanceService
 
             if (File.Exists(clientPath))
             {
-                Logger.Info("Version", $"IsClientPresent: found at {clientPath}");
+                Logger.Info("Version", $"Client found at {clientPath}");
                 return true;
             }
         }
 
-        Logger.Info("Version", $"IsClientPresent: not found in {versionPath}");
+        Logger.Info("Version", $"Client not found in {versionPath}");
         return false;
     }
 
