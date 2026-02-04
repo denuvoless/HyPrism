@@ -279,18 +279,92 @@ jobs:
           if [ -f "artifacts/HyPrism.app/Contents/MacOS/jre.json" ]; then
             cp "artifacts/HyPrism.app/Contents/MacOS/jre.json" "artifacts/HyPrism.app/Contents/Resources/"
           fi
+          if [ -d "artifacts/HyPrism.app/Contents/MacOS/assets" ]; then
+            cp -R "artifacts/HyPrism.app/Contents/MacOS/assets" "artifacts/HyPrism.app/Contents/Resources/"
+          fi
           
           cp packaging/macos/Info.plist "artifacts/HyPrism.app/Contents/"
-          cp packaging/macos/HyPrism.icns "artifacts/HyPrism.app/Contents/Resources/"
+          cp packaging/macos/hyprism-macos.icns "artifacts/HyPrism.app/Contents/Resources/"
           chmod +x "artifacts/HyPrism.app/Contents/MacOS/HyPrism"
           echo "APPL????" > "artifacts/HyPrism.app/Contents/PkgInfo"
 
       - name: Create DMG (arm64 only)
         run: |
+          set -e
+          
           mkdir -p dmg
           cp -R "artifacts/HyPrism.app" "dmg/HyPrism.app"
           ln -s /Applications dmg/Applications
-          hdiutil create -volname "HyPrism" -srcfolder dmg -ov -format UDZO artifacts/HyPrism-macos-arm64.dmg
+          
+          # Create the "Fix Permissions" command file
+          cat > "dmg/Fix Permissions (Run First).command" << 'EOF'
+          #!/bin/bash
+          # This script removes quarantine attributes from HyPrism
+          # Run this if macOS says the app is damaged or can't be opened
+          
+          APP_PATH="$(dirname "$0")/HyPrism.app"
+          
+          echo "Removing quarantine attributes from HyPrism..."
+          xattr -cr "$APP_PATH"
+          
+          echo ""
+          echo "Done! You can now open HyPrism.app"
+          echo "Press any key to close this window..."
+          read -n 1
+          EOF
+          chmod +x "dmg/Fix Permissions (Run First).command"
+          
+          # Use specific background image
+          SELECTED_BG="packaging/macos/dmg-background.jpg"
+          
+          if [ -f "$SELECTED_BG" ]; then
+            echo "Using background: $(basename "$SELECTED_BG")"
+            mkdir -p dmg/.background
+            cp "$SELECTED_BG" "dmg/.background/background.jpg"
+          else
+            echo "Background image not found: $SELECTED_BG"
+          fi
+          
+          # Create temporary read-write DMG
+          hdiutil create -volname "HyPrism" -srcfolder dmg -ov -format UDRW -fs HFS+ temp.dmg
+          
+          # Mount and customize
+          MOUNT_POINT=$(hdiutil attach -readwrite -noverify -noautoopen temp.dmg | grep "/Volumes/HyPrism" | sed 's/.*\(\/Volumes\/.*\)/\1/')
+          
+          if [ -n "$MOUNT_POINT" ]; then
+            sleep 2
+            
+            # Set up DMG appearance with AppleScript
+            osascript <<EOF
+          tell application "Finder"
+            tell disk "HyPrism"
+              open
+              set current view of container window to icon view
+              set toolbar visible of container window to false
+              set statusbar visible of container window to false
+              set the bounds of container window to {400, 200, 1040, 680}
+              set viewOptions to the icon view options of container window
+              set arrangement of viewOptions to not arranged
+              set icon size of viewOptions to 128
+              set background picture of viewOptions to file ".background:background.jpg"
+              set position of item "HyPrism.app" of container window to {120, 220}
+              set position of item "Applications" of container window to {500, 220}
+              set position of item "Fix Permissions.command" of container window to {310, 400}
+              close
+              open
+              update without registering applications
+              delay 5
+            end tell
+          end tell
+EOF
+            
+            sync
+            hdiutil detach "$MOUNT_POINT"
+          fi
+          
+          # Convert to compressed DMG
+          hdiutil convert temp.dmg -format UDZO -o artifacts/HyPrism-macos-arm64.dmg
+          rm -f temp.dmg
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4

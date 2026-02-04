@@ -7799,7 +7799,7 @@ rm -f ""$0""
     // CurseForge API constants
     private const string CurseForgeBaseUrl = "https://api.curseforge.com/v1";
     private const int HytaleGameId = 70216; // Hytale game ID on CurseForge
-    private const string CurseForgeApiKey = "$2a$10$bL4bIL5pUWqfcO7KQtnMReakwtfHbNKh6v1uTpKlzhwoueEJQnPnm";
+    private const string CurseForgeApiKey = "CurseForgeApiKey";
 
     // Mod Manager with CurseForge API
     public async Task<ModSearchResult> SearchModsAsync(string query, int page, int pageSize, string[] categories, int sortField, int sortOrder)
