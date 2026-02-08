@@ -8,11 +8,11 @@
              x:DataType="vm:ModManagerViewModel"
              x:CompileBindings="True">
 
-    <Border Background="#F2111111" CornerRadius="16" BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True" BoxShadow="0 10 30 5 #000000">
+    <Border Background="#F2111111" CornerRadius="16" BorderBrush="#1AFFFFFF" BorderThickness="1" ClipToBounds="True" BoxShadow="0 10 30 5 #000000">
         <Grid RowDefinitions="60, *">
             
             <!-- Header -->
-            <Grid Grid.Row="0" Background="#111111" ColumnDefinitions="Auto, *, Auto">
+            <Grid Grid.Row="0" Background="#CC0D0D0D" ColumnDefinitions="Auto, *, Auto">
                 <StackPanel Orientation="Horizontal" Spacing="15" Margin="20,0">
                     <TextBlock Text="Mod Manager" VerticalAlignment="Center" FontSize="18" FontWeight="Bold" Foreground="White" FontFamily="{StaticResource Poppins}"/>
                     <Rectangle Width="1" Height="20" Fill="#333" VerticalAlignment="Center"/>
@@ -40,7 +40,7 @@
             </Grid>
 
             <!-- Content -->
-            <Grid Grid.Row="1" Background="#1E1E1E">
+            <Grid Grid.Row="1" Background="#CC0D0D0D">
                 
                 <!-- Loading Overlay -->
                 <Grid Panel.ZIndex="100" Background="#80000000" IsVisible="{Binding IsLoading}">
@@ -58,12 +58,12 @@
                     </Grid.RowDefinitions>
                     
                     <Grid Grid.Row="0" Margin="0,0,0,15" ColumnDefinitions="*, Auto">
-                        <TextBox Grid.Column="0" Watermark="Search installed mods..." Margin="0,0,10,0" Background="#252525" Foreground="White" BorderThickness="0" Padding="12,12,12,12" CornerRadius="8">
+                        <TextBox Grid.Column="0" Watermark="Search installed mods..." Margin="0,0,10,0" Background="#0DFFFFFF" Foreground="White" BorderBrush="#0DFFFFFF" BorderThickness="1" Padding="12,12,12,12" CornerRadius="10">
                             <TextBox.InnerLeftContent>
                                 <svg:Svg Path="/Assets/Icons/search.svg" Width="16" Height="16" Margin="10,0,5,0"/>
                             </TextBox.InnerLeftContent>
                         </TextBox>
-                        <Button Grid.Column="1" Command="{Binding RefreshInstalledCommand}" Background="#333" CornerRadius="8" Padding="10">
+                        <Button Grid.Column="1" Command="{Binding RefreshInstalledCommand}" Background="#1AFFFFFF" CornerRadius="10" Padding="10" BorderBrush="#0DFFFFFF" BorderThickness="1">
                             <svg:Svg Path="/Assets/Icons/refresh-cw.svg" Width="18" Height="18"/>
                         </Button>
                     </Grid>
@@ -81,10 +81,10 @@
                         </ListBox.Styles>
                         <ListBox.ItemTemplate>
                             <DataTemplate x:CompileBindings="False">
-                                <Border Background="#252525" CornerRadius="8" Padding="12">
+                                <Border Background="#1AFFFFFF" CornerRadius="10" Padding="12" BorderThickness="1" BorderBrush="#0DFFFFFF">
                                     <Grid ColumnDefinitions="50, *, Auto">
                                          <!-- Icon -->
-                                         <Border Grid.Column="0" Width="42" Height="42" Background="#333" CornerRadius="8" Margin="0,0,15,0" ClipToBounds="True">
+                                         <Border Grid.Column="0" Width="42" Height="42" Background="#1AFFFFFF" CornerRadius="8" Margin="0,0,15,0" ClipToBounds="True">
                                             <Image asyncImageLoader:ImageLoader.Source="{Binding IconUrl}" Stretch="UniformToFill"/>
                                          </Border>
                                          
@@ -121,7 +121,7 @@
                 <Grid IsVisible="{Binding IsBrowseTab}" ColumnDefinitions="200, *" Margin="20">
                     
                     <!-- Sidebar: Categories -->
-                    <Border Grid.Column="0" Background="#151515" CornerRadius="8" Margin="0,0,15,0" Padding="10">
+                    <Border Grid.Column="0" Background="#0DFFFFFF" CornerRadius="10" Margin="0,0,15,0" Padding="10" BorderThickness="1" BorderBrush="#0DFFFFFF">
                         <Grid RowDefinitions="Auto, *">
                             <TextBlock Grid.Row="0" Text="Categories" FontWeight="Bold" Foreground="White" Margin="5,0,0,10"/>
                             <ListBox Grid.Row="1" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory}" Background="Transparent">
@@ -144,7 +144,7 @@
                     <Grid Grid.Column="1" RowDefinitions="Auto, *">
                         <!-- Search Bar -->
                         <Grid Grid.Row="0" Margin="0,0,0,15" ColumnDefinitions="*, Auto">
-                             <TextBox Grid.Column="0" Text="{Binding SearchQuery}" Watermark="Search CurseForge..." Background="#252525" Foreground="White" BorderThickness="0" Padding="12,12,12,12" CornerRadius="8">
+                             <TextBox Grid.Column="0" Text="{Binding SearchQuery}" Watermark="Search CurseForge..." Background="#0DFFFFFF" Foreground="White" BorderBrush="#0DFFFFFF" BorderThickness="1" Padding="12,12,12,12" CornerRadius="10">
                                 <TextBox.InnerLeftContent>
                                     <svg:Svg Path="/Assets/Icons/search.svg" Width="16" Height="16" Margin="10,0,5,0"/>
                                 </TextBox.InnerLeftContent>
@@ -152,7 +152,7 @@
                                     <KeyBinding Gesture="Enter" Command="{Binding SearchCommand}"/>
                                 </TextBox.KeyBindings>
                              </TextBox>
-                             <Button Grid.Column="1" Command="{Binding SearchCommand}" Content="Search" Margin="10,0,0,0" Background="#333" Foreground="White" Padding="20,0" CornerRadius="8"/>
+                             <Button Grid.Column="1" Command="{Binding SearchCommand}" Content="Search" Margin="10,0,0,0" Background="#1AFFFFFF" Foreground="White" Padding="20,0" CornerRadius="10" BorderBrush="#0DFFFFFF" BorderThickness="1"/>
                         </Grid>
                         
                         <!-- Results Grid -->
@@ -166,10 +166,10 @@
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:CompileBindings="False">
-                                            <Border Background="#252525" CornerRadius="12" Padding="10" Margin="5" Width="220" Height="290">
+                                            <Border Background="#1AFFFFFF" CornerRadius="12" Padding="10" Margin="5" Width="220" Height="290" BorderThickness="1" BorderBrush="#0DFFFFFF">
                                                 <Grid RowDefinitions="Auto, *, Auto">
                                                     <!-- Thumbnail -->
-                                                    <Border Grid.Row="0" Height="120" Background="#333" CornerRadius="8" Margin="0,0,0,10" ClipToBounds="True">
+                                                    <Border Grid.Row="0" Height="120" Background="#1AFFFFFF" CornerRadius="8" Margin="0,0,0,10" ClipToBounds="True">
                                                          <Image asyncImageLoader:ImageLoader.Source="{Binding ThumbnailUrl}" Stretch="UniformToFill"/>
                                                     </Border>
                                                     
@@ -185,9 +185,9 @@
                                                             Margin="0,10,0,0" 
                                                             HorizontalAlignment="Stretch" 
                                                             HorizontalContentAlignment="Center" 
-                                                            Background="#444" 
+                                                            Background="#1AFFFFFF" 
                                                             Foreground="White" 
-                                                            CornerRadius="6">
+                                                            CornerRadius="8">
                                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                                             <svg:Svg Path="/Assets/Icons/download.svg" Width="16" Height="16"/>
                                                             <TextBlock Text="Details" VerticalAlignment="Center"/>
@@ -205,7 +205,7 @@
                                         HorizontalAlignment="Center" 
                                         Margin="0,20"
                                         Background="Transparent"
-                                        BorderBrush="#333"
+                                        BorderBrush="#0DFFFFFF"
                                         BorderThickness="1"
                                         Foreground="#AAA"/>
                             </StackPanel>
@@ -214,7 +214,7 @@
                 </Grid>
                 
                 <!-- Details Overlay -->
-                 <Grid IsVisible="{Binding IsDetailsOpen}" Background="#1E1E1E" Margin="0">
+                 <Grid IsVisible="{Binding IsDetailsOpen}" Background="#CC0D0D0D" Margin="0">
                      <Grid.RowDefinitions>
                          <RowDefinition Height="Auto"/>
                          <RowDefinition Height="*"/>
@@ -249,7 +249,7 @@
                          <Grid Grid.Column="1" RowDefinitions="Auto, *" Margin="20,0,0,0">
                              <TextBlock Grid.Row="0" Text="Files" FontWeight="Bold" FontSize="18" Foreground="White" Margin="0,0,0,15"/>
                              
-                             <ListBox Grid.Row="1" ItemsSource="{Binding SelectedModFiles}" Background="#151515" CornerRadius="8">
+                             <ListBox Grid.Row="1" ItemsSource="{Binding SelectedModFiles}" Background="#0DFFFFFF" CornerRadius="10">
                                  <ListBox.ItemTemplate>
                                      <DataTemplate x:CompileBindings="False">
                                          <Grid ColumnDefinitions="*, 120, Auto" Margin="5">
@@ -264,9 +264,9 @@
                                                      Command="{Binding $parent[UserControl].DataContext.InstallModCommand}"
                                                      CommandParameter="{Binding}"
                                                      Content="Install" 
-                                                     Background="#333" 
+                                                     Background="#1AFFFFFF" 
                                                      Foreground="White" 
-                                                     CornerRadius="4" 
+                                                     CornerRadius="6" 
                                                      FontSize="12"/>
                                          </Grid>
                                      </DataTemplate>

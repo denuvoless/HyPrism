@@ -65,7 +65,8 @@ public class MainViewModel : ReactiveObject, IDisposable
         GitHubService gitHubService,
         AppPathConfiguration appPathConfiguration,
         LocalizationService localizationService,
-        IClipboardService clipboardService)
+        IClipboardService clipboardService,
+        AvatarService avatarService)
     {
         _newsService = newsService;
         _discordService = discordService;
@@ -107,7 +108,8 @@ public class MainViewModel : ReactiveObject, IDisposable
             appPathConfiguration,
             localizationService,
             clipboardService,
-            profileManagementService
+            profileManagementService,
+            avatarService
         );
 
         // Start App Initialization sequence (fire-and-forget with error handling)

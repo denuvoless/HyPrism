@@ -72,6 +72,7 @@
     <Style Selector="TextBlock">
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontFamily" Value="{StaticResource InterFont}"/>
         <Setter Property="TextWrapping" Value="NoWrap"/>
     </Style>
     
@@ -79,14 +80,15 @@
          TEXTBOX - Minimal input field
          ============================================================ -->
     <Style Selector="TextBox">
-        <Setter Property="Background" Value="#1A1A1A"/>
+        <Setter Property="Background" Value="#0DFFFFFF"/>
         <Setter Property="Foreground" Value="White"/>
         <Setter Property="CaretBrush" Value="White"/>
         <Setter Property="SelectionBrush" Value="#4D808080"/>
-        <Setter Property="BorderBrush" Value="#333333"/>
+        <Setter Property="BorderBrush" Value="#0DFFFFFF"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="12,10"/>
         <Setter Property="MinHeight" Value="40"/>
+        <Setter Property="CornerRadius" Value="10"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Template">
             <ControlTemplate>
@@ -136,7 +138,7 @@
     </Style>
     
     <Style Selector="TextBox:focus">
-        <Setter Property="BorderBrush" Value="#555555"/>
+        <Setter Property="BorderBrush" Value="#1AFFFFFF"/>
     </Style>
     
     <!-- ============================================================
@@ -174,13 +176,13 @@
     </Style>
     
     <!-- ============================================================
-         SCROLLBAR - Minimal thin scrollbar
+         SCROLLBAR - Minimal thin scrollbar with accent color
          ============================================================ -->
     <Style Selector="ScrollBar">
         <Setter Property="MinWidth" Value="6"/>
         <Setter Property="MinHeight" Value="6"/>
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="Foreground" Value="#33FFFFFF"/>
+        <Setter Property="Foreground" Value="{DynamicResource SystemAccentBrush}"/>
         <Setter Property="Template">
             <ControlTemplate>
                 <Border Background="{TemplateBinding Background}">
@@ -193,7 +195,8 @@
                         <Thumb>
                             <Thumb.Template>
                                 <ControlTemplate>
-                                    <Border Background="#33FFFFFF"
+                                    <Border Background="{DynamicResource SystemAccentBrush}"
+                                            Opacity="0.3"
                                             CornerRadius="3"/>
                                 </ControlTemplate>
                             </Thumb.Template>
@@ -213,7 +216,7 @@
     </Style>
     
     <Style Selector="ScrollBar:pointerover /template/ Thumb /template/ Border">
-        <Setter Property="Background" Value="#4DFFFFFF"/>
+        <Setter Property="Opacity" Value="0.5"/>
     </Style>
     
     <!-- ============================================================
@@ -372,12 +375,12 @@
          TOOLTIP - Clean dark tooltip
          ============================================================ -->
     <Style Selector="ToolTip">
-        <Setter Property="Background" Value="#1A1A1A"/>
+        <Setter Property="Background" Value="#F2111111"/>
         <Setter Property="Foreground" Value="White"/>
-        <Setter Property="BorderBrush" Value="#333333"/>
+        <Setter Property="BorderBrush" Value="#1AFFFFFF"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="8,6"/>
-        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="CornerRadius" Value="8"/>
     </Style>
     
     <!-- ============================================================

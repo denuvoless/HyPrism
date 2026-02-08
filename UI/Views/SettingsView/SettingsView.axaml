@@ -31,11 +31,11 @@
 
     <UserControl.Styles>
         <Style Selector="Border.ProfileCard">
-            <Setter Property="Background" Value="#252525"/>
-            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Background" Value="#66090909"/>
+            <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="12"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="#15FFFFFF"/>
             <Setter Property="Transitions">
                  <Transitions>
                      <BrushTransition Property="Background" Duration="0:0:0.2"/>
@@ -43,7 +43,7 @@
             </Setter>
         </Style>
         <Style Selector="Border.ProfileCard:pointerover">
-            <Setter Property="Background" Value="#333333"/>
+            <Setter Property="Background" Value="#80090909"/>
         </Style>
 
         <!-- Hover Visibility for buttons -->
@@ -62,11 +62,11 @@
         </Style>
     </UserControl.Styles>
 
-    <Border Background="#F2111111" CornerRadius="12" BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True" BoxShadow="0 10 30 5 #000000">
+    <Border Background="#F2111111" CornerRadius="16" BorderBrush="#1AFFFFFF" BorderThickness="1" ClipToBounds="True" BoxShadow="0 10 30 5 #000000">
         <Grid ColumnDefinitions="240, *">
             
             <!-- Sidebar -->
-            <Border Grid.Column="0" Background="#111111">
+            <Border Grid.Column="0" Background="#CC0D0D0D">
                 <Grid RowDefinitions="Auto, *">
                     <TextBlock Text="{Binding SettingsTitle^}" Grid.Row="0" Margin="30,30,30,30" FontSize="28" FontWeight="SemiBold" Foreground="White" FontFamily="{StaticResource Poppins}"/>
                     
@@ -132,7 +132,7 @@
             </Border>
 
             <!-- Content Area -->
-            <Grid Grid.Column="1" Background="#1E1E1E">
+            <Grid Grid.Column="1" Background="#CC0D0D0D">
                 
                 <!-- Tab Contents -->
                 <ScrollViewer Padding="30,30,30,30" HorizontalScrollBarVisibility="Disabled">
@@ -146,10 +146,10 @@
                             <!-- Active Profile Card -->
                             <StackPanel Spacing="10" 
                                         IsVisible="{Binding ActiveProfileItem, Converter={x:Static ObjectConverters.IsNotNull}}">
-                                <Border Background="#252525" CornerRadius="16" Padding="24" BoxShadow="0 8 30 4 #15000000" BorderThickness="1" BorderBrush="#333">
+                                <Border Background="#66090909" CornerRadius="16" Padding="24" BoxShadow="0 8 30 4 #15000000" BorderThickness="1" BorderBrush="#15FFFFFF">
                                     <Grid ColumnDefinitions="Auto, *, Auto">
                                         <!-- Avatar -->
-                                        <Border Width="80" Height="80" CornerRadius="40" Background="#333" ClipToBounds="True" VerticalAlignment="Top">
+                                        <Border Width="80" Height="80" CornerRadius="40" Background="#1AFFFFFF" ClipToBounds="True" VerticalAlignment="Top">
                                             <Panel>
                                                 <svg:Svg Path="/Assets/Icons/user.svg" Width="40" Height="40"/>
                                             </Panel>
@@ -310,7 +310,7 @@
                             </StackPanel>
                             
                             <!-- Toggles -->
-                            <Border Background="#252525" CornerRadius="12" Padding="20">
+                            <Border Background="#66090909" CornerRadius="12" Padding="20" BorderThickness="1" BorderBrush="#15FFFFFF">
                                 <StackPanel Spacing="20">
                                     <Grid ColumnDefinitions="*, Auto">
                                         <StackPanel Grid.Column="0" Spacing="5" Margin="0,0,20,0">
@@ -404,10 +404,12 @@
                                     <actionInput:ActionInput.RightContent>
                                         <Button Command="{ReflectionBinding OpenFolderCommand}" 
                                                 CommandParameter="{Binding InstanceDirectory}"
-                                                Background="#404040" 
+                                                Background="#1AFFFFFF" 
                                                 Foreground="White" 
-                                                CornerRadius="6" 
-                                                Padding="12,8">
+                                                CornerRadius="8" 
+                                                Padding="12,8"
+                                                BorderBrush="#0DFFFFFF"
+                                                BorderThickness="1">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
                                                 <svg:Svg Path="/Assets/Icons/folder-open.svg" Width="16" Height="16"/>
                                                 <TextBlock Text="{Binding GeneralBrowse^}" VerticalAlignment="Center" FontSize="13"/>
@@ -425,20 +427,24 @@
                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                             <Button Command="{ReflectionBinding OpenFolderCommand}" 
                                                     CommandParameter="{Binding LauncherDataDirectory}"
-                                                    Background="#404040" 
+                                                    Background="#1AFFFFFF" 
                                                     Foreground="White" 
-                                                    CornerRadius="6" 
-                                                    Padding="12,8">
+                                                    CornerRadius="8" 
+                                                    Padding="12,8"
+                                                    BorderBrush="#0DFFFFFF"
+                                                    BorderThickness="1">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <svg:Svg Path="/Assets/Icons/folder-open.svg" Width="16" Height="16"/>
                                                     <TextBlock Text="{Binding DataOpen^}" VerticalAlignment="Center" FontSize="13"/>
                                                 </StackPanel>
                                             </Button>
                                             <Button Command="{Binding BrowseLauncherDataCommand}" 
-                                                    Background="#404040" 
+                                                    Background="#1AFFFFFF" 
                                                     Foreground="White" 
-                                                    CornerRadius="6" 
-                                                    Padding="12,8">
+                                                    CornerRadius="8" 
+                                                    Padding="12,8"
+                                                    BorderBrush="#0DFFFFFF"
+                                                    BorderThickness="1">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <svg:Svg Path="/Assets/Icons/hard-drive.svg" Width="16" Height="16"/>
                                                     <TextBlock Text="{Binding GeneralBrowse^}" VerticalAlignment="Center" FontSize="13"/>
@@ -451,7 +457,7 @@
                             </StackPanel>
 
                            <!-- Clean Data -->
-                           <Border Background="#252525" CornerRadius="12" Padding="20">
+                           <Border Background="#66090909" CornerRadius="12" Padding="20" BorderThickness="1" BorderBrush="#15FFFFFF">
                                 <StackPanel Grid.Column="0" Spacing="5">
                                     <TextBlock Text="{Binding DataClean^}" FontWeight="Bold" Foreground="White"/>
                                     <TextBlock Text="{Binding DataCleanHint^}" FontSize="13" Foreground="Gray" TextWrapping="Wrap" Margin="0,0,0,10"/>
@@ -601,10 +607,10 @@
                                           IsVisible="{Binding Instances, Converter={StaticResource CollectionEmptyToBoolConverter}, ConverterParameter=invert}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:CompileBindings="False">
-                                        <Border Background="#252525" CornerRadius="12" Padding="16" Margin="0,0,0,10">
+                                        <Border Background="#66090909" CornerRadius="12" Padding="16" Margin="0,0,0,10" BorderThickness="1" BorderBrush="#15FFFFFF">
                                             <Grid ColumnDefinitions="Auto, *, Auto" ColumnSpacing="14">
                                                 <!-- Icon -->
-                                                <Border Grid.Column="0" Width="44" Height="44" CornerRadius="8" Background="#333">
+                                                <Border Grid.Column="0" Width="44" Height="44" CornerRadius="8" Background="#1AFFFFFF">
                                                     <svg:Svg Path="/Assets/Icons/box.svg" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Border>
                                                 
@@ -683,21 +689,21 @@
                                                         IconPath="/Assets/Icons/github.svg" 
                                                         IconSize="22"
                                                         Width="44" Height="44"
-                                                        ButtonBackground="#252525"
+                                                        ButtonBackground="#66090909"
                                                         ToolTip.Tip="GitHub"/>
                                                         
                                     <iconButton:IconButton Command="{Binding OpenDiscordCommand}" 
                                                         IconPath="/Assets/Icons/discord.svg" 
                                                         IconSize="22"
                                                         Width="44" Height="44"
-                                                        ButtonBackground="#252525"
+                                                        ButtonBackground="#66090909"
                                                         ToolTip.Tip="Discord"/>
 
                                     <iconButton:IconButton Command="{Binding ReportBugCommand}" 
                                                         IconPath="/Assets/Icons/bug.svg" 
                                                         IconSize="22"
                                                         Width="44" Height="44"
-                                                        ButtonBackground="#252525"
+                                                        ButtonBackground="#66090909"
                                                         ToolTip.Tip="Report Bug"/>
                                 </StackPanel>
                             </StackPanel>
@@ -714,7 +720,7 @@
                                         <Button Command="{Binding OpenCommand}" Padding="0" BorderThickness="0" CornerRadius="8" Cursor="Hand" Classes="ProfileCard">
                                             <StackPanel Orientation="Horizontal" Spacing="15" VerticalAlignment="Center" Margin="15">
                                                 <!-- Avatar -->
-                                                <Border Width="48" Height="48" CornerRadius="24" ClipToBounds="True" Background="#333">
+                                                <Border Width="48" Height="48" CornerRadius="24" ClipToBounds="True" Background="#1AFFFFFF">
                                                      <Panel>
                                                          <svg:Svg Path="/Assets/Icons/user.svg" Width="20" Height="20" Opacity="0.5" IsVisible="{Binding Avatar, Converter={x:Static ObjectConverters.IsNull}}"/>
                                                          <Image Source="{Binding Avatar}" Stretch="UniformToFill" RenderOptions.BitmapInterpolationMode="HighQuality" IsVisible="{Binding Avatar, Converter={x:Static ObjectConverters.IsNotNull}}"/>

@@ -44,6 +44,7 @@ public class DashboardViewModel : ReactiveObject, IDisposable
     private readonly LocalizationService _localizationService;
     private readonly IClipboardService _clipboardService;
     private readonly IProfileManagementService _profileManagementService;
+    private readonly AvatarService _avatarService;
 
     // Partial ViewModels
     public HeaderViewModel HeaderViewModel { get; }
@@ -280,7 +281,8 @@ public class DashboardViewModel : ReactiveObject, IDisposable
         AppPathConfiguration appPathConfiguration,
         LocalizationService localizationService,
         IClipboardService clipboardService,
-        IProfileManagementService profileManagementService)
+        IProfileManagementService profileManagementService,
+        AvatarService avatarService)
     {
         _gameSessionService = gameSessionService;
         _gameProcessService = gameProcessService;
@@ -300,6 +302,7 @@ public class DashboardViewModel : ReactiveObject, IDisposable
         _localizationService = localizationService;
         _clipboardService = clipboardService;
         _profileManagementService = profileManagementService;
+        _avatarService = avatarService;
 
         // Initialize Backgrounds
         try 
@@ -353,7 +356,8 @@ public class DashboardViewModel : ReactiveObject, IDisposable
         };
 
         // --- Initialize Child ViewModels ---
-        HeaderViewModel = new HeaderViewModel(_configService, toggleProfileEditorAction, toggleSettingsAction, _localizationService);
+        HeaderViewModel = new HeaderViewModel(_configService, toggleProfileEditorAction, toggleSettingsAction, _localizationService, 
+            _avatarService, _appPathConfiguration.AppDir);
         GameControlViewModel = new GameControlViewModel(_instanceService, _fileService, _gameProcessService, _configService, _versionService, toggleModsAction, toggleSettingsAction, openInstancesAction, LaunchAsync, _localizationService);
         NewsViewModel = new NewsViewModel(_newsService, _browserService, _localizationService);
         

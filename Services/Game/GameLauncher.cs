@@ -25,6 +25,7 @@ public class GameLauncher : IGameLauncher
     private readonly IDiscordService _discordService;
     private readonly ISkinService _skinService;
     private readonly IUserIdentityService _userIdentityService;
+    private readonly AvatarService _avatarService;
     private readonly HttpClient _httpClient;
     
     private Config _config => _configService.Configuration;
@@ -40,6 +41,7 @@ public class GameLauncher : IGameLauncher
     /// <param name="discordService">Service for Discord Rich Presence.</param>
     /// <param name="skinService">Service for skin protection.</param>
     /// <param name="userIdentityService">Service for user identity management.</param>
+    /// <param name="avatarService">Service for avatar backup.</param>
     /// <param name="httpClient">HTTP client for authentication requests.</param>
     public GameLauncher(
         IConfigService configService,
@@ -50,6 +52,7 @@ public class GameLauncher : IGameLauncher
         IDiscordService discordService,
         ISkinService skinService,
         IUserIdentityService userIdentityService,
+        AvatarService avatarService,
         HttpClient httpClient)
     {
         _configService = configService;
@@ -60,6 +63,7 @@ public class GameLauncher : IGameLauncher
         _discordService = discordService;
         _skinService = skinService;
         _userIdentityService = userIdentityService;
+        _avatarService = avatarService;
         _httpClient = httpClient;
         _gameProcessService.ProcessExited += OnGameProcessExited;
     }
@@ -70,8 +74,12 @@ public class GameLauncher : IGameLauncher
         {
             Logger.Info("Game", "Game process exited, performing cleanup...");
 
+            var uuid = _userIdentityService.GetUuidForUser(_config.Nick);
             _skinService.StopSkinProtection();
-            _skinService.BackupProfileSkinData(_userIdentityService.GetUuidForUser(_config.Nick));
+            _skinService.BackupProfileSkinData(uuid);
+            
+            // Copy the latest game avatar to persistent backup
+            _avatarService.BackupAvatar(uuid);
 
             _discordService.SetPresence(DiscordService.PresenceState.Idle);
             _progressService.ReportGameStateChanged("stopped", 0);

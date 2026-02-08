@@ -13,10 +13,10 @@
          INPUT TOGGLE - Dropdown trigger button
          ============================================================ -->
     <Style Selector="ToggleButton.InputToggle">
-        <Setter Property="Background" Value="#252525"/>
-        <Setter Property="BorderBrush" Value="#333"/>
+        <Setter Property="Background" Value="#0DFFFFFF"/>
+        <Setter Property="BorderBrush" Value="#0DFFFFFF"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="CornerRadius" Value="10"/>
         <Setter Property="Padding" Value="12,10"/>
         <Setter Property="HorizontalAlignment" Value="Stretch"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -44,12 +44,12 @@
     </Style>
     
     <Style Selector="ToggleButton.InputToggle:pointerover">
-        <Setter Property="Background" Value="#303030"/>
+        <Setter Property="Background" Value="#1AFFFFFF"/>
     </Style>
     
     <Style Selector="ToggleButton.InputToggle:pressed">
         <Setter Property="RenderTransform" Value="scale(0.98)"/>
-        <Setter Property="Background" Value="#151515"/>
+        <Setter Property="Background" Value="#0AFFFFFF"/>
     </Style>
 
     <!-- Chevron rotation states -->

@@ -35,7 +35,7 @@
             
             <StackPanel>
                 <!-- Header -->
-                <Border Background="#1A1A1A"
+                <Border Background="#CC0D0D0D"
                         BorderBrush="#1AFFFFFF"
                         BorderThickness="0,0,0,1"
                         Padding="20">

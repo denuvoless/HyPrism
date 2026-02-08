@@ -13,17 +13,34 @@
         <!-- TOP LEFT: Profile -->
         <StackPanel VerticalAlignment="Top" HorizontalAlignment="Left" Spacing="8">
             <StackPanel Orientation="Horizontal" Spacing="12">
-                <!-- Avatar -->
-                <Border Width="48" Height="48" CornerRadius="24" 
-                        Background="{DynamicResource SystemAccentBrush}" 
-                        ClipToBounds="True">
-                    <TextBlock Text=":)" 
-                               HorizontalAlignment="Center" 
-                               VerticalAlignment="Center" 
-                               FontSize="20"
-                               FontWeight="Bold"
-                               Foreground="#111"/>
-                </Border>
+                <!-- Avatar (accent border, dark fill like Photino) -->
+                <Button Command="{Binding ToggleProfileEditorCommand}"
+                        Background="Transparent"
+                        Padding="0"
+                        CornerRadius="28"
+                        Width="56" Height="56">
+                    <Border Width="56" Height="56" CornerRadius="28" 
+                            BorderBrush="{DynamicResource SystemAccentBrush}"
+                            BorderThickness="2"
+                            Background="#66090909"
+                            ClipToBounds="True">
+                        <Panel>
+                            <!-- Avatar image from game (when available) -->
+                            <Image Source="{Binding AvatarImage}"
+                                   Width="52" Height="52"
+                                   Stretch="UniformToFill"
+                                   IsVisible="{Binding HasAvatar}"/>
+                            <!-- User placeholder icon (fallback) -->
+                            <svg:Svg Path="/Assets/Icons/user.svg" 
+                                     Width="26" Height="26"
+                                     HorizontalAlignment="Center" 
+                                     VerticalAlignment="Center"
+                                     IsVisible="{Binding !HasAvatar}">
+                                <svg:Svg.Css>* { stroke: #AAAAAA; fill: none; }</svg:Svg.Css>
+                            </svg:Svg>
+                        </Panel>
+                    </Border>
+                </Button>
                 
                 <!-- Nick + Edit Button -->
                 <StackPanel VerticalAlignment="Center" Spacing="2">
@@ -44,7 +61,7 @@
             </StackPanel>
             
             <!-- Version -->
-            <TextBlock Text="{Binding AppVersion^, StringFormat='{}{0}'}" 
+            <TextBlock Text="{Binding AppVersion}" 
                        FontSize="11" 
                        Foreground="#999"
                        Margin="4,0,0,0"/>
@@ -64,19 +81,48 @@
                         Spacing="8" 
                         HorizontalAlignment="Right">
                 <!-- Discord -->
-                <Button Background="#5865F2" 
+                <Button Background="Transparent" 
                         Padding="8" 
-                        CornerRadius="6"
-                        Width="36" Height="36">
+                        CornerRadius="12"
+                        Width="40" Height="40"
+                        BorderBrush="#15FFFFFF"
+                        BorderThickness="1">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover /template/ ContentPresenter">
+                            <Setter Property="Background" Value="#335865F2"/>
+                        </Style>
+                    </Button.Styles>
                     <svg:Svg Path="/Assets/Icons/discord.svg" Width="20" Height="20"/>
                 </Button>
                 
                 <!-- GitHub -->
-                <Button Background="#333" 
+                <Button Background="Transparent" 
                         Padding="8" 
-                        CornerRadius="6"
-                        Width="36" Height="36">
+                        CornerRadius="12"
+                        Width="40" Height="40"
+                        BorderBrush="#15FFFFFF"
+                        BorderThickness="1">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover /template/ ContentPresenter">
+                            <Setter Property="Background" Value="#80090909"/>
+                        </Style>
+                    </Button.Styles>
                     <svg:Svg Path="/Assets/Icons/github.svg" Width="20" Height="20"/>
+                </Button>
+                
+                <!-- Bug Report -->
+                <Button Background="Transparent" 
+                        Padding="8" 
+                        CornerRadius="12"
+                        Width="40" Height="40"
+                        BorderBrush="#15FFFFFF"
+                        BorderThickness="1">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover /template/ ContentPresenter">
+                            <Setter Property="Background" Value="#1AFF4444"/>
+                        </Style>
+                    </Button.Styles>
+                    <svg:Svg Path="/Assets/Icons/bug.svg" Width="18" Height="18"/>
                 </Button>
             </StackPanel>
         </StackPanel>

@@ -28,6 +28,8 @@ public class GameControlViewModel : ReactiveObject, IDisposable
     public ReactiveCommand<Unit, Unit> ToggleSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> LaunchCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenInstancesCommand { get; }
+    public ReactiveCommand<string, Unit> SwitchBranchCommand { get; }
+    public ReactiveCommand<string, Unit> SelectVersionCommand { get; }
 
     // Properties
     private string _selectedBranch = "release";
@@ -68,6 +70,13 @@ public class GameControlViewModel : ReactiveObject, IDisposable
     }
 
     public ObservableCollection<string> Branches { get; } = new() { "release", "pre-release" };
+    
+    private ObservableCollection<string> _availableVersions = new();
+    public ObservableCollection<string> AvailableVersions
+    {
+        get => _availableVersions;
+        set => this.RaiseAndSetIfChanged(ref _availableVersions, value);
+    }
 
     // Localization
     public IObservable<string> MainEducational { get; }
@@ -125,10 +134,41 @@ public class GameControlViewModel : ReactiveObject, IDisposable
 
         OpenInstancesCommand = ReactiveCommand.Create(openInstances);
 
+        SwitchBranchCommand = ReactiveCommand.Create<string>(branch =>
+        {
+            SelectedBranch = branch;
+            _configService.Configuration.VersionType = branch;
+            _configService.SaveConfig();
+            LoadCachedLatestVersion();
+            UpdateVersionDisplay();
+            RefreshAvailableVersions();
+        });
+        
+        SelectVersionCommand = ReactiveCommand.Create<string>(versionLabel =>
+        {
+            // Parse version number from label like "release-123" or "latest"
+            if (versionLabel == "latest")
+            {
+                SelectedVersion = 0;
+            }
+            else
+            {
+                var parts = versionLabel.Split('-');
+                if (parts.Length >= 2 && int.TryParse(parts[^1], out var ver))
+                {
+                    SelectedVersion = ver;
+                }
+            }
+            _configService.Configuration.SelectedVersion = SelectedVersion;
+            _configService.SaveConfig();
+            UpdateVersionDisplay();
+        });
+
         SelectedBranch = UtilityService.NormalizeVersionType(_configService.Configuration.VersionType);
         SelectedVersion = _configService.Configuration.SelectedVersion;
         LoadCachedLatestVersion();
         UpdateVersionDisplay();
+        RefreshAvailableVersions();
 
         // Periodically check for game process status (store disposable to stop on Dispose)
         _gameStatusTimer = DispatcherTimer.Run(() => 
@@ -178,5 +218,25 @@ public class GameControlViewModel : ReactiveObject, IDisposable
         }
 
         SelectedBranchVersionLabel = version > 0 ? $"{branchLabel}-{version}" : $"{branchLabel}-latest";
+    }
+    
+    private void RefreshAvailableVersions()
+    {
+        var versions = new ObservableCollection<string>();
+        var branchLabel = SelectedBranch == "pre-release" ? "prerelease" : "release";
+        
+        // Add "latest" option
+        versions.Add("latest");
+        
+        // Add cached versions
+        if (_versionService.TryGetCachedVersions(SelectedBranch, TimeSpan.FromMinutes(15), out var cached))
+        {
+            foreach (var ver in cached)
+            {
+                versions.Add($"{branchLabel}-{ver}");
+            }
+        }
+        
+        AvailableVersions = versions;
     }
 }

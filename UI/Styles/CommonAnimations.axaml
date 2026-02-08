@@ -45,22 +45,13 @@
     
     <!-- 
     =================================================================
-    HOVER SCALE ANIMATION
+    HOVER SCALE ANIMATION (DISABLED - kept for compatibility)
     =================================================================
     Usage: Add Classes="hoverable" to any Control
-    Effect: Scales up to 1.02 on hover with smooth transition
+    Effect: No visual change (scale removed per design)
     -->
     <Style Selector="Control.hoverable">
         <Setter Property="RenderTransformOrigin" Value="50%,50%"/>
-        <Setter Property="Transitions">
-            <Transitions>
-                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.2" Easing="CubicEaseOut"/>
-            </Transitions>
-        </Setter>
-    </Style>
-    
-    <Style Selector="Control.hoverable:pointerover">
-        <Setter Property="RenderTransform" Value="scale(1.02)"/>
     </Style>
     
     <!-- 

@@ -14,7 +14,7 @@
     <!-- PrimaryButton Style -->
     <Style Selector="btn|PrimaryButton">
         <Setter Property="Background" Value="{DynamicResource SystemAccentBrush}"/>
-        <Setter Property="Foreground" Value="Black"/>
+        <Setter Property="Foreground" Value="White"/>
         <Setter Property="FontWeight" Value="Bold"/>
         <Setter Property="Padding" Value="24,12"/>
         <Setter Property="CornerRadius" Value="8"/>
@@ -27,7 +27,6 @@
         <Setter Property="Transitions">
             <Transitions>
                 <BrushTransition Property="Background" Duration="0:0:0.08"/>
-                <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.150"/>
                 <DoubleTransition Property="Opacity" Duration="0:0:0.150"/>
             </Transitions>
         </Setter>
@@ -37,14 +36,12 @@
     <Style Selector="btn|PrimaryButton:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SystemAccentBrush}"/>
         <Setter Property="Opacity" Value="0.9"/>
-        <Setter Property="RenderTransform" Value="scale(0.97)"/>
     </Style>
 
     <!-- Pressed State -->
     <Style Selector="btn|PrimaryButton:pressed /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource SystemAccentBrush}"/>
         <Setter Property="Opacity" Value="0.8"/>
-        <Setter Property="RenderTransform" Value="scale(0.95)"/>
     </Style>
 
     <!-- Disabled State -->

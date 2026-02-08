@@ -33,11 +33,13 @@
         <!-- Animated Tab Switcher -->
         <Border Grid.Row="1" 
                 Margin="0,0,0,16"
-                Background="#1A1A1A"
-                CornerRadius="10"
+                Background="#66090909"
+                CornerRadius="12"
                 Width="380"
                 Height="44"
                 HorizontalAlignment="Left"
+                BorderBrush="#15FFFFFF"
+                BorderThickness="1"
                 Padding="4">
             <Grid>
                 <!-- Background Indicator -->

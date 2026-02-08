@@ -64,7 +64,7 @@
                 <!-- Title -->
                 <TextBlock Text="{Binding Title}" 
                            FontWeight="Bold" 
-                           Foreground="White" 
+                           Foreground="{DynamicResource SystemAccentBrush}" 
                            FontSize="13"
                            TextWrapping="Wrap"
                            MaxLines="2"

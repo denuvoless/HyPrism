@@ -17,6 +17,10 @@
     <Color x:Key="HytaleDark">#090909</Color>
     <Color x:Key="HytaleDarkLight">#0d0d0d</Color>
     
+    <!-- Font Family (matching Photino frontend) -->
+    <FontFamily x:Key="Poppins">Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif</FontFamily>
+    <FontFamily x:Key="InterFont">Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif</FontFamily>
+    
     <!-- Dynamic Theme System (updated at runtime by ThemeService) -->
     <Color x:Key="SystemAccentColor">#FFA845</Color>
     <SolidColorBrush x:Key="SystemAccentBrush" Color="{StaticResource SystemAccentColor}" />
@@ -28,11 +32,11 @@
     <SolidColorBrush x:Key="HytaleDarkLightBrush" Color="{StaticResource HytaleDarkLight}"/>
     
     <!-- UI Element Colors -->
-    <Color x:Key="CardBackground">#1E1E1E</Color>
-    <Color x:Key="CardBorder">#333333</Color>
-    <Color x:Key="InputBackground">#1a1a1a</Color>
-    <Color x:Key="InputBorder">#333333</Color>
-    <Color x:Key="InputBorderHover">#444444</Color>
+    <Color x:Key="CardBackground">#1AFFFFFF</Color>
+    <Color x:Key="CardBorder">#0DFFFFFF</Color>
+    <Color x:Key="InputBackground">#0DFFFFFF</Color>
+    <Color x:Key="InputBorder">#0DFFFFFF</Color>
+    <Color x:Key="InputBorderHover">#1AFFFFFF</Color>
     
     <SolidColorBrush x:Key="CardBackgroundBrush" Color="{StaticResource CardBackground}"/>
     <SolidColorBrush x:Key="CardBorderBrush" Color="{StaticResource CardBorder}"/>
@@ -48,5 +52,16 @@
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}"/>
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}"/>
     <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMuted}"/>
+    
+    <!-- Glass Effect Colors (matching Photino's frosted glass: rgba(9,9,9,0.55) + blur(20px)) -->
+    <Color x:Key="GlassBackground">#66090909</Color>
+    <Color x:Key="GlassBorder">#15FFFFFF</Color>
+    <Color x:Key="GlassBackgroundHover">#80090909</Color>
+    <Color x:Key="GlassBackgroundPressed">#8C090909</Color>
+    
+    <SolidColorBrush x:Key="GlassBackgroundBrush" Color="{StaticResource GlassBackground}"/>
+    <SolidColorBrush x:Key="GlassBorderBrush" Color="{StaticResource GlassBorder}"/>
+    <SolidColorBrush x:Key="GlassBackgroundHoverBrush" Color="{StaticResource GlassBackgroundHover}"/>
+    <SolidColorBrush x:Key="GlassBackgroundPressedBrush" Color="{StaticResource GlassBackgroundPressed}"/>
 
 </ResourceDictionary>

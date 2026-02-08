@@ -10,7 +10,7 @@
              x:DataType="vm:ProfileEditorViewModel"
              x:CompileBindings="True">
     
-    <Border Background="#1a1a1a" CornerRadius="12" BorderBrush="#333" BorderThickness="1" Padding="30" Width="500" HorizontalAlignment="Center" VerticalAlignment="Center" BoxShadow="0 10 40 5 #000000">
+    <Border Background="#F2111111" CornerRadius="12" BorderBrush="#1AFFFFFF" BorderThickness="1" Padding="30" Width="500" HorizontalAlignment="Center" VerticalAlignment="Center" BoxShadow="0 10 40 5 #000000">
         <Grid RowDefinitions="Auto, *, Auto">
             
             <!-- Header -->
@@ -24,7 +24,7 @@
                 <StackPanel Spacing="8">
                      <TextBlock Text="Profile Name" Foreground="#CCC" FontWeight="Medium"/>
                      <Grid ColumnDefinitions="*, Auto">
-                         <TextBox Text="{Binding Name}" Background="#252525" Foreground="White" BorderThickness="1" BorderBrush="#333" CornerRadius="6" Padding="12,10"/>
+                         <TextBox Text="{Binding Name}" Background="#0DFFFFFF" Foreground="White" BorderThickness="1" BorderBrush="#0DFFFFFF" CornerRadius="10" Padding="12,10"/>
                          <Button Grid.Column="1" Command="{Binding RandomizeNameCommand}" Background="Transparent" Margin="8,0,0,0" ToolTip.Tip="Generate Random Name">
                             <svg:Svg Path="/Assets/Icons/refresh-cw.svg" Width="18" Height="18"/>
                          </Button>
@@ -35,7 +35,7 @@
                 <StackPanel Spacing="8">
                      <TextBlock Text="UUID" Foreground="#CCC" FontWeight="Medium"/>
                      <Grid ColumnDefinitions="*, Auto">
-                         <TextBox Text="{Binding Uuid}" Background="#252525" Foreground="White" BorderThickness="1" BorderBrush="#333" CornerRadius="6" Padding="12,10"/>
+                         <TextBox Text="{Binding Uuid}" Background="#0DFFFFFF" Foreground="White" BorderThickness="1" BorderBrush="#0DFFFFFF" CornerRadius="10" Padding="12,10"/>
                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5" Margin="8,0,0,0">
                              <Button Command="{Binding CopyUuidCommand}" Background="Transparent" ToolTip.Tip="Copy UUID">
                                 <svg:Svg Path="/Assets/Icons/copy.svg" Width="18" Height="18"/>

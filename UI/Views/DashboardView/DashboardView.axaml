@@ -18,18 +18,13 @@
              x:CompileBindings="True">
 
     <Grid>
-        <!-- Content Root with Blur Effect and Fade In -->
+        <!-- Content Root with Blur Effect -->
         <Grid Tag="{Binding IsOverlayOpen}">
             <Grid.Styles>
                 <Style Selector="Grid[Tag=True]">
                     <Setter Property="Effect" Value="blur(16)"/>
                 </Style>
             </Grid.Styles>
-            <Grid.Transitions>
-                <Transitions>
-                    <DoubleTransition Property="Opacity" Duration="0:0:0.8" Easing="CubicEaseInOut"/>
-                </Transitions>
-            </Grid.Transitions>
 
             <!-- Background -->
             <Image Source="{Binding BackgroundImage}" 
@@ -41,7 +36,29 @@
                     </Transitions>
                 </Image.Transitions>
             </Image>
-            <Rectangle Fill="#CC090909"/> 
+            
+            <!-- Vignette effect (radial darkening at edges, matching Photino) -->
+            <Border IsHitTestVisible="False">
+                <Border.Background>
+                    <RadialGradientBrush Center="50%,50%" RadiusX="0.7" RadiusY="0.7">
+                        <GradientStop Color="Transparent" Offset="0"/>
+                        <GradientStop Color="Transparent" Offset="0.4"/>
+                        <GradientStop Color="#80000000" Offset="1"/>
+                    </RadialGradientBrush>
+                </Border.Background>
+            </Border>
+            
+            <!-- Top-to-bottom gradient overlay for readability -->
+            <Border IsHitTestVisible="False">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="50%,0%" EndPoint="50%,100%">
+                        <GradientStop Color="#33000000" Offset="0"/>
+                        <GradientStop Color="Transparent" Offset="0.3"/>
+                        <GradientStop Color="Transparent" Offset="0.7"/>
+                        <GradientStop Color="#66000000" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+            </Border> 
         
             <!-- Main Layout Grid -->
              <Grid Margin="30">

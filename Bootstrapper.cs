@@ -138,6 +138,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<IDiscordService>(),
                     sp.GetRequiredService<ISkinService>(),
                     sp.GetRequiredService<IUserIdentityService>(),
+                    sp.GetRequiredService<AvatarService>(),
                     sp.GetRequiredService<HttpClient>()));
             services.AddSingleton<IGameLauncher>(sp => sp.GetRequiredService<GameLauncher>());
 

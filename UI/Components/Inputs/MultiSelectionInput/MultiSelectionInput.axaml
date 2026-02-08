@@ -84,8 +84,8 @@
                 Width="{Binding ElementName=Root, Path=Bounds.Width}"
             Canvas.Top="8">
 
-                <Border Background="{Binding ElementName=Root, Path=DropdownBackground, TargetNullValue=#1E1E1E}"
-                        BorderBrush="{Binding ElementName=Root, Path=DropdownBorderBrush, TargetNullValue=#333}"
+                <Border Background="{Binding ElementName=Root, Path=DropdownBackground, TargetNullValue=#F2111111}"
+                        BorderBrush="{Binding ElementName=Root, Path=DropdownBorderBrush, TargetNullValue=#1AFFFFFF}"
                         BorderThickness="1"
                         CornerRadius="{Binding ElementName=Root, Path=DropdownCornerRadius}"
                         Padding="0"

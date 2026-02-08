@@ -81,8 +81,8 @@
     </Style>
     
     <Style Selector="Border.news-card-content">
-        <Setter Property="Background" Value="#CC252525"/>
-        <Setter Property="BorderBrush" Value="#333"/>
+        <Setter Property="Background" Value="#66090909"/>
+        <Setter Property="BorderBrush" Value="#15FFFFFF"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="12"/>
         <Setter Property="Padding" Value="16"/>
@@ -95,8 +95,8 @@
     </Style>
     
     <Style Selector="Button.news-card:pointerover Border.news-card-content">
-        <Setter Property="Background" Value="#CC2D2D2D"/>
-        <Setter Property="BorderBrush" Value="#444"/>
+        <Setter Property="Background" Value="#80090909"/>
+        <Setter Property="BorderBrush" Value="#20FFFFFF"/>
     </Style>
 
 </Styles>

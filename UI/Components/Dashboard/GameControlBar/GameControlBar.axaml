@@ -21,31 +21,29 @@
                     HorizontalAlignment="Left"
                     Orientation="Horizontal" 
                     Spacing="10">
-            <!-- Mods (Disabled pending rewrite) -->
-            <!--
+            <!-- Mods -->
             <btn:IconButton Command="{Binding ToggleModsCommand}"
-                            ButtonBackground="#2a2a2a"
+                            ButtonBackground="#66090909"
                             Width="50" Height="50"
                             IconPath="/Assets/Icons/package.svg"
                             IconSize="24"/>
-            -->
             
             <!-- Folder -->
             <btn:IconButton Command="{Binding OpenFolderCommand}"
-                            ButtonBackground="#2a2a2a"
+                            ButtonBackground="#66090909"
                             Width="50" Height="50"
                             IconPath="/Assets/Icons/folder.svg"
                             IconSize="24"/>
             
             <!-- Settings -->
             <btn:IconButton Command="{Binding ToggleSettingsCommand}"
-                            ButtonBackground="#2a2a2a"
+                            ButtonBackground="#66090909"
                             Width="50" Height="50"
                             IconPath="/Assets/Icons/settings.svg"
                             IconSize="24"/>
             
             <!-- Network/WiFi -->
-            <btn:IconButton ButtonBackground="#2a2a2a"
+            <btn:IconButton ButtonBackground="#66090909"
                             Width="50" Height="50"
                             IconPath="/Assets/Icons/wifi.svg"
                             IconSize="24"/>
@@ -67,9 +65,70 @@
                     ClipToBounds="True">
                 <Grid ColumnDefinitions="Auto, Auto" Height="50">
                     <Button Classes="VersionAreaButton"
-                            Command="{Binding OpenInstancesCommand}"
                             HorizontalContentAlignment="Center"
                             VerticalContentAlignment="Center">
+                        <Button.Flyout>
+                            <Flyout Placement="TopEdgeAlignedRight" ShowMode="TransientWithDismissOnPointerMoveAway">
+                                <Border Background="#E6111111" CornerRadius="12" BorderBrush="#15FFFFFF" BorderThickness="1" Padding="8" MinWidth="200">
+                                    <StackPanel Spacing="6">
+                                        <!-- Branch Toggle -->
+                                        <TextBlock Text="Branch" FontSize="11" Foreground="#888" Margin="8,4,8,2"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="4,0">
+                                            <Button Content="release" 
+                                                    Command="{Binding SwitchBranchCommand}" 
+                                                    CommandParameter="release"
+                                                    Foreground="White" FontSize="12" Padding="12,6" CornerRadius="8"
+                                                    HorizontalContentAlignment="Center">
+                                                <Button.Styles>
+                                                    <Style Selector="Button">
+                                                        <Setter Property="Background" Value="#33FFFFFF"/>
+                                                    </Style>
+                                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                                        <Setter Property="Background" Value="#80090909"/>
+                                                    </Style>
+                                                </Button.Styles>
+                                            </Button>
+                                            <Button Content="pre-release" 
+                                                    Command="{Binding SwitchBranchCommand}" 
+                                                    CommandParameter="pre-release"
+                                                    Foreground="White" FontSize="12" Padding="12,6" CornerRadius="8"
+                                                    HorizontalContentAlignment="Center">
+                                                <Button.Styles>
+                                                    <Style Selector="Button">
+                                                        <Setter Property="Background" Value="#33FFFFFF"/>
+                                                    </Style>
+                                                    <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                                        <Setter Property="Background" Value="#80090909"/>
+                                                    </Style>
+                                                </Button.Styles>
+                                            </Button>
+                                        </StackPanel>
+                                        <!-- Version List -->
+                                        <TextBlock Text="Version" FontSize="11" Foreground="#888" Margin="8,6,8,2"/>
+                                        <ItemsControl ItemsSource="{Binding AvailableVersions}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="{Binding}" 
+                                                            Command="{Binding $parent[ItemsControl].((vm:GameControlViewModel)DataContext).SelectVersionCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            Background="Transparent" 
+                                                            Foreground="White" FontSize="13" 
+                                                            Padding="12,6" CornerRadius="6"
+                                                            HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Left">
+                                                        <Button.Styles>
+                                                            <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                                                <Setter Property="Background" Value="#80090909"/>
+                                                            </Style>
+                                                        </Button.Styles>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </Flyout>
+                        </Button.Flyout>
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <svg:Svg Path="/Assets/Icons/git-branch.svg" Width="16" Height="16">
                                 <svg:Svg.Css>* { stroke: #ddd !important; fill: #ddd !important; }</svg:Svg.Css>
@@ -78,6 +137,9 @@
                                        FontSize="13" 
                                        Foreground="#ddd"
                                        VerticalAlignment="Center"/>
+                            <svg:Svg Path="/Assets/Icons/chevron-up.svg" Width="12" Height="12">
+                                <svg:Svg.Css>* { stroke: #888 !important; fill: none; }</svg:Svg.Css>
+                            </svg:Svg>
                         </StackPanel>
                     </Button>
 
@@ -85,13 +147,13 @@
                                        Command="{Binding LaunchCommand}"
                                        Height="50"
                                        Padding="18,0"
-                                       CornerRadius="0,10,10,0"
+                                       CornerRadius="0,12,12,0"
                                        FontSize="18">
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <svg:Svg Path="/Assets/Icons/play.svg" Width="20" Height="20">
-                                <svg:Svg.Css>* { stroke: #111 !important; fill: #111 !important; }</svg:Svg.Css>
+                                <svg:Svg.Css>* { stroke: white !important; fill: white !important; }</svg:Svg.Css>
                             </svg:Svg>
-                            <TextBlock Text="{Binding MainPlay^}" VerticalAlignment="Center" Foreground="#111"/>
+                            <TextBlock Text="{Binding MainPlay^}" VerticalAlignment="Center" Foreground="White"/>
                         </StackPanel>
                     </primaryBtn:PrimaryButton>
                 </Grid>

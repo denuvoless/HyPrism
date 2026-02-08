@@ -91,10 +91,10 @@
                Classes.up="{Binding ElementName=Root, Path=Direction, Converter={StaticResource StringEqualityConverter}, ConverterParameter=Up}"
                  ClipToBounds="False">
                    
-                    <Border Background="#1E1E1E"
-                        BorderBrush="#333"
+                    <Border Background="#F2111111"
+                        BorderBrush="#1AFFFFFF"
                         BorderThickness="1"
-                        CornerRadius="8"
+                        CornerRadius="10"
                         Padding="6"
                         MinWidth="{Binding $parent[UserControl].Bounds.Width}"
                         MaxHeight="300"
