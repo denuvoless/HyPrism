@@ -1,4 +1,4 @@
-<img src="Assets/logo.png" alt="HyPrism Logo" width="128" height="128" />
+<img src="Frontend/src/assets/images/appicon.png" alt="HyPrism Logo" width="128" height="128" />
 
 # HyPrism
 
