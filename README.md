@@ -1,7 +1,3 @@
-<p align="left">
-  <img src="assets/Hyprism.png" alt="HyPrism Logo" width="64" height="64" />
-</p>
-
 # HyPrism
 
 [![Downloads](https://img.shields.io/github/downloads/yyyumeniku/HyPrism/total?style=for-the-badge&logo=github&label=Downloads&color=207e5c)](https://github.com/yyyumeniku/HyPrism/releases)
