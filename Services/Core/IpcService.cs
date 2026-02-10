@@ -598,6 +598,28 @@ public class IpcService
                 Reply("hyprism:instance:setIcon:reply", false);
             }
         });
+
+        // Rename instance (set custom name)
+        Electron.IpcMain.On("hyprism:instance:rename", (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOpts);
+                var branch = data?["branch"].GetString() ?? "release";
+                var version = data?["version"].GetInt32() ?? 0;
+                var customName = data?["customName"].GetString();
+                
+                instanceService.SetInstanceCustomName(branch, version, customName);
+                Reply("hyprism:instance:rename:reply", true);
+                Logger.Info("IPC", $"Renamed instance {branch}/{version} to: {customName ?? "(default)"}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to rename instance: {ex.Message}");
+                Reply("hyprism:instance:rename:reply", false);
+            }
+        });
     }
     // #endregion
 

@@ -8,4 +8,5 @@ public class InstalledInstance
     public bool HasUserData { get; set; }
     public long UserDataSize { get; set; }
     public long TotalSize { get; set; }
+    public string? CustomName { get; set; }
 }

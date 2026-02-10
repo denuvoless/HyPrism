@@ -233,6 +233,8 @@ const App: React.FC = () => {
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [downloadState, setDownloadState] = useState<'downloading' | 'extracting' | 'launching'>('downloading');
   const [isGameRunning, setIsGameRunning] = useState<boolean>(false);
+  const [runningBranch, setRunningBranch] = useState<string | undefined>(undefined);
+  const [runningVersion, setRunningVersion] = useState<number | undefined>(undefined);
   const [downloaded, setDownloaded] = useState<number>(0);
   const [total, setTotal] = useState<number>(0);
   const [launchState, setLaunchState] = useState<string>('');
@@ -733,6 +735,9 @@ const App: React.FC = () => {
       if (data.state === 'started') {
         console.log('[App] Game started, resetting download state');
         setIsGameRunning(true);
+        // Track which instance is running
+        setRunningBranch(currentBranchRef.current);
+        setRunningVersion(currentVersionRef.current);
         setIsDownloading(false);
         setProgress(0);
         setLaunchState('');
@@ -770,6 +775,8 @@ const App: React.FC = () => {
           }
         }
         setIsGameRunning(false);
+        setRunningBranch(undefined);
+        setRunningVersion(undefined);
         setIsDownloading(false);
         setProgress(0);
         setLaunchState('');
@@ -1275,6 +1282,10 @@ const App: React.FC = () => {
                 setShowModBrowser(true);
               }}
               onNavigateToDashboard={() => setCurrentPage('dashboard')}
+              isGameRunning={isGameRunning}
+              runningBranch={runningBranch}
+              runningVersion={runningVersion}
+              onStopGame={handleExit}
             />
           )}
 

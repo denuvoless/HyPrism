@@ -163,6 +163,7 @@ export interface InstalledInstance {
   hasUserData: boolean;
   userDataSize: number;
   totalSize: number;
+  customName?: string;
 }
 
 export interface LanguageInfo {

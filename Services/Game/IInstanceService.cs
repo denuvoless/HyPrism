@@ -126,4 +126,12 @@ public interface IInstanceService
     /// </summary>
     /// <returns>A list of installed instance metadata.</returns>
     List<InstalledInstance> GetInstalledInstances();
+
+    /// <summary>
+    /// Sets or clears the custom name for an instance.
+    /// </summary>
+    /// <param name="branch">The game branch (e.g., "release", "pre-release").</param>
+    /// <param name="version">The version number.</param>
+    /// <param name="customName">The custom name to set, or null to clear.</param>
+    void SetInstanceCustomName(string branch, int version, string? customName);
 }

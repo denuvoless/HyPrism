@@ -6,6 +6,7 @@
   },
   "main": {
     "play": "PLAY",
+    "stop": "STOP",
     "running": "RUNNING",
     "exit": "EXIT",
     "cancel": "CANCEL",
@@ -277,7 +278,9 @@
   "instances": {
     "title": "Instances",
     "import": "Import",
+    "addInstance": "Add Instance",
     "refresh": "Refresh",
+    "rename": "Rename Instance",
     "selectInstance": "Select an Instance",
     "selectInstanceHint": "Choose an instance from the left to view and manage its content",
     "lastPlayed": "Last played",

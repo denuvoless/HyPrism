@@ -1043,6 +1043,20 @@ public class InstanceService : IInstanceService
                         }
                         catch { }
 
+                        // Load custom name from metadata file
+                        string? customName = null;
+                        var metadataPath = Path.Combine(folder, "metadata.json");
+                        if (File.Exists(metadataPath))
+                        {
+                            try
+                            {
+                                var json = File.ReadAllText(metadataPath);
+                                var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions);
+                                metadata?.TryGetValue("customName", out customName);
+                            }
+                            catch { }
+                        }
+
                         results.Add(new InstalledInstance
                         {
                             Branch = branch,
@@ -1050,7 +1064,8 @@ public class InstanceService : IInstanceService
                             Path = folder,
                             HasUserData = hasUserData,
                             UserDataSize = size,
-                            TotalSize = totalSize
+                            TotalSize = totalSize,
+                            CustomName = customName
                         });
                     }
                 }
@@ -1062,6 +1077,51 @@ public class InstanceService : IInstanceService
         }
 
         return results.OrderByDescending(x => x.Version).ToList();
+    }
+
+    public void SetInstanceCustomName(string branch, int version, string? customName)
+    {
+        var root = GetInstanceRoot();
+        var instancePath = Path.Combine(root, branch, version.ToString());
+        
+        if (!Directory.Exists(instancePath))
+        {
+            Logger.Warning("InstanceService", $"Instance not found: {branch}/{version}");
+            return;
+        }
+
+        var metadataPath = Path.Combine(instancePath, "metadata.json");
+        
+        try
+        {
+            var metadata = new Dictionary<string, string>();
+            
+            // Load existing metadata if it exists
+            if (File.Exists(metadataPath))
+            {
+                var json = File.ReadAllText(metadataPath);
+                metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions) ?? new Dictionary<string, string>();
+            }
+
+            // Update or remove custom name
+            if (string.IsNullOrWhiteSpace(customName))
+            {
+                metadata.Remove("customName");
+            }
+            else
+            {
+                metadata["customName"] = customName;
+            }
+
+            // Save metadata
+            var updatedJson = JsonSerializer.Serialize(metadata, JsonOptions);
+            File.WriteAllText(metadataPath, updatedJson);
+            Logger.Info("InstanceService", $"Updated custom name for {branch}/{version}: {customName ?? "(removed)"}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("InstanceService", $"Failed to save custom name: {ex.Message}");
+        }
     }
 }
 

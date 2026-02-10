@@ -5,7 +5,7 @@ import {
   HardDrive, FolderOpen, Trash2, Upload, RefreshCw, 
   Clock, Box, Loader2, AlertTriangle, Check, Plus,
   Search, Package, MoreVertical, ToggleLeft, ToggleRight,
-  ChevronRight, FileText, Gamepad2, Image, Map, Globe, Play
+  ChevronRight, FileText, Gamepad2, Image, Map, Globe, Play, X, Edit2, Save
 } from 'lucide-react';
 import { useAccentColor } from '../contexts/AccentColorContext';
 import { useAnimatedGlass } from '../contexts/AnimatedGlassContext';
@@ -151,6 +151,7 @@ const toVersionInfo = (inst: InstalledInstance): InstalledVersionInfo => ({
   isLatest: false,
   isLatestInstance: inst.version === 0,
   iconPath: undefined,
+  customName: inst.customName,
 });
 
 export interface InstalledVersionInfo {
@@ -166,6 +167,7 @@ export interface InstalledVersionInfo {
   lastPlayedAt?: string;
   updatedAt?: string;
   iconPath?: string;
+  customName?: string;
 }
 
 const pageVariants = {
@@ -181,9 +183,21 @@ interface InstancesPageProps {
   onInstanceDeleted?: () => void;
   onOpenModBrowser?: (branch: string, version: number) => void;
   onNavigateToDashboard?: () => void;
+  isGameRunning?: boolean;
+  runningBranch?: string;
+  runningVersion?: number;
+  onStopGame?: () => void;
 }
 
-export const InstancesPage: React.FC<InstancesPageProps> = ({ onInstanceDeleted, onOpenModBrowser, onNavigateToDashboard }) => {
+export const InstancesPage: React.FC<InstancesPageProps> = ({ 
+  onInstanceDeleted, 
+  onOpenModBrowser, 
+  onNavigateToDashboard,
+  isGameRunning = false,
+  runningBranch,
+  runningVersion,
+  onStopGame
+}) => {
   const { t } = useTranslation();
   const { accentColor, accentTextColor } = useAccentColor();
   const { animatedGlass } = useAnimatedGlass();
@@ -206,6 +220,8 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onInstanceDeleted,
   const [selectedMods, setSelectedMods] = useState<Set<string>>(new Set());
   const [modToDelete, setModToDelete] = useState<ModInfo | null>(null);
   const [isDeletingMod, setIsDeletingMod] = useState(false);
+  const [editingInstanceName, setEditingInstanceName] = useState(false);
+  const [editNameValue, setEditNameValue] = useState('');
   
   // Updates
   const [modsWithUpdates, setModsWithUpdates] = useState<ModInfo[]>([]);
@@ -406,7 +422,31 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onInstanceDeleted,
 
   // Launch an instance
   const handleLaunchInstance = (inst: InstalledVersionInfo) => {
-    send('hyprism:game:launch', { branch: inst.branch, version: inst.version });
+    // If this instance is currently running, stop it instead
+    if (isGameRunning && runningBranch === inst.branch && runningVersion === inst.version) {
+      onStopGame?.();
+    } else {
+      send('hyprism:game:launch', { branch: inst.branch, version: inst.version });
+    }
+  };
+
+  const handleRenameInstance = async (inst: InstalledVersionInfo, customName: string | null) => {
+    try {
+      const result = await invoke<boolean>('hyprism:instance:rename', { 
+        branch: inst.branch, 
+        version: inst.version, 
+        customName: customName || null 
+      });
+      if (result) {
+        await loadInstances();
+        if (selectedInstance?.branch === inst.branch && selectedInstance?.version === inst.version) {
+          setSelectedInstance(prev => prev ? { ...prev, customName: customName || undefined } : null);
+        }
+        setEditingInstanceName(false);
+      }
+    } catch (e) {
+      console.error('Failed to rename instance:', e);
+    }
   };
 
   const handleDeleteMod = async (mod: ModInfo) => {
@@ -442,6 +482,11 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onInstanceDeleted,
   };
 
   const getInstanceDisplayName = (inst: InstalledVersionInfo) => {
+    // Use custom name if set
+    if (inst.customName) {
+      return inst.customName;
+    }
+    
     const branchLabel = inst.branch === GameBranch.RELEASE
       ? t('modManager.releaseType.release')
       : inst.branch === GameBranch.PRE_RELEASE
@@ -622,9 +667,53 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onInstanceDeleted,
 
               {/* Instance Title and Info */}
               <div className="flex-1 min-w-0">
-                <h1 className="text-xl font-bold text-white truncate">
-                  {getInstanceDisplayName(selectedInstance)}
-                </h1>
+                {editingInstanceName ? (
+                  <div className="flex items-center gap-2 mb-1">
+                    <input
+                      type="text"
+                      value={editNameValue}
+                      onChange={(e) => setEditNameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleRenameInstance(selectedInstance, editNameValue || null);
+                        } else if (e.key === 'Escape') {
+                          setEditingInstanceName(false);
+                        }
+                      }}
+                      className="flex-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white text-xl font-bold focus:outline-none focus:border-white/30"
+                      placeholder={getInstanceDisplayName(selectedInstance)}
+                      autoFocus
+                    />
+                    <button
+                      onClick={() => handleRenameInstance(selectedInstance, editNameValue || null)}
+                      className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                    >
+                      <Save size={16} className="text-white" />
+                    </button>
+                    <button
+                      onClick={() => setEditingInstanceName(false)}
+                      className="p-2 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                    >
+                      <X size={16} className="text-white" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-xl font-bold text-white truncate">
+                      {getInstanceDisplayName(selectedInstance)}
+                    </h1>
+                    <button
+                      onClick={() => {
+                        setEditNameValue(selectedInstance.customName || '');
+                        setEditingInstanceName(true);
+                      }}
+                      className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all"
+                      title={t('instances.rename')}
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-center gap-3 text-sm text-white/50 mt-1">
                   <span className="flex items-center gap-1">
                     <Gamepad2 size={14} />
@@ -641,15 +730,26 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({ onInstanceDeleted,
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
-                {/* Play Button */}
-                <button
-                  onClick={() => handleLaunchInstance(selectedInstance)}
-                  className="px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all hover:opacity-90 shadow-lg"
-                  style={{ backgroundColor: accentColor, color: accentTextColor }}
-                >
-                  <Play size={18} fill="currentColor" />
-                  {t('main.play')}
-                </button>
+                {/* Play/Stop Button */}
+                {isGameRunning && runningBranch === selectedInstance.branch && runningVersion === selectedInstance.version ? (
+                  <button
+                    onClick={() => handleLaunchInstance(selectedInstance)}
+                    className="px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all hover:opacity-90 shadow-lg bg-gradient-to-r from-red-600 to-red-500 text-white"
+                  >
+                    <X size={18} />
+                    {t('main.stop')}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleLaunchInstance(selectedInstance)}
+                    disabled={isGameRunning}
+                    className="px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all hover:opacity-90 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ backgroundColor: isGameRunning ? '#555' : accentColor, color: accentTextColor }}
+                  >
+                    <Play size={18} fill="currentColor" />
+                    {t('main.play')}
+                  </button>
+                )}
 
                 {/* Install Content Button */}
                 <button
