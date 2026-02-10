@@ -10,10 +10,10 @@ import { DockMenu } from './components/layout/DockMenu';
 import type { PageType } from './components/layout/DockMenu';
 import { DashboardPage } from './pages/DashboardPage';
 import { NewsPage } from './pages/NewsPage';
-import { ModManagerPage } from './pages/ModManagerPage';
 import { ProfilesPage } from './pages/ProfilesPage';
 import { InstancesPage } from './pages/InstancesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { BrowseModsModal } from './components/BrowseModsModal';
 // Controller detection removed - not using floating indicator
 
 // Lazy load heavy modals for better initial load performance
@@ -245,7 +245,8 @@ const App: React.FC = () => {
 
   // Modal state
   const [showDelete, setShowDelete] = useState<boolean>(false);
-  const [modManagerSearchQuery, setModManagerSearchQuery] = useState<string>('');
+  const [showModBrowser, setShowModBrowser] = useState<boolean>(false);
+  const [modBrowserInstance, setModBrowserInstance] = useState<{ branch: string; version: number } | null>(null);
   const [error, setError] = useState<any>(null);
   const [launchTimeoutError, setLaunchTimeoutError] = useState<{ message: string; logs: string[] } | null>(null);
   const [avatarRefreshTrigger, setAvatarRefreshTrigger] = useState<number>(0);
@@ -1258,16 +1259,6 @@ const App: React.FC = () => {
             />
           )}
 
-          {currentPage === 'mods' && (
-            <ModManagerPage
-              key="mods"
-              currentBranch={currentBranch}
-              currentVersion={currentVersion}
-              currentProfileName={username}
-              initialSearchQuery={modManagerSearchQuery}
-            />
-          )}
-
           {currentPage === 'profiles' && (
             <ProfilesPage
               key="profiles"
@@ -1279,6 +1270,11 @@ const App: React.FC = () => {
             <InstancesPage
               key="instances"
               onInstanceDeleted={handleInstanceDeleted}
+              onOpenModBrowser={(branch, version) => {
+                setModBrowserInstance({ branch, version });
+                setShowModBrowser(true);
+              }}
+              onNavigateToDashboard={() => setCurrentPage('dashboard')}
             />
           )}
 
@@ -1292,9 +1288,8 @@ const App: React.FC = () => {
               onNewsDisabledChange={(disabled) => setNewsDisabled(disabled)}
               onAccentColorChange={(color) => setAccentColor(color)}
               onInstanceDeleted={handleInstanceDeleted}
-              onNavigateToMods={(query) => {
-                setModManagerSearchQuery(query || '');
-                setCurrentPage('mods');
+              onNavigateToMods={() => {
+                setCurrentPage('instances');
               }}
             />
           )}
@@ -1310,6 +1305,22 @@ const App: React.FC = () => {
       />
 
       {/* Modals - only essential overlays */}
+      {/* Browse Mods Modal */}
+      {showModBrowser && modBrowserInstance && (
+        <BrowseModsModal
+          isOpen={showModBrowser}
+          onClose={() => {
+            setShowModBrowser(false);
+            setModBrowserInstance(null);
+          }}
+          currentBranch={modBrowserInstance.branch}
+          currentVersion={modBrowserInstance.version}
+          onModsInstalled={() => {
+            // Refresh will happen automatically when modal closes
+          }}
+        />
+      )}
+      
       <Suspense fallback={<ModalFallback />}>
         {showDelete && (
           <DeleteConfirmationModal

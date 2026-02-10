@@ -1,10 +1,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Home, Newspaper, Package, Users, HardDrive, Settings, Volume2, VolumeX, type LucideIcon } from 'lucide-react';
+import { Home, Newspaper, Users, HardDrive, Settings, Volume2, VolumeX, type LucideIcon } from 'lucide-react';
 import { useAccentColor } from '../../contexts/AccentColorContext';
 import { useTranslation } from 'react-i18next';
 
-export type PageType = 'dashboard' | 'news' | 'mods' | 'profiles' | 'instances' | 'settings';
+export type PageType = 'dashboard' | 'news' | 'profiles' | 'instances' | 'settings';
 
 interface DockItem {
   id: PageType;
@@ -15,7 +15,6 @@ interface DockItem {
 const dockItems: DockItem[] = [
   { id: 'dashboard', icon: Home, labelKey: 'dock.dashboard' },
   { id: 'news', icon: Newspaper, labelKey: 'dock.news' },
-  { id: 'mods', icon: Package, labelKey: 'dock.mods' },
   { id: 'profiles', icon: Users, labelKey: 'dock.profiles' },
   { id: 'instances', icon: HardDrive, labelKey: 'dock.instances' },
   { id: 'settings', icon: Settings, labelKey: 'dock.settings' },

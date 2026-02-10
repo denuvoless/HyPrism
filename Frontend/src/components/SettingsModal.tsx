@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Github, Bug, Check, AlertTriangle, ChevronDown, ExternalLink, Power, FolderOpen, Trash2, Settings, Database, Globe, Code, Image, Loader2, Languages, FlaskConical, RotateCcw, Monitor, Zap, Download, HardDrive, Package, RefreshCw, Pin, Box, Wifi } from 'lucide-react';
+import { X, Github, Bug, Check, AlertTriangle, ChevronDown, ExternalLink, Power, FolderOpen, Trash2, Settings, Database, Globe, Code, Image, Loader2, Languages, FlaskConical, RotateCcw, Monitor, Zap, Download, HardDrive, Package, RefreshCw, Pin, Box, Wifi, Sparkles } from 'lucide-react';
 import { ipc } from '@/lib/ipc';
 import { changeLanguage } from '../i18n';
 
@@ -27,6 +27,8 @@ async function GetCloseAfterLaunch(): Promise<boolean> { return (await ipc.setti
 async function SetCloseAfterLaunch(v: boolean): Promise<void> { await ipc.settings.update({ closeAfterLaunch: v }); }
 async function GetDisableNews(): Promise<boolean> { return (await ipc.settings.get()).disableNews ?? false; }
 async function SetDisableNews(v: boolean): Promise<void> { await ipc.settings.update({ disableNews: v }); }
+async function GetAnimatedGlassEffects(): Promise<boolean> { return (await ipc.settings.get()).animatedGlassEffects ?? true; }
+async function SetAnimatedGlassEffects(v: boolean): Promise<void> { await ipc.settings.update({ animatedGlassEffects: v }); }
 async function GetBackgroundMode(): Promise<string> { return (await ipc.settings.get()).backgroundMode ?? 'image'; }
 async function SetBackgroundMode(v: string): Promise<void> { await ipc.settings.update({ backgroundMode: v }); }
 async function GetCustomInstanceDir(): Promise<string> { return (await ipc.settings.get()).dataDirectory ?? ''; }
@@ -59,6 +61,7 @@ const ImportInstanceFromZip = _stub('ImportInstanceFromZip', true);
 const InstallOptimizationMods = _stub('InstallOptimizationMods', true);
 const GetLastExportPath = _stub('GetLastExportPath', '');
 import { useAccentColor } from '../contexts/AccentColorContext';
+import { useAnimatedGlass } from '../contexts/AnimatedGlassContext';
 import { DiscordIcon } from './icons/DiscordIcon';
 import { Language } from '../constants/enums';
 import { LANGUAGE_CONFIG } from '../constants/languages';
@@ -91,7 +94,7 @@ interface SettingsModalProps {
     onClose: () => void;
     launcherBranch: string;
     onLauncherBranchChange: (branch: string) => void;
-    onShowModManager?: (query?: string) => void;
+    onShowModManager?: () => void;
     rosettaWarning?: { message: string; command: string; tutorialUrl?: string } | null;
     onBackgroundModeChange?: (mode: string) => void;
     onNewsDisabledChange?: (disabled: boolean) => void;
@@ -130,6 +133,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [devModeEnabled, setDevModeEnabled] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [disableNews, setDisableNews] = useState(false);
+    const [animatedGlassEffects, setAnimatedGlassEffects] = useState(true);
     const [showAlphaMods, setShowAlphaModsState] = useState(false);
     const [onlineMode, setOnlineMode] = useState(true);
     const [backgroundMode, setBackgroundModeState] = useState('slideshow');
@@ -138,6 +142,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [isInstallingOptMods, setIsInstallingOptMods] = useState(false);
     const [optModsMessage, setOptModsMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const { accentColor, accentTextColor, setAccentColor: setAccentColorContext } = useAccentColor();
+    const { animatedGlass: animatedGlassContext, setAnimatedGlass: setAnimatedGlassContext } = useAnimatedGlass();
     const [contributors, setContributors] = useState<Contributor[]>([]);
     const [isLoadingContributors, setIsLoadingContributors] = useState(false);
     const languageDropdownRef = useRef<HTMLDivElement>(null);
@@ -183,6 +188,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 const newsDisabled = await GetDisableNews();
                 setDisableNews(newsDisabled);
                 
+                // Sync local state with context
+                setAnimatedGlassEffects(animatedGlassContext);
+                
                 const showAlpha = await GetShowAlphaMods();
                 setShowAlphaModsState(showAlpha);
 
@@ -226,6 +234,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         };
         loadSettings();
     }, []);
+
+    // Sync animated glass effects state with context
+    useEffect(() => {
+        setAnimatedGlassEffects(animatedGlassContext);
+    }, [animatedGlassContext]);
 
     // Load contributors when About tab is active
     useEffect(() => {
@@ -420,7 +433,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             if (dontAskAgain) {
                 localStorage.setItem('suppressTranslationPrompt', 'true');
             }
-            onShowModManager(showTranslationConfirm.searchQuery);
+            onShowModManager();
         }
         setShowTranslationConfirm(null);
     };
@@ -482,6 +495,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onNewsDisabledChange?.(disabled);
         } catch (err) {
             console.error('Failed to set news setting:', err);
+        }
+    };
+
+    const handleAnimatedGlassChange = async (enabled: boolean) => {
+        setAnimatedGlassEffects(enabled);
+        try {
+            await setAnimatedGlassContext(enabled);
+        } catch (err) {
+            console.error('Failed to set animated glass effects:', err);
         }
     };
 
@@ -1051,6 +1073,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             <div 
                                                 className={`w-4 h-4 rounded-full shadow-md transform transition-transform ${disableNews ? 'translate-x-5' : 'translate-x-1'}`}
                                                 style={{ backgroundColor: disableNews ? accentTextColor : 'white' }}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Animated Glass Effects Toggle */}
+                                    <div 
+                                        className="flex items-center justify-between p-3 rounded-xl bg-[#151515] border border-white/10 cursor-pointer hover:border-white/20 transition-colors"
+                                        onClick={() => handleAnimatedGlassChange(!animatedGlassEffects)}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Sparkles size={18} className="text-white/60" />
+                                            <div>
+                                                <span className="text-white text-sm">{t('settings.visualSettings.animatedGlass')}</span>
+                                                <p className="text-xs text-white/40">{t('settings.visualSettings.animatedGlassHint')}</p>
+                                            </div>
+                                        </div>
+                                        <div 
+                                            className="w-10 h-6 rounded-full flex items-center transition-colors"
+                                            style={{ backgroundColor: animatedGlassEffects ? accentColor : 'rgba(255,255,255,0.2)' }}
+                                        >
+                                            <div 
+                                                className={`w-4 h-4 rounded-full shadow-md transform transition-transform ${animatedGlassEffects ? 'translate-x-5' : 'translate-x-1'}`}
+                                                style={{ backgroundColor: animatedGlassEffects ? accentTextColor : 'white' }}
                                             />
                                         </div>
                                     </div>

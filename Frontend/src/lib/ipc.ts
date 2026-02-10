@@ -114,6 +114,7 @@ export interface SettingsSnapshot {
   backgroundMode: string;
   availableBackgrounds: string[];
   accentColor: string;
+  animatedGlassEffects: boolean;
   hasCompletedOnboarding: boolean;
   onlineMode: boolean;
   authDomain: string;
@@ -189,6 +190,17 @@ const _game = {
   onError: (cb: (data: GameError) => void) => on('hyprism:game:error', cb as (d: unknown) => void),
 };
 
+const _instance = {
+  delete: (data?: unknown) => invoke<boolean>('hyprism:instance:delete', data),
+  openFolder: () => send('hyprism:instance:openFolder'),
+  openModsFolder: () => send('hyprism:instance:openModsFolder'),
+  export: (data?: unknown) => invoke<string>('hyprism:instance:export', data),
+  import: (data?: unknown) => invoke<boolean>('hyprism:instance:import', data),
+  saves: (data?: unknown) => invoke<SaveInfo[]>('hyprism:instance:saves', data),
+  openSaveFolder: () => send('hyprism:instance:openSaveFolder'),
+  getIcon: (data?: unknown) => invoke<string | null>('hyprism:instance:getIcon', data),
+};
+
 const _news = {
   get: () => invoke<NewsItem[]>('hyprism:news:get'),
 };
@@ -239,6 +251,7 @@ const _console = {
 export const ipc = {
   config: _config,
   game: _game,
+  instance: _instance,
   news: _news,
   profile: _profile,
   settings: _settings,

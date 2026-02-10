@@ -19,7 +19,7 @@ interface SettingsPageProps {
   onNewsDisabledChange?: (disabled: boolean) => void;
   onAccentColorChange?: (color: string) => void;
   onInstanceDeleted?: () => void;
-  onNavigateToMods?: (query?: string) => void;
+  onNavigateToMods?: () => void;
 }
 
 export const SettingsPage: React.FC<SettingsPageProps> = (props) => {

@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AccentColorProvider } from './contexts/AccentColorContext';
+import { AnimatedGlassProvider } from './contexts/AnimatedGlassContext';
 import { initI18n } from './i18n';
 import './index.css';
 
@@ -42,7 +43,9 @@ initI18n().catch((err) => {
     <React.StrictMode>
       <ErrorBoundary>
         <AccentColorProvider>
-          <App />
+          <AnimatedGlassProvider>
+            <App />
+          </AnimatedGlassProvider>
         </AccentColorProvider>
       </ErrorBoundary>
     </React.StrictMode>

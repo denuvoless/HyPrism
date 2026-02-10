@@ -262,3 +262,13 @@ button:focus-visible {
   box-shadow: 0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06);
   animation: glass-panel-enter 0.4s cubic-bezier(0.33, 1, 0.68, 1) 0.32s both;
 }
+
+/* Glass panel without animation delay - for tab content */
+.glass-panel-static {
+  border-radius: 1rem;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 100%);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06);
+}

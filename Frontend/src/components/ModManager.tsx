@@ -32,6 +32,7 @@ const InstallModFromBase64 = _stub('InstallModFromBase64', false);
 const GetShowAlphaMods = _stub('GetShowAlphaMods', false);
 import { GameBranch } from '@/constants/enums';
 import { useAccentColor } from '../contexts/AccentColorContext';
+import { useAnimatedGlass } from '../contexts/AnimatedGlassContext';
 
 // Types
 interface Mod {
@@ -168,6 +169,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
 }) => {
   const { t } = useTranslation();
   const { accentColor, accentTextColor } = useAccentColor();
+  const { animatedGlass } = useAnimatedGlass();
   // Tab state
   const [activeTab, setActiveTab] = useState<'installed' | 'browse'>(initialSearchQuery ? 'browse' : 'installed');
 
@@ -1267,7 +1269,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
             <>
               {/* Portal action buttons to page header in pageMode */}
               {isPageMode && headerActionsRef?.current && createPortal(
-                <div className="flex items-center gap-0.5 px-1.5 py-1 glass-panel">{actionButtons}</div>,
+                <div className={`flex items-center gap-0.5 px-1.5 py-1 ${animatedGlass ? 'glass-panel' : 'glass-panel-static'}`}>{actionButtons}</div>,
                 headerActionsRef.current
               )}
 
