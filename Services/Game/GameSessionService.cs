@@ -25,6 +25,7 @@ public class GameSessionService : IGameSessionService
     private readonly IGameLauncher _gameLauncher;
     private readonly HttpClient _httpClient;
     private readonly string _appDir;
+    private readonly MirrorService _mirrorService;
     
     private volatile bool _cancelRequested;
     private CancellationTokenSource? _downloadCts;
@@ -44,6 +45,7 @@ public class GameSessionService : IGameSessionService
     /// <param name="gameLauncher">Launcher for the game process.</param>
     /// <param name="httpClient">HTTP client for network requests.</param>
     /// <param name="appPath">Application path configuration.</param>
+    /// <param name="mirrorService">Fallback mirror service for when official servers are down.</param>
     public GameSessionService(
         IConfigService configService,
         IInstanceService instanceService,
@@ -55,7 +57,8 @@ public class GameSessionService : IGameSessionService
         IPatchManager patchManager,
         IGameLauncher gameLauncher,
         HttpClient httpClient,
-        AppPathConfiguration appPath)
+        AppPathConfiguration appPath,
+        MirrorService mirrorService)
     {
         _configService = configService;
         _instanceService = instanceService;
@@ -68,6 +71,7 @@ public class GameSessionService : IGameSessionService
         _gameLauncher = gameLauncher;
         _httpClient = httpClient;
         _appDir = appPath.AppDir;
+        _mirrorService = mirrorService;
     }
 
     private Config _config => _configService.Configuration;
@@ -286,34 +290,60 @@ public class GameSessionService : IGameSessionService
 
         ct.ThrowIfCancellationRequested();
 
+        bool officialDown = _versionService.IsOfficialServerDown(branch);
         string osName = UtilityService.GetOS();
         string arch = UtilityService.GetArch();
         string apiVersionType = UtilityService.NormalizeVersionType(branch);
-        string downloadUrl = $"https://game-patches.hytale.com/patches/{osName}/{arch}/{apiVersionType}/0/{targetVersion}.pwr";
-        string pwrPath = Path.Combine(_appDir, "Cache", $"{branch}_{(isLatestInstance ? "latest" : "version")}_{targetVersion}.pwr");
 
-        Directory.CreateDirectory(Path.GetDirectoryName(pwrPath)!);
-
-        await DownloadPwrWithCachingAsync(downloadUrl, pwrPath, ct);
-
-        // Extract PWR
-        _progressService.ReportDownloadProgress("install", 65, "launch.detail.installing_butler_pwr", null, 0, 0);
-
-        try
+        // Mirror + pre-release: diff-based branch requires applying the entire patch chain
+        // from version 0 (empty) up to the target version sequentially.
+        if (officialDown && _mirrorService.IsDiffBasedBranch(apiVersionType))
         {
-            await _butlerService.ApplyPwrAsync(pwrPath, versionPath, (progress, message) =>
+            Logger.Info("Download", $"Mirror pre-release: installing via diff chain v0 -> v{targetVersion}");
+            _progressService.ReportDownloadProgress("download", 5, "launch.detail.downloading_mirror", null, 0, 0);
+
+            try
             {
-                int mappedProgress = 65 + (int)(progress * 0.20);
-                _progressService.ReportDownloadProgress("install", mappedProgress, message, null, 0, 0);
-            }, ct);
-
-            ct.ThrowIfCancellationRequested();
+                await _patchManager.ApplyDifferentialUpdateAsync(versionPath, branch, 0, targetVersion, ct);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Logger.Error("Download", $"Mirror diff chain install failed: {ex.Message}");
+                return new DownloadProgress { Error = $"Failed to install game from mirror: {ex.Message}" };
+            }
         }
-        catch (OperationCanceledException) { throw; }
-        catch (Exception ex)
+        else
         {
-            Logger.Error("Download", $"PWR extraction failed: {ex.Message}");
-            return new DownloadProgress { Error = $"Failed to install game: {ex.Message}" };
+            // Official server or mirror release: download a single full PWR and apply.
+            // On the official server, each version's PWR is self-contained.
+            // On the mirror, release files are also full standalone copies.
+            string downloadUrl = $"https://game-patches.hytale.com/patches/{osName}/{arch}/{apiVersionType}/0/{targetVersion}.pwr";
+            string pwrPath = Path.Combine(_appDir, "Cache", $"{branch}_{(isLatestInstance ? "latest" : "version")}_{targetVersion}.pwr");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(pwrPath)!);
+
+            await DownloadPwrWithCachingAsync(downloadUrl, pwrPath, osName, arch, apiVersionType, targetVersion, officialDown, ct);
+
+            // Extract PWR with Butler
+            _progressService.ReportDownloadProgress("install", 65, "launch.detail.installing_butler_pwr", null, 0, 0);
+
+            try
+            {
+                await _butlerService.ApplyPwrAsync(pwrPath, versionPath, (progress, message) =>
+                {
+                    int mappedProgress = 65 + (int)(progress * 0.20);
+                    _progressService.ReportDownloadProgress("install", mappedProgress, message, null, 0, 0);
+                }, ct);
+
+                ct.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Logger.Error("Download", $"PWR extraction failed: {ex.Message}");
+                return new DownloadProgress { Error = $"Failed to install game: {ex.Message}" };
+            }
         }
 
         if (isLatestInstance)
@@ -339,9 +369,11 @@ public class GameSessionService : IGameSessionService
             await _gameLauncher.LaunchGameAsync(versionPath, branch, ct);
 
             // Cleanup cache after successful launch
-            if (File.Exists(pwrPath))
+            var cacheDir = Path.Combine(_appDir, "Cache");
+            if (Directory.Exists(cacheDir))
             {
-                try { File.Delete(pwrPath); } catch { /* Cleanup failure is non-fatal */ }
+                foreach (var file in Directory.GetFiles(cacheDir, $"{branch}_*.pwr"))
+                    try { File.Delete(file); } catch { }
             }
 
             return new DownloadProgress { Success = true, Progress = 100 };
@@ -354,13 +386,20 @@ public class GameSessionService : IGameSessionService
         }
     }
 
-    private async Task DownloadPwrWithCachingAsync(string downloadUrl, string pwrPath, CancellationToken ct)
+    private async Task DownloadPwrWithCachingAsync(
+        string downloadUrl, string pwrPath,
+        string os, string arch, string branch, int version,
+        bool officialDown, CancellationToken ct)
     {
         bool needDownload = true;
         long remoteSize = -1;
 
-        try { remoteSize = await _downloadService.GetFileSizeAsync(downloadUrl, ct); }
-        catch { /* Proceed to download anyway */ }
+        // Only check remote size from official if it's not known to be down
+        if (!officialDown)
+        {
+            try { remoteSize = await _downloadService.GetFileSizeAsync(downloadUrl, ct); }
+            catch { /* Proceed to download anyway */ }
+        }
 
         if (File.Exists(pwrPath))
         {
@@ -387,14 +426,66 @@ public class GameSessionService : IGameSessionService
 
         if (needDownload)
         {
-            Logger.Info("Download", $"Downloading: {downloadUrl}");
             string partPath = pwrPath + ".part";
+            bool downloaded = false;
 
-            await _downloadService.DownloadFileAsync(downloadUrl, partPath, (progress, downloaded, total) =>
+            // Try official URL first (skip if server is known to be down)
+            if (!officialDown)
             {
-                int mappedProgress = 5 + (int)(progress * 0.60);
-                _progressService.ReportDownloadProgress("download", mappedProgress, "launch.detail.downloading_generic", [progress], downloaded, total);
-            }, ct);
+                try
+                {
+                    Logger.Info("Download", $"Downloading from official: {downloadUrl}");
+                    await _downloadService.DownloadFileAsync(downloadUrl, partPath, (progress, downloaded, total) =>
+                    {
+                        int mappedProgress = 5 + (int)(progress * 0.60);
+                        _progressService.ReportDownloadProgress("download", mappedProgress, "launch.detail.downloading_generic", [progress], downloaded, total);
+                    }, ct);
+                    downloaded = true;
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    Logger.Warning("Download", $"Official download failed: {ex.Message}");
+                    // Clean up partial file before mirror attempt
+                    if (File.Exists(partPath)) try { File.Delete(partPath); } catch { }
+                }
+            }
+            else
+            {
+                Logger.Info("Download", "Official server is down, skipping to mirror...");
+            }
+
+            // Fallback to mirror (or primary if official is known down)
+            if (!downloaded)
+            {
+                var mirrorUrl = await _mirrorService.GetMirrorUrlAsync(os, arch, branch, version, ct);
+                if (mirrorUrl != null)
+                {
+                    try
+                    {
+                        Logger.Info("Download", $"Retrying from mirror: {mirrorUrl}");
+                        _progressService.ReportDownloadProgress("download", 5, "launch.detail.downloading_mirror", null, 0, 0);
+
+                        await _downloadService.DownloadFileAsync(mirrorUrl, partPath, (progress, dl, total) =>
+                        {
+                            int mappedProgress = 5 + (int)(progress * 0.60);
+                            _progressService.ReportDownloadProgress("download", mappedProgress, "launch.detail.downloading_mirror", [progress], dl, total);
+                        }, ct);
+                        downloaded = true;
+                        Logger.Success("Download", "Downloaded from mirror successfully");
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception mirrorEx)
+                    {
+                        Logger.Error("Download", $"Mirror download also failed: {mirrorEx.Message}");
+                    }
+                }
+            }
+
+            if (!downloaded)
+            {
+                throw new Exception("Download failed from both official server and mirror. Please try again later.");
+            }
 
             if (File.Exists(partPath))
                 File.Move(partPath, pwrPath, true);

@@ -433,7 +433,8 @@
       "downloading_generic": "Downloading Hytale... {0}%",
       "installing_butler_pwr": "Installing game with Butler...",
       "using_cached_installer": "Using cached installer...",
-      "download_complete": "Download complete!"
+      "download_complete": "Download complete!",
+      "downloading_mirror": "Downloading from mirror... {0}%"
     }
   },
   "profileEditor": {

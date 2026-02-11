@@ -433,7 +433,8 @@
       "downloading_generic": "Загрузка Hytale... {0}%",
       "installing_butler_pwr": "Установка игры через Butler...",
       "using_cached_installer": "Использование кешированного установщика...",
-      "download_complete": "Загрузка завершена!"
+      "download_complete": "Загрузка завершена!",
+      "downloading_mirror": "Загрузка с зеркала... {0}%"
     }
   },
   "profileEditor": {

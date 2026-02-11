@@ -60,4 +60,12 @@ public interface IVersionService
     /// <param name="toVersion">The target version number.</param>
     /// <returns>A list of version numbers representing the patch sequence.</returns>
     List<int> GetPatchSequence(int fromVersion, int toVersion);
+
+    /// <summary>
+    /// Checks whether versions for a branch were sourced from the mirror
+    /// (indicating the official server is down).
+    /// </summary>
+    /// <param name="branch">The game branch.</param>
+    /// <returns><c>true</c> if versions came from mirror; otherwise, <c>false</c>.</returns>
+    bool IsOfficialServerDown(string branch);
 }

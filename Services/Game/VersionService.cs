@@ -18,6 +18,14 @@ public class VersionService : IVersionService
     private readonly string _appDir;
     private readonly HttpClient _httpClient;
     private readonly IConfigService _configService;
+    private readonly MirrorService _mirrorService;
+    private readonly HashSet<string> _mirrorSourcedBranches = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Temporarily holds mirror URLs fetched during GetVersionListAsync,
+    /// to be persisted in the next SaveVersionsCacheSnapshot call.
+    /// </summary>
+    private readonly Dictionary<string, Dictionary<string, string>> _pendingMirrorUrls = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _versionFetchLock = new(1, 1);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="VersionService"/> class.
@@ -25,11 +33,13 @@ public class VersionService : IVersionService
     /// <param name="appDir">The application data directory for storing cache files.</param>
     /// <param name="httpClient">The HTTP client for API requests.</param>
     /// <param name="configService">The configuration service for accessing settings.</param>
-    public VersionService(string appDir, HttpClient httpClient, IConfigService configService)
+    /// <param name="mirrorService">Fallback mirror service for version discovery when official servers are down.</param>
+    public VersionService(string appDir, HttpClient httpClient, IConfigService configService, MirrorService mirrorService)
     {
         _appDir = appDir;
         _httpClient = httpClient;
         _configService = configService;
+        _mirrorService = mirrorService;
     }
 
     /// <inheritdoc/>
@@ -40,16 +50,40 @@ public class VersionService : IVersionService
     public async Task<List<int>> GetVersionListAsync(string branch, CancellationToken ct = default)
     {
         var normalizedBranch = NormalizeBranch(branch);
-        var result = new List<int>();
         string osName = UtilityService.GetOS();
         string arch = UtilityService.GetArch();
 
+        // Fast path: return from cache without locking
         var freshCache = TryLoadFreshVersionsCache(normalizedBranch, osName, arch, TimeSpan.FromMinutes(15));
         if (freshCache != null)
         {
             Logger.Info("Version", $"Using cached versions for {branch}");
             return freshCache;
         }
+
+        // Serialize network fetches so parallel callers don't duplicate work
+        await _versionFetchLock.WaitAsync(ct);
+        try
+        {
+            // Re-check cache: another caller may have populated it while we waited
+            freshCache = TryLoadFreshVersionsCache(normalizedBranch, osName, arch, TimeSpan.FromMinutes(15));
+            if (freshCache != null)
+            {
+                Logger.Info("Version", $"Using cached versions for {branch}");
+                return freshCache;
+            }
+
+            return await FetchVersionListCoreAsync(normalizedBranch, osName, arch, ct);
+        }
+        finally
+        {
+            _versionFetchLock.Release();
+        }
+    }
+
+    private async Task<List<int>> FetchVersionListCoreAsync(string normalizedBranch, string osName, string arch, CancellationToken ct)
+    {
+        var result = new List<int>();
 
         const int batchSize = 20;
         const int maxConsecutiveFailures = 20;
@@ -96,9 +130,35 @@ public class VersionService : IVersionService
 
         result.Sort((a, b) => b.CompareTo(a)); // Sort descending (latest first)
 
+        // If official server returned nothing, fall back to mirror
+        if (result.Count == 0)
+        {
+            Logger.Warning("Version", $"Official server returned no versions for {normalizedBranch}, trying mirror...");
+            try
+            {
+                var mirrorVersions = await _mirrorService.GetAvailableVersionsAsync(osName, arch, normalizedBranch, ct);
+                if (mirrorVersions.Count > 0)
+                {
+                    result = mirrorVersions;
+                    _mirrorSourcedBranches.Add(normalizedBranch);
+
+                    // Also fetch and cache the mirror URLs so we can use them from disk later
+                    var mirrorUrls = await _mirrorService.GetAllPlatformUrlsAsync(osName, arch, normalizedBranch, ct);
+                    if (mirrorUrls.Count > 0)
+                        _pendingMirrorUrls[normalizedBranch] = mirrorUrls;
+
+                    Logger.Success("Version", $"Mirror provided {result.Count} versions for {normalizedBranch}: [{string.Join(", ", result)}]");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("Version", $"Mirror fallback also failed: {ex.Message}");
+            }
+        }
+
         SaveVersionsCacheSnapshot(normalizedBranch, osName, arch, result);
         
-        Logger.Info("Version", $"Found {result.Count} versions for {branch}: [{string.Join(", ", result)}]");
+        Logger.Info("Version", $"Found {result.Count} versions for {normalizedBranch}: [{string.Join(", ", result)}]");
         return result;
     }
 
@@ -281,6 +341,13 @@ public class VersionService : IVersionService
         return patches;
     }
 
+    /// <inheritdoc/>
+    public bool IsOfficialServerDown(string branch)
+    {
+        var normalizedBranch = NormalizeBranch(branch);
+        return _mirrorSourcedBranches.Contains(normalizedBranch);
+    }
+
     // Utility methods
     private string NormalizeBranch(string branch)
     {
@@ -302,6 +369,12 @@ public class VersionService : IVersionService
         public string Os { get; set; } = "";
         public string Arch { get; set; } = "";
         public Dictionary<string, List<int>> Versions { get; set; } = new();
+        public List<string> MirrorSourcedBranches { get; set; } = new();
+        /// <summary>
+        /// Cached mirror file URLs per branch: branch → (filename → download URL).
+        /// Only populated for mirror-sourced branches.
+        /// </summary>
+        public Dictionary<string, Dictionary<string, string>> MirrorUrls { get; set; } = new();
     }
 
     private string GetVersionsCacheSnapshotPath()
@@ -315,6 +388,8 @@ public class VersionService : IVersionService
             if (!File.Exists(path)) return null;
 
             var json = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(json)) return null;
+
             var snapshot = JsonSerializer.Deserialize<VersionsCacheSnapshot>(json);
             if (snapshot == null) return null;
 
@@ -326,6 +401,15 @@ public class VersionService : IVersionService
 
             if (snapshot.Versions.TryGetValue(branch, out var versions) && versions.Count > 0)
             {
+                // Restore mirror-sourced flag from cache
+                if (snapshot.MirrorSourcedBranches?.Contains(branch) == true)
+                {
+                    _mirrorSourcedBranches.Add(branch);
+
+                    // Inject cached mirror URLs into MirrorService for offline lookups
+                    if (snapshot.MirrorUrls?.TryGetValue(branch, out var urls) == true && urls.Count > 0)
+                        _mirrorService.SetCachedUrls(branch, urls);
+                }
                 return new List<int>(versions);
             }
         }
@@ -351,8 +435,17 @@ public class VersionService : IVersionService
             VersionsCacheSnapshot snapshot;
             if (File.Exists(path))
             {
-                var existingJson = File.ReadAllText(path);
-                snapshot = JsonSerializer.Deserialize<VersionsCacheSnapshot>(existingJson) ?? new VersionsCacheSnapshot();
+                try
+                {
+                    var existingJson = File.ReadAllText(path);
+                    snapshot = (!string.IsNullOrWhiteSpace(existingJson)
+                        ? JsonSerializer.Deserialize<VersionsCacheSnapshot>(existingJson)
+                        : null) ?? new VersionsCacheSnapshot();
+                }
+                catch
+                {
+                    snapshot = new VersionsCacheSnapshot();
+                }
             }
             else
             {
@@ -362,7 +455,17 @@ public class VersionService : IVersionService
             snapshot.FetchedAtUtc = DateTime.UtcNow;
             snapshot.Os = osName;
             snapshot.Arch = arch;
-            snapshot.Versions[branch] = new List<int>(versions);
+            snapshot.Versions[branch] = [.. versions];
+            snapshot.MirrorSourcedBranches = [.. _mirrorSourcedBranches];
+
+            // Persist mirror URLs for branches that were sourced from mirror
+            if (_pendingMirrorUrls.TryGetValue(branch, out var pendingUrls))
+            {
+                snapshot.MirrorUrls[branch] = pendingUrls;
+                _pendingMirrorUrls.Remove(branch);
+            }
+            // Keep existing mirror URLs for other branches
+            // (they're already in snapshot if loaded from existing file)
 
             var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(path, json);

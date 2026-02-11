@@ -58,6 +58,11 @@ public static class Bootstrapper
             services.AddSingleton<DownloadService>();
             services.AddSingleton<IDownloadService>(sp => sp.GetRequiredService<DownloadService>());
 
+            services.AddSingleton(sp =>
+                new MirrorService(
+                    sp.GetRequiredService<HttpClient>(),
+                    sp.GetRequiredService<AppPathConfiguration>().AppDir));
+
             services.AddSingleton<GitHubService>(sp =>
                 new GitHubService(sp.GetRequiredService<HttpClient>()));
             services.AddSingleton<IGitHubService>(sp => sp.GetRequiredService<GitHubService>());
@@ -66,7 +71,8 @@ public static class Bootstrapper
                 new VersionService(
                     sp.GetRequiredService<AppPathConfiguration>().AppDir,
                     sp.GetRequiredService<HttpClient>(),
-                    sp.GetRequiredService<IConfigService>()));
+                    sp.GetRequiredService<IConfigService>(),
+                    sp.GetRequiredService<MirrorService>()));
             services.AddSingleton<IVersionService>(sp => sp.GetRequiredService<VersionService>());
 
             #endregion
@@ -130,7 +136,8 @@ public static class Bootstrapper
                     sp.GetRequiredService<IInstanceService>(),
                     sp.GetRequiredService<IProgressNotificationService>(),
                     sp.GetRequiredService<HttpClient>(),
-                    sp.GetRequiredService<AppPathConfiguration>()));
+                    sp.GetRequiredService<AppPathConfiguration>(),
+                    sp.GetRequiredService<MirrorService>()));
             services.AddSingleton<IPatchManager>(sp => sp.GetRequiredService<PatchManager>());
 
             services.AddSingleton(sp =>
@@ -160,7 +167,8 @@ public static class Bootstrapper
                     sp.GetRequiredService<IPatchManager>(),
                     sp.GetRequiredService<IGameLauncher>(),
                     sp.GetRequiredService<HttpClient>(),
-                    sp.GetRequiredService<AppPathConfiguration>()));
+                    sp.GetRequiredService<AppPathConfiguration>(),
+                    sp.GetRequiredService<MirrorService>()));
             services.AddSingleton<IGameSessionService>(sp => sp.GetRequiredService<GameSessionService>());
 
             #endregion
