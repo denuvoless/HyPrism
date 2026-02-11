@@ -13,7 +13,6 @@ import { NewsPage } from './pages/NewsPage';
 import { ProfilesPage } from './pages/ProfilesPage';
 import { InstancesPage } from './pages/InstancesPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { BrowseModsModal } from './components/BrowseModsModal';
 // Controller detection removed - not using floating indicator
 
 // Lazy load heavy modals for better initial load performance
@@ -61,7 +60,6 @@ async function GetLauncherVersion(): Promise<string> { return (await ipc.setting
 // Profile-backed getters
 async function GetNick(): Promise<string> { return (await ipc.profile.get()).nick ?? 'HyPrism'; }
 async function GetUUID(): Promise<string> { return (await ipc.profile.get()).uuid ?? ''; }
-async function SetNick(_name: string): Promise<void> { console.warn('[IPC] SetNick: no dedicated channel yet'); }
 
 // Game actions - map to ipc.game where possible, stub rest
 function DownloadAndLaunch(_username?: string): void { ipc.game.launch(); }
@@ -230,7 +228,6 @@ const App: React.FC = () => {
   // User state
   const [username, setUsername] = useState<string>("HyPrism");
   const [uuid, setUuid] = useState<string>("");
-  const [isEditing, setIsEditing] = useState<boolean>(false);
   const [launcherVersion, setLauncherVersion] = useState<string>("dev");
 
   // Download state
@@ -252,8 +249,7 @@ const App: React.FC = () => {
 
   // Modal state
   const [showDelete, setShowDelete] = useState<boolean>(false);
-  const [showModBrowser, setShowModBrowser] = useState<boolean>(false);
-  const [modBrowserInstance, setModBrowserInstance] = useState<{ branch: string; version: number } | null>(null);
+
   const [error, setError] = useState<any>(null);
   const [launchTimeoutError, setLaunchTimeoutError] = useState<{ message: string; logs: string[] } | null>(null);
   const [avatarRefreshTrigger, setAvatarRefreshTrigger] = useState<number>(0);
@@ -281,6 +277,11 @@ const App: React.FC = () => {
   const [isCheckingInstalled, setIsCheckingInstalled] = useState<boolean>(false);
   const [customInstanceDir, setCustomInstanceDir] = useState<string>("");
   const [versionStatus, setVersionStatus] = useState<VersionStatus | null>(null);
+
+  // Official server blocked state: true when using official servers with an unofficial profile in online mode
+  const [isOfficialProfile, setIsOfficialProfile] = useState<boolean>(false);
+  const [isOfficialServerMode, setIsOfficialServerMode] = useState<boolean>(false);
+  const officialServerBlocked = isOfficialServerMode && !isOfficialProfile;
 
   // Background, news, and accent color settings
   const [backgroundMode, setBackgroundMode] = useState<string>('slideshow');
@@ -509,6 +510,28 @@ const App: React.FC = () => {
     if (uuid) setUuid(uuid);
     // Trigger avatar refresh
     setAvatarRefreshTrigger(prev => prev + 1);
+    // Update official profile status
+    await refreshOfficialStatus();
+  };
+
+  // Refresh official server/profile status for play-button blocking
+  const refreshOfficialStatus = async () => {
+    try {
+      const settings = await ipc.settings.get();
+      const domain = settings.authDomain?.trim() ?? '';
+      const isOfficial = domain === 'sessionserver.mojang.com' || domain === 'official'
+        || domain.includes('hytale.com');
+      setIsOfficialServerMode(isOfficial && settings.onlineMode);
+
+      // Check if active profile is official
+      const profiles = await ipc.profile.list();
+      const profile = await ipc.profile.get();
+      const activeUuid = profile.uuid;
+      const activeProfile = (profiles as any[])?.find((p: any) => p.uuid === activeUuid || p.UUID === activeUuid);
+      setIsOfficialProfile(activeProfile?.isOfficial === true || activeProfile?.IsOfficial === true);
+    } catch (e) {
+      console.error('Failed to refresh official status:', e);
+    }
   };
 
   // Check if onboarding has been completed
@@ -551,6 +574,9 @@ const App: React.FC = () => {
     GetUUID().then((u: string) => u && setUuid(u));
     GetLauncherVersion().then((v: string) => setLauncherVersion(v));
     GetCustomInstanceDir().then((dir: string) => dir && setCustomInstanceDir(dir));
+
+    // Compute official server/profile status for play-button blocking
+    refreshOfficialStatus();
 
     // Check if game is already running on startup
     IsGameRunning().then((running: boolean) => {
@@ -997,11 +1023,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleNickChange = async (newNick: string) => {
-    setUsername(newNick);
-    await SetNick(newNick);
-  };
-
 
   const handleExit = async () => {
     try {
@@ -1230,12 +1251,9 @@ const App: React.FC = () => {
               key="dashboard"
               username={username}
               uuid={uuid}
-              isEditing={isEditing}
               launcherVersion={launcherVersion}
               updateAvailable={!!updateAsset}
               avatarRefreshTrigger={avatarRefreshTrigger}
-              onEditToggle={setIsEditing}
-              onUserChange={handleNickChange}
               onOpenProfileEditor={() => setCurrentPage('profiles')}
               onLauncherUpdate={handleUpdate}
               isDownloading={isDownloading}
@@ -1263,8 +1281,7 @@ const App: React.FC = () => {
               onDuplicate={handleGameDuplicate}
               onExit={handleExit}
               onCancelDownload={handleCancelDownload}
-              getNews={getCombinedNews}
-              newsDisabled={newsDisabled}
+              officialServerBlocked={officialServerBlocked}
             />
           )}
 
@@ -1287,10 +1304,6 @@ const App: React.FC = () => {
             <InstancesPage
               key="instances"
               onInstanceDeleted={handleInstanceDeleted}
-              onOpenModBrowser={(branch, version) => {
-                setModBrowserInstance({ branch, version });
-                setShowModBrowser(true);
-              }}
               isGameRunning={isGameRunning}
               runningBranch={runningBranch}
               runningVersion={runningVersion}
@@ -1308,6 +1321,7 @@ const App: React.FC = () => {
               onNewsDisabledChange={(disabled) => setNewsDisabled(disabled)}
               onAccentColorChange={(color) => setAccentColor(color)}
               onInstanceDeleted={handleInstanceDeleted}
+              onAuthSettingsChange={refreshOfficialStatus}
               onNavigateToMods={() => {
                 setCurrentPage('instances');
               }}
@@ -1325,21 +1339,6 @@ const App: React.FC = () => {
       />
 
       {/* Modals - only essential overlays */}
-      {/* Browse Mods Modal */}
-      {showModBrowser && modBrowserInstance && (
-        <BrowseModsModal
-          isOpen={showModBrowser}
-          onClose={() => {
-            setShowModBrowser(false);
-            setModBrowserInstance(null);
-          }}
-          currentBranch={modBrowserInstance.branch}
-          currentVersion={modBrowserInstance.version}
-          onModsInstalled={() => {
-            // Refresh will happen automatically when modal closes
-          }}
-        />
-      )}
       
       <Suspense fallback={<ModalFallback />}>
         {showDelete && (

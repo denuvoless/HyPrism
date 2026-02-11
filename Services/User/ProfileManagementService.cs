@@ -270,13 +270,31 @@ public class ProfileManagementService : IProfileManagementService
     public Profile? SaveCurrentAsProfile()
     {
         var config = _configService.Configuration;
-        var uuid = _userIdentityService.GetCurrentUuid();
+        // Use Config.UUID directly instead of GetUuidForUser(Config.Nick).
+        // GetUuidForUser generates a NEW UUID when the nick changes (since the new nick
+        // has no mapping yet), which causes a new profile to be created instead of updating
+        // the existing one.
+        var uuid = config.UUID;
         var name = config.Nick;
         
         if (string.IsNullOrWhiteSpace(uuid) || string.IsNullOrWhiteSpace(name))
         {
             return null;
         }
+        
+        // Ensure the UserUuids mapping is up-to-date for the current nick
+        config.UserUuids ??= new Dictionary<string, string>();
+        // Remove any stale mapping pointing to this UUID (old nick)
+        var staleKey = config.UserUuids.FirstOrDefault(kvp => 
+            kvp.Value.Equals(uuid, StringComparison.OrdinalIgnoreCase) && 
+            !kvp.Key.Equals(name, StringComparison.OrdinalIgnoreCase)).Key;
+        if (staleKey != null)
+        {
+            config.UserUuids.Remove(staleKey);
+            Logger.Info("Profile", $"Removed stale UUID mapping for old nick '{staleKey}'");
+        }
+        // Set mapping for current nick → current UUID
+        config.UserUuids[name] = uuid;
         
         // Check if a profile with this UUID already exists
         var existing = config.Profiles?.FirstOrDefault(p => p.UUID == uuid);

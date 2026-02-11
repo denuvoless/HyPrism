@@ -96,6 +96,7 @@ interface SettingsModalProps {
     onNewsDisabledChange?: (disabled: boolean) => void;
     onAccentColorChange?: (color: string) => void;
     onInstanceDeleted?: () => void;
+    onAuthSettingsChange?: () => void;
     pageMode?: boolean;
 }
 
@@ -114,6 +115,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onNewsDisabledChange,
     onAccentColorChange,
     onInstanceDeleted,
+    onAuthSettingsChange,
     pageMode: isPageMode = false
 }) => {
     const { i18n, t } = useTranslation();
@@ -1018,6 +1020,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 const newValue = !onlineMode;
                                                 setOnlineMode(newValue);
                                                 await ipc.settings.update({ onlineMode: newValue });
+                                                onAuthSettingsChange?.();
                                             }}
                                         >
                                             <div className="flex items-center gap-3">
@@ -1060,6 +1063,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                         setAuthModeState('default');
                                                         setAuthDomain('sessions.sanasol.ws');
                                                         await ipc.settings.update({ authDomain: 'sessions.sanasol.ws' });
+                                                        onAuthSettingsChange?.();
                                                     }}
                                                 >
                                                     <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: authMode === 'default' ? `${accentColor}25` : 'rgba(255,255,255,0.06)' }}>
@@ -1086,6 +1090,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                         setAuthModeState('official');
                                                         setAuthDomain('sessionserver.mojang.com');
                                                         await ipc.settings.update({ authDomain: 'sessionserver.mojang.com' });
+                                                        onAuthSettingsChange?.();
                                                     }}
                                                 >
                                                     <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: authMode === 'official' ? `${accentColor}25` : 'rgba(255,255,255,0.06)' }}>
@@ -1141,6 +1146,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                         if (e.key === 'Enter' && customAuthDomain.trim()) {
                                                                             setAuthDomain(customAuthDomain.trim());
                                                                             await ipc.settings.update({ authDomain: customAuthDomain.trim() });
+                                                                            onAuthSettingsChange?.();
                                                                         }
                                                                     }}
                                                                     placeholder="auth.example.com"
@@ -1151,6 +1157,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                         if (customAuthDomain.trim()) {
                                                                             setAuthDomain(customAuthDomain.trim());
                                                                             await ipc.settings.update({ authDomain: customAuthDomain.trim() });
+                                                                            onAuthSettingsChange?.();
                                                                         }
                                                                     }}
                                                                     disabled={!customAuthDomain.trim()}

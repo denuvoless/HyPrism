@@ -14,6 +14,7 @@ import { ipc, InstalledInstance, invoke, send, SaveInfo } from '@/lib/ipc';
 import { formatBytes } from '../utils/format';
 import { GameBranch } from '@/constants/enums';
 import { CreateInstanceModal } from '../components/modals/CreateInstanceModal';
+import { InlineModBrowser } from '../components/InlineModBrowser';
 
 // IPC calls for instance operations - uses invoke to send to backend
 const ExportInstance = async (branch: string, version: number): Promise<string> => {
@@ -122,6 +123,7 @@ interface ModInfo {
   categories?: string[];
   curseForgeId?: number;
   fileId?: number;
+  releaseType?: number;
   latestVersion?: string;
   latestFileId?: number;
 }
@@ -162,11 +164,10 @@ const pageVariants = {
 };
 
 // Instance detail tabs
-type InstanceTab = 'content' | 'worlds' | 'logs';
+type InstanceTab = 'content' | 'worlds' | 'logs' | 'browse';
 
 interface InstancesPageProps {
   onInstanceDeleted?: () => void;
-  onOpenModBrowser?: (branch: string, version: number) => void;
   isGameRunning?: boolean;
   runningBranch?: string;
   runningVersion?: number;
@@ -175,7 +176,6 @@ interface InstancesPageProps {
 
 export const InstancesPage: React.FC<InstancesPageProps> = ({ 
   onInstanceDeleted, 
-  onOpenModBrowser, 
   isGameRunning = false,
   runningBranch,
   runningVersion,
@@ -585,7 +585,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
       animate="animate"
       exit="exit"
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="h-full flex px-4 pt-14 pb-28 gap-4"
+      className="h-full flex px-4 pt-6 pb-28 gap-4"
     >
       {/* Left Sidebar - Instances List (macOS Tahoe style) */}
       <div className="w-72 flex-shrink-0 flex flex-col">
@@ -732,7 +732,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                 
                 {/* Tabs */}
                 <div className="flex items-center gap-1 px-2 py-1 bg-black/20 rounded-xl border border-white/[0.06]">
-                  {(['content', 'worlds', 'logs'] as InstanceTab[]).map((tab) => (
+                  {(['content', 'browse', 'worlds', 'logs'] as InstanceTab[]).map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
@@ -774,7 +774,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
 
                 {/* Install Content Button */}
                 <button
-                  onClick={() => onOpenModBrowser?.(selectedInstance.branch, selectedInstance.version)}
+                  onClick={() => setActiveTab('browse')}
                   className="px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-all bg-white/10 hover:bg-white/20 text-white"
                 >
                   <Plus size={14} />
@@ -934,7 +934,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                         <p className="text-lg font-medium text-white/60">{t('modManager.noModsInstalled')}</p>
                         <p className="text-sm mt-1">{t('modManager.clickInstallContent')}</p>
                         <button
-                          onClick={() => onOpenModBrowser?.(selectedInstance.branch, selectedInstance.version)}
+                          onClick={() => setActiveTab('browse')}
                           className="mt-4 px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 shadow-lg"
                           style={{ backgroundColor: accentColor, color: accentTextColor }}
                         >
@@ -1001,16 +1001,38 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                               </div>
 
                               {/* Version */}
-                              <div className="w-32 text-center">
-                                <span className="text-white/60 text-sm">{mod.version || '-'}</span>
+                              <div className="w-32 text-center flex items-center justify-center gap-1.5">
+                                <span className="text-white/60 text-sm truncate">{mod.version || '-'}</span>
+                                {mod.releaseType && mod.releaseType !== 1 && (
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
+                                    mod.releaseType === 2 ? 'bg-yellow-500/20 text-yellow-400'
+                                      : 'bg-red-500/20 text-red-400'
+                                  }`}>
+                                    {mod.releaseType === 2 ? 'β' : 'α'}
+                                  </span>
+                                )}
                               </div>
 
                               {/* Toggle */}
-                              <div className="w-20 flex justify-center">
+                              <div className="w-20 flex items-center justify-center">
                                 <button
                                   className="text-white/60 hover:text-white transition-colors"
-                                  onClick={() => {
-                                    // TODO: Implement toggle mod enabled/disabled
+                                  onClick={async () => {
+                                    if (!selectedInstance) return;
+                                    try {
+                                      const ok = await ipc.mods.toggle({
+                                        modId: mod.id,
+                                        branch: selectedInstance.branch,
+                                        version: selectedInstance.version,
+                                      });
+                                      if (ok) {
+                                        setInstalledMods(prev =>
+                                          prev.map(m => m.id === mod.id ? { ...m, enabled: !m.enabled } : m)
+                                        );
+                                      }
+                                    } catch (e) {
+                                      console.warn('[IPC] ToggleMod:', e);
+                                    }
                                   }}
                                 >
                                   {mod.enabled ? (
@@ -1044,6 +1066,26 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                       <span>{filteredMods.length} {t('modManager.modsInstalled')}</span>
                     </div>
                   )}
+                  </motion.div>
+                )}
+
+                {activeTab === 'browse' && selectedInstance && (
+                  <motion.div
+                    key="browse"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.12, ease: 'easeOut' }}
+                    className="h-full relative"
+                  >
+                    <InlineModBrowser
+                      currentBranch={selectedInstance.branch}
+                      currentVersion={selectedInstance.version}
+                      installedModIds={new Set(installedMods.map(m => m.curseForgeId ? `cf-${m.curseForgeId}` : m.id))}
+                      installedFileIds={new Set(installedMods.filter(m => m.fileId).map(m => String(m.fileId)))}
+                      onModsInstalled={() => loadInstalledMods()}
+                      onBack={() => setActiveTab('content')}
+                    />
                   </motion.div>
                 )}
 

@@ -80,6 +80,7 @@
     "educationalOnly": "Только для обучения.",
     "likeIt": "Нравится?",
     "buyIt": "КУПИ ЕЁ",
+    "officialServerBlocked": "Официальные серверы требуют покупки игры и аккаунта Hytale",
     "buyMeA": "Угости меня",
     "modManager": "Менеджер модов",
     "openInstanceFolder": "Открыть папку экземпляра",
@@ -324,7 +325,8 @@
     "tab": {
       "content": "Контент",
       "worlds": "Миры",
-      "logs": "Логи"
+      "logs": "Логи",
+      "browse": "Поиск"
     },
     "saves": "Сохранения",
     "noSaves": "Сохранений не найдено",
@@ -583,6 +585,14 @@
     "dragModFiles": "Перетащите файлы модов или список модов",
     "updatesAvailableCount": "Обновлений: {{count}}",
     "noDownloadableFiles": "Нет загружаемых файлов для выбранных модов.",
+    "allMods": "Все моды",
+    "modsSelected": "мод(ов) выбрано",
+    "downloadSelected": "Скачать выбранные",
+    "downloading": "Загрузка",
+    "selectVersion": "Выберите версию",
+    "noFilesAvailable": "Файлы недоступны",
+    "author": "Автор",
+    "downloads": "Загрузки",
     "backendRefused": "Бэкенд отказал в установке мода. Попробуйте ещё раз.",
     "selectExportFolder": "Выберите папку для экспорта",
     "exportedZip": "Моды экспортированы как ZIP в {{path}}",

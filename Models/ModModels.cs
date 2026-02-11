@@ -66,6 +66,12 @@ public class InstalledMod
     public string IconUrl { get; set; } = "";
     public string CurseForgeId { get; set; } = "";
     public string FileDate { get; set; } = "";
+    
+    /// <summary>
+    /// CurseForge release type: 1 = Release, 2 = Beta, 3 = Alpha
+    /// </summary>
+    public int ReleaseType { get; set; } = 1;
+    
     public List<CurseForgeScreenshot> Screenshots { get; set; } = new();
     
     /// <summary>

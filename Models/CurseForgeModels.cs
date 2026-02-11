@@ -79,6 +79,8 @@ public class CurseForgeFile
     public long FileLength { get; set; }
     public string? FileDate { get; set; }
     public int ReleaseType { get; set; }
+    public int DownloadCount { get; set; }
+    public List<string>? GameVersions { get; set; }
 }
 
 public class CurseForgeCategoriesResponse

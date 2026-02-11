@@ -55,6 +55,18 @@ Special thanks to **Sanasol** for maintaining and creating the [auth server](htt
   <img src="https://contrib.rocks/image?repo=yyyumeniku/HyPrism" alt="Contributors" />
 </a>
 
+## ⚖️ Legal Notice
+
+### Unofficial Product
+**HyPrism** is an unofficial, open-source launcher for Hytale. This project is **not** affiliated with, endorsed by, sponsored by, or approved by **Hypixel Studios**, **Riot Games**, or any of their affiliates.
+
+### Intellectual Property
+"Hytale", "Hypixel Studios", and strictly related logos and assets are trademarks or registered trademarks of **Hypixel Studios Inc.**. All rights reserved by their respective owners. usage of this software is subject to the terms of the [Hytale End-User License Agreement (EULA)](https://hytale.com/eula)
+
+### Game Files & Distribution
+**HyPrism** does not host, distribute, or modify original game files directly.
+Game client files are downloaded via a third-party mirror provided by [MobCat](https://github.com/MobCat). HyPrism acts solely as a client to facilitate the downloading and launching process. The developers of HyPrism constitute no control over the content hosted on the external mirror
+
 <div align="center">
   <sub>Made with ❤️ by the HyPrism Community</sub>
 </div>

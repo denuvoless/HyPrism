@@ -103,15 +103,13 @@ public class GameLauncher : IGameLauncher
         string sessionUuid = _userIdentityService.GetUuidForUser(_config.Nick);
         var currentProfile = _config.Profiles?.FirstOrDefault(p => p.UUID == sessionUuid);
         bool isOfficialProfile = currentProfile?.IsOfficial == true;
-        bool isOfficialServer = string.IsNullOrWhiteSpace(_config.AuthDomain) || 
-                                _config.AuthDomain.Contains("hytale.com", StringComparison.OrdinalIgnoreCase);
 
-        if (isOfficialServer && !isOfficialProfile && _config.OnlineMode)
+        if (IsOfficialServerMode() && !isOfficialProfile && _config.OnlineMode)
         {
-            Logger.Error("Game", "Cannot use official Hytale servers with an unofficial profile");
-            throw new InvalidOperationException(
-                "Official Hytale servers require an official Hytale profile. " +
-                "Please switch to an official profile or change the auth server in settings.");
+            // The frontend should prevent this scenario by disabling the play button.
+            // If we still get here (e.g. race condition), log a warning and continue
+            // in offline mode rather than crashing.
+            Logger.Warning("Game", "Official server mode with unofficial profile — falling back to offline mode");
         }
 
         var (executable, workingDir) = ResolveExecutablePaths(versionPath);
@@ -182,10 +180,65 @@ public class GameLauncher : IGameLauncher
         );
     }
 
+    /// <summary>
+    /// Determines whether the current AuthDomain setting points to official Hytale servers
+    /// (i.e. no custom patching is needed).
+    /// </summary>
+    private bool IsOfficialServerMode()
+    {
+        var domain = _config.AuthDomain?.Trim();
+        if (string.IsNullOrWhiteSpace(domain)) return false;
+
+        // Known official domains / sentinel values
+        return domain.Equals("official", StringComparison.OrdinalIgnoreCase)
+            || domain.Contains("hytale.com", StringComparison.OrdinalIgnoreCase)
+            || domain.Equals("sessionserver.mojang.com", StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task PatchClientIfNeededAsync(string versionPath)
     {
-        bool enablePatching = true;
-        if (!enablePatching || string.IsNullOrWhiteSpace(_config.AuthDomain)) return;
+        // ── Official server mode: restore originals if previously patched ──
+        if (IsOfficialServerMode())
+        {
+            bool clientPatched = ClientPatcher.IsClientPatched(versionPath);
+            bool serverPatched = ClientPatcher.IsServerJarPatched(versionPath);
+
+            if (clientPatched || serverPatched)
+            {
+                Logger.Info("Game", "Official server mode — restoring original (unpatched) binaries");
+                _progressService.ReportDownloadProgress("patching", 0, "launch.detail.restoring_originals", null, 0, 0);
+
+                try
+                {
+                    var restoreResult = ClientPatcher.RestoreAllFromBackup(versionPath, (msg, progress) =>
+                    {
+                        Logger.Info("Patcher", progress.HasValue ? $"{msg} ({progress}%)" : msg);
+                        if (progress.HasValue)
+                            _progressService.ReportDownloadProgress("patching", (int)progress.Value, msg, null, 0, 0);
+                    });
+
+                    if (restoreResult.Success)
+                        Logger.Success("Game", "Originals restored — no patching needed for official servers");
+                    else
+                        Logger.Warning("Game", $"Restore had issues: {restoreResult.Error}");
+
+                    _progressService.ReportDownloadProgress("patching", 100, "launch.detail.patching_complete", null, 0, 0);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning("Game", $"Error restoring originals: {ex.Message}");
+                }
+            }
+            else
+            {
+                Logger.Info("Game", "Official server mode — binaries are already unpatched, skipping");
+            }
+
+            return;
+        }
+
+        // ── Custom / default server mode: patch binaries ──
+        if (string.IsNullOrWhiteSpace(_config.AuthDomain)) return;
 
         _progressService.ReportDownloadProgress("patching", 0, "launch.detail.patching_init", null, 0, 0);
         try
@@ -266,37 +319,33 @@ public class GameLauncher : IGameLauncher
         if (isOfficialProfile)
         {
             // Official Hytale account — use HytaleAuthService for OAuth tokens
+            // Always create a fresh game session before launch to avoid SESSION EXPIRED errors
             _progressService.ReportDownloadProgress("launching", 20, "launch.detail.authenticating_official", null, 0, 0);
-            Logger.Info("Game", "Official profile detected — using Hytale OAuth authentication");
+            Logger.Info("Game", "Official profile detected — refreshing tokens and creating fresh game session");
 
             try
             {
-                var session = await _hytaleAuthService.GetValidSessionAsync();
+                // EnsureFreshSessionForLaunchAsync: refreshes access token if expired + always creates new game session
+                var session = await _hytaleAuthService.EnsureFreshSessionForLaunchAsync();
                 if (session == null)
                 {
-                    Logger.Error("Game", "No valid Hytale session — user must re-authenticate");
-                    throw new Exception("Official Hytale session expired. Please re-login in the profile settings.");
+                    Logger.Warning("Game", "No valid Hytale session — attempting full re-authentication...");
+                    _progressService.ReportDownloadProgress("launching", 25, "launch.detail.authenticating_browser", null, 0, 0);
+                    session = await _hytaleAuthService.LoginAsync();
+                    if (session == null)
+                    {
+                        Logger.Error("Game", "Full re-authentication failed — cannot launch in authenticated mode");
+                        throw new Exception("Official Hytale session expired and re-login failed. Please try logging in again from the profile settings.");
+                    }
                 }
 
                 identityToken = session.IdentityToken;
                 sessionToken = session.SessionToken;
 
-                if (string.IsNullOrEmpty(identityToken) || string.IsNullOrEmpty(sessionToken))
-                {
-                    // Session tokens might be stale — try to create a new game session
-                    Logger.Info("Game", "Session tokens empty, creating new game session...");
-                    var newSession = await _hytaleAuthService.LoginAsync();
-                    if (newSession != null)
-                    {
-                        identityToken = newSession.IdentityToken;
-                        sessionToken = newSession.SessionToken;
-                    }
-                }
-
                 if (!string.IsNullOrEmpty(identityToken))
                     Logger.Success("Game", "Official Hytale identity token obtained");
                 else
-                    Logger.Warning("Game", "Could not obtain Hytale session tokens");
+                    Logger.Warning("Game", "Could not obtain Hytale session tokens — game may show SESSION EXPIRED");
             }
             catch (Exception ex) when (ex is not InvalidOperationException)
             {

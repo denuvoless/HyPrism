@@ -41,10 +41,10 @@ while ((tm = typeRe.exec(source)) !== null) {
   types.push({ name: tm[1], body: tm[2].trim() });
 }
 
-// Parse @ipc annotations
-const ipcRe = /\/\/\s*@ipc\s+(invoke|send|event)\s+(hyprism:\S+)(?:\s*->\s*(.+))?/g;
+// Parse @ipc annotations (optional timeout: @ipc invoke channel -> Type 15000)
+const ipcRe = /\/\/\s*@ipc\s+(invoke|send|event)\s+(hyprism:\S+)(?:\s*->\s*(.+?))?(?:\s+(\d+))?\s*$/gm;
 
-/** @type {{ type: string, channel: string, responseType?: string }[]} */
+/** @type {{ type: string, channel: string, responseType?: string, timeout?: number }[]} */
 const channels = [];
 let im;
 while ((im = ipcRe.exec(source)) !== null) {
@@ -52,6 +52,7 @@ while ((im = ipcRe.exec(source)) !== null) {
     type: im[1],
     channel: im[2],
     responseType: im[3]?.trim() || undefined,
+    timeout: im[4] ? parseInt(im[4], 10) : undefined,
   });
 }
 
@@ -172,10 +173,12 @@ for (const [domain, chs] of Object.entries(domains)) {
 
     if (ch.type === 'invoke') {
       const noData = ['get', 'current', 'list', 'instances', 'languages', 'gpuAdapters'].includes(action);
+      const timeoutArg = ch.timeout ? `, ${ch.timeout}` : '';
       if (noData) {
-        L.push(`  ${action}: () => invoke<${resp}>('${ch.channel}'),`);
+        const undefinedData = ch.timeout ? ', undefined' : '';
+        L.push(`  ${action}: () => invoke<${resp}>('${ch.channel}'${undefinedData}${timeoutArg}),`);
       } else {
-        L.push(`  ${action}: (data?: unknown) => invoke<${resp}>('${ch.channel}', data),`);
+        L.push(`  ${action}: (data?: unknown) => invoke<${resp}>('${ch.channel}', data${timeoutArg}),`);
       }
     } else if (ch.type === 'send') {
       if (action === 'open') {
@@ -183,7 +186,7 @@ for (const [domain, chs] of Object.entries(domains)) {
       } else if (['log', 'warn', 'error'].includes(action)) {
         L.push(`  ${action}: (msg: string) => send('${ch.channel}', msg),`);
       } else {
-        L.push(`  ${action}: () => send('${ch.channel}'),`);
+        L.push(`  ${action}: (data?: unknown) => send('${ch.channel}', data),`);
       }
     } else if (ch.type === 'event') {
       const cap = action.charAt(0).toUpperCase() + action.slice(1);

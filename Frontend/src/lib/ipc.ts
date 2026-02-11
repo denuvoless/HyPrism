@@ -144,21 +144,81 @@ export interface SettingsSnapshot {
   [key: string]: unknown;
 }
 
-export interface ModItem {
+export interface ModScreenshot {
+  id: number;
+  title: string;
+  thumbnailUrl: string;
+  url: string;
+}
+
+export interface ModInfo {
   id: string;
   name: string;
-  description?: string;
-  version?: string;
-  author?: string;
-  iconUrl?: string;
-  isInstalled: boolean;
-  featured?: boolean;
-  downloads?: number;
+  slug: string;
+  summary: string;
+  author: string;
+  downloadCount: number;
+  iconUrl: string;
+  thumbnailUrl: string;
+  categories: string[];
+  dateUpdated: string;
+  latestFileId: string;
+  screenshots: ModScreenshot[];
 }
 
 export interface ModSearchResult {
-  items: ModItem[];
+  mods: ModInfo[];
   totalCount: number;
+}
+
+export interface ModFileInfo {
+  id: string;
+  modId: string;
+  fileName: string;
+  displayName: string;
+  downloadUrl: string;
+  fileLength: number;
+  fileDate: string;
+  releaseType: number;
+  gameVersions: string[];
+  downloadCount: number;
+}
+
+export interface ModFilesResult {
+  files: ModFileInfo[];
+  totalCount: number;
+}
+
+export interface ModCategory {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+export interface InstalledMod {
+  id: string;
+  name: string;
+  slug?: string;
+  version?: string;
+  fileId?: string;
+  fileName?: string;
+  enabled: boolean;
+  author?: string;
+  description?: string;
+  iconUrl?: string;
+  curseForgeId?: string;
+  fileDate?: string;
+  releaseType?: number;
+  latestFileId?: string;
+  latestVersion?: string;
+  screenshots?: ModScreenshot[];
+}
+
+export interface SaveInfo {
+  name: string;
+  previewPath?: string;
+  lastModified?: string;
+  sizeBytes?: number;
 }
 
 export interface AppConfig {
@@ -188,14 +248,6 @@ export interface GpuAdapterInfo {
   type: string;
 }
 
-export interface SaveInfo {
-  name: string;
-  path: string;
-  sizeBytes?: number;
-  lastModified?: string;
-  previewPath?: string;
-}
-
 // #endregion
 
 // #region Typed IPC API (from @ipc annotations)
@@ -206,8 +258,8 @@ const _config = {
 };
 
 const _game = {
-  launch: (data?: { branch?: string; version?: number }) => send('hyprism:game:launch', data),
-  cancel: () => send('hyprism:game:cancel'),
+  launch: (data?: unknown) => send('hyprism:game:launch', data),
+  cancel: (data?: unknown) => send('hyprism:game:cancel', data),
   instances: () => invoke<InstalledInstance[]>('hyprism:game:instances'),
   isRunning: (data?: unknown) => invoke<boolean>('hyprism:game:isRunning', data),
   versions: (data?: unknown) => invoke<number[]>('hyprism:game:versions', data),
@@ -218,12 +270,12 @@ const _game = {
 
 const _instance = {
   delete: (data?: unknown) => invoke<boolean>('hyprism:instance:delete', data),
-  openFolder: () => send('hyprism:instance:openFolder'),
-  openModsFolder: () => send('hyprism:instance:openModsFolder'),
+  openFolder: (data?: unknown) => send('hyprism:instance:openFolder', data),
+  openModsFolder: (data?: unknown) => send('hyprism:instance:openModsFolder', data),
   export: (data?: unknown) => invoke<string>('hyprism:instance:export', data),
   import: (data?: unknown) => invoke<boolean>('hyprism:instance:import', data),
   saves: (data?: unknown) => invoke<SaveInfo[]>('hyprism:instance:saves', data),
-  openSaveFolder: () => send('hyprism:instance:openSaveFolder'),
+  openSaveFolder: (data?: unknown) => send('hyprism:instance:openSaveFolder', data),
   getIcon: (data?: unknown) => invoke<string | null>('hyprism:instance:getIcon', data),
 };
 
@@ -242,7 +294,7 @@ const _profile = {
   activeIndex: (data?: unknown) => invoke<number>('hyprism:profile:activeIndex', data),
   save: (data?: unknown) => invoke<{ success: boolean }>('hyprism:profile:save', data),
   duplicate: (data?: unknown) => invoke<Profile>('hyprism:profile:duplicate', data),
-  openFolder: () => send('hyprism:profile:openFolder'),
+  openFolder: (data?: unknown) => send('hyprism:profile:openFolder', data),
   avatarForUuid: (data?: unknown) => invoke<string>('hyprism:profile:avatarForUuid', data),
 };
 
@@ -257,8 +309,6 @@ const _settings = {
   update: (data?: unknown) => invoke<{ success: boolean }>('hyprism:settings:update', data),
   launcherPath: (data?: unknown) => invoke<string>('hyprism:settings:launcherPath', data),
   defaultInstanceDir: (data?: unknown) => invoke<string>('hyprism:settings:defaultInstanceDir', data),
-  setInstanceDir: (path: string) => invoke<void>('hyprism:settings:setInstanceDir', { path }),
-  setLauncherDataDir: (path: string) => invoke<void>('hyprism:settings:setLauncherDataDir', { path }),
 };
 
 const _i18n = {
@@ -269,9 +319,9 @@ const _i18n = {
 };
 
 const _window = {
-  minimize: () => send('hyprism:window:minimize'),
-  maximize: () => send('hyprism:window:maximize'),
-  close: () => send('hyprism:window:close'),
+  minimize: (data?: unknown) => send('hyprism:window:minimize', data),
+  maximize: (data?: unknown) => send('hyprism:window:maximize', data),
+  close: (data?: unknown) => send('hyprism:window:close', data),
 };
 
 const _browser = {
@@ -279,11 +329,18 @@ const _browser = {
 };
 
 const _mods = {
-  list: () => invoke<ModItem[]>('hyprism:mods:list'),
-  search: (data?: unknown) => invoke<ModSearchResult>('hyprism:mods:search', data),
-  installed: (data?: unknown) => invoke<ModItem[]>('hyprism:mods:installed', data),
+  list: () => invoke<InstalledMod[]>('hyprism:mods:list'),
+  search: (data?: unknown) => invoke<ModSearchResult>('hyprism:mods:search', data, 15000),
+  installed: (data?: unknown) => invoke<InstalledMod[]>('hyprism:mods:installed', data),
   uninstall: (data?: unknown) => invoke<boolean>('hyprism:mods:uninstall', data),
-  checkUpdates: (data?: unknown) => invoke<ModItem[]>('hyprism:mods:checkUpdates', data),
+  checkUpdates: (data?: unknown) => invoke<InstalledMod[]>('hyprism:mods:checkUpdates', data, 30000),
+  install: (data?: unknown) => invoke<boolean>('hyprism:mods:install', data, 30000),
+  files: (data?: unknown) => invoke<ModFilesResult>('hyprism:mods:files', data),
+  categories: (data?: unknown) => invoke<ModCategory[]>('hyprism:mods:categories', data),
+  installLocal: (data?: unknown) => invoke<boolean>('hyprism:mods:installLocal', data),
+  installBase64: (data?: unknown) => invoke<boolean>('hyprism:mods:installBase64', data),
+  openFolder: (data?: unknown) => send('hyprism:mods:openFolder', data),
+  toggle: (data?: unknown) => invoke<boolean>('hyprism:mods:toggle', data),
 };
 
 const _system = {

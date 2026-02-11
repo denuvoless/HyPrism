@@ -207,6 +207,44 @@ public class HytaleAuthService
         return CurrentSession;
     }
 
+    /// <summary>
+    /// Ensures a valid session with fresh game session tokens for launching.
+    /// Always creates a new game session even if the access token is still valid,
+    /// because game session tokens (identityToken/sessionToken) expire independently
+    /// and must be refreshed before each launch.
+    /// </summary>
+    public async Task<HytaleAuthSession?> EnsureFreshSessionForLaunchAsync()
+    {
+        // Step 1: Ensure we have a valid access token
+        var session = await GetValidSessionAsync();
+        if (session == null) return null;
+
+        // Step 2: Always create a fresh game session before launch
+        Logger.Info("HytaleAuth", "Creating fresh game session for launch...");
+        try
+        {
+            var gameSession = await CreateGameSessionAsync(session.AccessToken, session.UUID);
+            if (gameSession != null)
+            {
+                session.SessionToken = gameSession.SessionToken;
+                session.IdentityToken = gameSession.IdentityToken;
+                SaveSession();
+                Logger.Success("HytaleAuth", "Fresh game session tokens obtained");
+            }
+            else
+            {
+                Logger.Warning("HytaleAuth", "Failed to create fresh game session — will use cached tokens");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("HytaleAuth", $"Error creating fresh game session: {ex.Message}");
+            // Fall through — cached tokens may still work
+        }
+
+        return session;
+    }
+
     #region OAuth Helpers
 
     private async Task ListenForCallbackAsync(System.Net.HttpListener listener, CancellationToken ct)

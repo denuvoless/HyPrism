@@ -106,7 +106,7 @@ export const NewsPage: React.FC<NewsPageProps> = memo(({ getNews, newsDisabled }
       animate="animate"
       exit="exit"
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="h-full flex flex-col px-8 pt-14 pb-28"
+      className="h-full flex flex-col px-8 pt-6 pb-28"
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-shrink-0">

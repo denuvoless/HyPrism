@@ -32,8 +32,14 @@ namespace HyPrism.Services.Core;
 /// @type HytaleAuthStatus { loggedIn: boolean; username?: string; uuid?: string; error?: string; errorType?: string; }
 /// @type ProfileSnapshot { nick: string; uuid: string; avatarPath?: string; }
 /// @type SettingsSnapshot { language: string; musicEnabled: boolean; launcherBranch: string; closeAfterLaunch: boolean; showDiscordAnnouncements: boolean; disableNews: boolean; backgroundMode: string; availableBackgrounds: string[]; accentColor: string; hasCompletedOnboarding: boolean; onlineMode: boolean; authDomain: string; dataDirectory: string; gpuPreference?: string; launchOnStartup?: boolean; minimizeToTray?: boolean; animations?: boolean; transparency?: boolean; resolution?: string; ramMb?: number; sound?: boolean; closeOnLaunch?: boolean; developerMode?: boolean; verboseLogging?: boolean; preRelease?: boolean; [key: string]: unknown; }
-/// @type ModItem { id: string; name: string; description?: string; version?: string; author?: string; iconUrl?: string; isInstalled: boolean; featured?: boolean; downloads?: number; }
-/// @type ModSearchResult { items: ModItem[]; totalCount: number; }
+/// @type ModScreenshot { id: number; title: string; thumbnailUrl: string; url: string; }
+/// @type ModInfo { id: string; name: string; slug: string; summary: string; author: string; downloadCount: number; iconUrl: string; thumbnailUrl: string; categories: string[]; dateUpdated: string; latestFileId: string; screenshots: ModScreenshot[]; }
+/// @type ModSearchResult { mods: ModInfo[]; totalCount: number; }
+/// @type ModFileInfo { id: string; modId: string; fileName: string; displayName: string; downloadUrl: string; fileLength: number; fileDate: string; releaseType: number; gameVersions: string[]; downloadCount: number; }
+/// @type ModFilesResult { files: ModFileInfo[]; totalCount: number; }
+/// @type ModCategory { id: number; name: string; slug: string; }
+/// @type InstalledMod { id: string; name: string; slug?: string; version?: string; fileId?: string; fileName?: string; enabled: boolean; author?: string; description?: string; iconUrl?: string; curseForgeId?: string; fileDate?: string; releaseType?: number; latestFileId?: string; latestVersion?: string; screenshots?: ModScreenshot[]; }
+/// @type SaveInfo { name: string; previewPath?: string; lastModified?: string; sizeBytes?: number; }
 /// @type AppConfig { language: string; dataDirectory: string; [key: string]: unknown; }
 /// @type InstalledInstance { branch: string; version: number; path: string; hasUserData: boolean; userDataSize: number; totalSize: number; isValid: boolean; }
 /// @type LanguageInfo { code: string; name: string; }
@@ -362,7 +368,7 @@ public class IpcService
                 var version = data?["version"].GetInt32() ?? 0;
                 
                 var instancePath = instanceService.GetInstancePath(branch, version);
-                var modsPath = Path.Combine(instancePath, "Mods");
+                var modsPath = Path.Combine(instancePath, "Client", "mods");
                 
                 if (!Directory.Exists(modsPath))
                 {
@@ -969,11 +975,18 @@ public class IpcService
     // #endregion
 
     // #region Mods
-    // @ipc invoke hyprism:mods:list -> ModItem[]
-    // @ipc invoke hyprism:mods:search -> ModSearchResult
-    // @ipc invoke hyprism:mods:installed -> ModItem[]
+    // @ipc invoke hyprism:mods:list -> InstalledMod[]
+    // @ipc invoke hyprism:mods:search -> ModSearchResult 15000
+    // @ipc invoke hyprism:mods:installed -> InstalledMod[]
     // @ipc invoke hyprism:mods:uninstall -> boolean
-    // @ipc invoke hyprism:mods:checkUpdates -> ModItem[]
+    // @ipc invoke hyprism:mods:checkUpdates -> InstalledMod[] 30000
+    // @ipc invoke hyprism:mods:install -> boolean 30000
+    // @ipc invoke hyprism:mods:files -> ModFilesResult
+    // @ipc invoke hyprism:mods:categories -> ModCategory[]
+    // @ipc invoke hyprism:mods:installLocal -> boolean
+    // @ipc invoke hyprism:mods:installBase64 -> boolean
+    // @ipc send hyprism:mods:openFolder
+    // @ipc invoke hyprism:mods:toggle -> boolean
 
     private void RegisterModHandlers()
     {
@@ -999,13 +1012,32 @@ public class IpcService
         {
             try
             {
-                var query = ArgsToString(args);
-                Reply("hyprism:mods:search:reply",
-                    await modService.SearchModsAsync(query, 0, 20, Array.Empty<string>(), 1, 1));
+                var json = ArgsToJson(args);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                
+                var query = root.TryGetProperty("query", out var q) ? q.GetString() ?? "" : "";
+                var page = root.TryGetProperty("page", out var p) ? p.GetInt32() : 0;
+                var pageSize = root.TryGetProperty("pageSize", out var ps) ? ps.GetInt32() : 20;
+                var sortField = root.TryGetProperty("sortField", out var sf) ? sf.GetInt32() : 1;
+                var sortOrder = root.TryGetProperty("sortOrder", out var so) ? so.GetInt32() : 1;
+                
+                var categories = Array.Empty<string>();
+                if (root.TryGetProperty("categories", out var cats) && cats.ValueKind == JsonValueKind.Array)
+                {
+                    categories = cats.EnumerateArray()
+                        .Select(c => c.GetString() ?? "")
+                        .Where(c => !string.IsNullOrEmpty(c))
+                        .ToArray();
+                }
+                
+                var result = await modService.SearchModsAsync(query, page, pageSize, categories, sortField, sortOrder);
+                Reply("hyprism:mods:search:reply", result);
             }
             catch (Exception ex)
             {
                 Logger.Error("IPC", $"Mods search failed: {ex.Message}");
+                Reply("hyprism:mods:search:reply", new { mods = new List<object>(), totalCount = 0 });
             }
         });
 
@@ -1093,6 +1125,215 @@ public class IpcService
             {
                 Logger.Error("IPC", $"Mods check updates failed: {ex.Message}");
                 Reply("hyprism:mods:checkUpdates:reply", new List<object>());
+            }
+        });
+        
+        // Install a mod from CurseForge by modId and fileId
+        Electron.IpcMain.On("hyprism:mods:install", async (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var modId = root.GetProperty("modId").GetString() ?? "";
+                var fileId = root.GetProperty("fileId").GetString() ?? "";
+                var branch = root.TryGetProperty("branch", out var b) ? b.GetString() ?? "release" : "release";
+                var version = root.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
+                
+                string instancePath;
+                if (version > 0)
+                    instancePath = instanceService.GetInstancePath(branch, version);
+                else
+                    instancePath = instanceService.GetLatestInstancePath(branch);
+                
+                var success = await modService.InstallModFileToInstanceAsync(modId, fileId, instancePath);
+                Reply("hyprism:mods:install:reply", success);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Mods install failed: {ex.Message}");
+                Reply("hyprism:mods:install:reply", false);
+            }
+        });
+        
+        // Get available files for a mod
+        Electron.IpcMain.On("hyprism:mods:files", async (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var modId = root.GetProperty("modId").GetString() ?? "";
+                var page = root.TryGetProperty("page", out var p) ? p.GetInt32() : 0;
+                var pageSize = root.TryGetProperty("pageSize", out var ps) ? ps.GetInt32() : 20;
+                
+                var result = await modService.GetModFilesAsync(modId, page, pageSize);
+                Reply("hyprism:mods:files:reply", result);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Mods files failed: {ex.Message}");
+                Reply("hyprism:mods:files:reply", new { files = new List<object>(), totalCount = 0 });
+            }
+        });
+        
+        // Get mod categories
+        Electron.IpcMain.On("hyprism:mods:categories", async (_) =>
+        {
+            try
+            {
+                var categories = await modService.GetModCategoriesAsync();
+                Reply("hyprism:mods:categories:reply", categories);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Mods categories failed: {ex.Message}");
+                Reply("hyprism:mods:categories:reply", new List<object>());
+            }
+        });
+        
+        // Install mod from local file path
+        Electron.IpcMain.On("hyprism:mods:installLocal", async (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var sourcePath = root.GetProperty("sourcePath").GetString() ?? "";
+                var branch = root.TryGetProperty("branch", out var b) ? b.GetString() ?? "release" : "release";
+                var version = root.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
+                
+                string instancePath;
+                if (version > 0)
+                    instancePath = instanceService.GetInstancePath(branch, version);
+                else
+                    instancePath = instanceService.GetLatestInstancePath(branch);
+                
+                var success = await modService.InstallLocalModFile(sourcePath, instancePath);
+                Reply("hyprism:mods:installLocal:reply", success);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Mods install local failed: {ex.Message}");
+                Reply("hyprism:mods:installLocal:reply", false);
+            }
+        });
+        
+        // Install mod from base64-encoded content
+        Electron.IpcMain.On("hyprism:mods:installBase64", async (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var fileName = root.GetProperty("fileName").GetString() ?? "";
+                var base64Content = root.GetProperty("base64Content").GetString() ?? "";
+                var branch = root.TryGetProperty("branch", out var b) ? b.GetString() ?? "release" : "release";
+                var version = root.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
+                
+                string instancePath;
+                if (version > 0)
+                    instancePath = instanceService.GetInstancePath(branch, version);
+                else
+                    instancePath = instanceService.GetLatestInstancePath(branch);
+                
+                var success = await modService.InstallModFromBase64(fileName, base64Content, instancePath);
+                Reply("hyprism:mods:installBase64:reply", success);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Mods install base64 failed: {ex.Message}");
+                Reply("hyprism:mods:installBase64:reply", false);
+            }
+        });
+        
+        // Open the mods folder for an instance
+        Electron.IpcMain.On("hyprism:mods:openFolder", (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var branch = root.TryGetProperty("branch", out var b) ? b.GetString() ?? "release" : "release";
+                var version = root.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
+                
+                string instancePath;
+                if (version > 0)
+                    instancePath = instanceService.GetInstancePath(branch, version);
+                else
+                    instancePath = instanceService.GetLatestInstancePath(branch);
+                
+                var modsPath = Path.Combine(instancePath, "Client", "mods");
+                Directory.CreateDirectory(modsPath);
+                Electron.Shell.OpenPathAsync(modsPath);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Open mods folder failed: {ex.Message}");
+            }
+        });
+        
+        // Toggle mod enabled/disabled (renames .jar <-> .jar.disabled)
+        Electron.IpcMain.On("hyprism:mods:toggle", async (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                var modId = root.GetProperty("modId").GetString() ?? "";
+                var branch = root.GetProperty("branch").GetString() ?? "release";
+                var version = root.GetProperty("version").GetInt32();
+                var instancePath = instanceService.GetInstancePath(branch, version);
+                
+                var mods = modService.GetInstanceInstalledMods(instancePath);
+                var mod = mods.FirstOrDefault(m => m.Id == modId || m.Name == modId);
+                if (mod == null || string.IsNullOrEmpty(mod.FileName))
+                {
+                    Reply("hyprism:mods:toggle:reply", false);
+                    return;
+                }
+                
+                var modsDir = Path.Combine(instancePath, "Client", "mods");
+                var currentPath = Path.Combine(modsDir, mod.FileName);
+                
+                if (mod.Enabled)
+                {
+                    // Disable: rename file.jar -> file.jar.disabled
+                    var disabledPath = currentPath + ".disabled";
+                    if (File.Exists(currentPath))
+                    {
+                        File.Move(currentPath, disabledPath);
+                        mod.FileName = mod.FileName + ".disabled";
+                        mod.Enabled = false;
+                        Logger.Info("IPC", $"Disabled mod: {mod.Name}");
+                    }
+                }
+                else
+                {
+                    // Enable: rename file.jar.disabled -> file.jar
+                    if (mod.FileName.EndsWith(".disabled") && File.Exists(currentPath))
+                    {
+                        var enabledPath = currentPath[..^".disabled".Length];
+                        File.Move(currentPath, enabledPath);
+                        mod.FileName = mod.FileName[..^".disabled".Length];
+                        mod.Enabled = true;
+                        Logger.Info("IPC", $"Enabled mod: {mod.Name}");
+                    }
+                }
+                
+                await modService.SaveInstanceModsAsync(instancePath, mods);
+                Reply("hyprism:mods:toggle:reply", true);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Mods toggle failed: {ex.Message}");
+                Reply("hyprism:mods:toggle:reply", false);
             }
         });
     }

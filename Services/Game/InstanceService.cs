@@ -1022,58 +1022,67 @@ public class InstanceService : IInstanceService
                 foreach (var folder in folders)
                 {
                     var dirName = Path.GetFileName(folder);
-                    if (int.TryParse(dirName, out var version))
+                    
+                    // Parse version: numeric folders are specific versions, "latest" is version 0
+                    int version;
+                    if (string.Equals(dirName, "latest", StringComparison.OrdinalIgnoreCase))
                     {
-                        var userDataPath = Path.Combine(folder, "UserData");
-                        bool hasUserData = Directory.Exists(userDataPath);
-                        long size = 0;
-                        if (hasUserData)
-                        {
-                            try
-                            {
-                                size = new DirectoryInfo(userDataPath).EnumerateFiles("*", SearchOption.AllDirectories).Sum(fi => fi.Length);
-                            }
-                            catch { }
-                        }
+                        version = 0;
+                    }
+                    else if (!int.TryParse(dirName, out version))
+                    {
+                        continue;
+                    }
 
-                        long totalSize = 0;
+                    var userDataPath = Path.Combine(folder, "UserData");
+                    bool hasUserData = Directory.Exists(userDataPath);
+                    long size = 0;
+                    if (hasUserData)
+                    {
                         try
                         {
-                            totalSize = new DirectoryInfo(folder).EnumerateFiles("*", SearchOption.AllDirectories).Sum(fi => fi.Length);
+                            size = new DirectoryInfo(userDataPath).EnumerateFiles("*", SearchOption.AllDirectories).Sum(fi => fi.Length);
                         }
                         catch { }
-
-                        // Load custom name from metadata file
-                        string? customName = null;
-                        var metadataPath = Path.Combine(folder, "metadata.json");
-                        if (File.Exists(metadataPath))
-                        {
-                            try
-                            {
-                                var json = File.ReadAllText(metadataPath);
-                                var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions);
-                                metadata?.TryGetValue("customName", out customName);
-                            }
-                            catch { }
-                        }
-
-                        // Perform deep validation
-                        var validationResult = ValidateGameIntegrity(folder);
-
-                        results.Add(new InstalledInstance
-                        {
-                            Branch = branch,
-                            Version = version,
-                            Path = folder,
-                            HasUserData = hasUserData,
-                            UserDataSize = size,
-                            TotalSize = totalSize,
-                            IsValid = validationResult.Status == InstanceValidationStatus.Valid,
-                            ValidationStatus = validationResult.Status,
-                            ValidationDetails = validationResult.Details,
-                            CustomName = customName
-                        });
                     }
+
+                    long totalSize = 0;
+                    try
+                    {
+                        totalSize = new DirectoryInfo(folder).EnumerateFiles("*", SearchOption.AllDirectories).Sum(fi => fi.Length);
+                    }
+                    catch { }
+
+                    // Load custom name from metadata file
+                    string? customName = null;
+                    var metadataPath = Path.Combine(folder, "metadata.json");
+                    if (File.Exists(metadataPath))
+                    {
+                        try
+                        {
+                            var json = File.ReadAllText(metadataPath);
+                            var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions);
+                            metadata?.TryGetValue("customName", out customName);
+                        }
+                        catch { }
+                    }
+
+                    // Perform deep validation
+                    var validationResult = ValidateGameIntegrity(folder);
+
+                    results.Add(new InstalledInstance
+                    {
+                        Branch = branch,
+                        Version = version,
+                        Path = folder,
+                        HasUserData = hasUserData,
+                        UserDataSize = size,
+                        TotalSize = totalSize,
+                        IsValid = validationResult.Status == InstanceValidationStatus.Valid,
+                        ValidationStatus = validationResult.Status,
+                        ValidationDetails = validationResult.Details,
+                        CustomName = customName
+                    });
                 }
             }
             catch (Exception ex)

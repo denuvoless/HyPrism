@@ -601,6 +601,149 @@ public class ClientPatcher
     }
 
     /// <summary>
+    /// Check if the client binary in the given game directory is currently patched (any domain).
+    /// </summary>
+    public static bool IsClientPatched(string gameDir)
+    {
+        string? clientPath = FindClientPath(gameDir);
+        if (clientPath == null) return false;
+
+        string flagFile = GetFlagFilePath(clientPath);
+        string legacyFlagFile = clientPath + PatchedFlag;
+        return File.Exists(flagFile) || File.Exists(legacyFlagFile);
+    }
+
+    /// <summary>
+    /// Check if the server JAR in the given game directory is currently patched.
+    /// </summary>
+    public static bool IsServerJarPatched(string gameDir)
+    {
+        string serverJarPath = Path.Combine(gameDir, "Server", "HytaleServer.jar");
+        string patchFlag = serverJarPath + PatchedFlag;
+        return File.Exists(patchFlag);
+    }
+
+    /// <summary>
+    /// Restore the client binary from its .original backup, removing the patch.
+    /// Used when switching to official servers where no patching is needed.
+    /// </summary>
+    public static PatchResult RestoreClientFromBackup(string gameDir, Action<string, int?>? progressCallback = null)
+    {
+        string? clientPath = FindClientPath(gameDir);
+        if (clientPath == null)
+        {
+            Logger.Info("Patcher", "Client binary not found — nothing to restore");
+            return new PatchResult { Success = true, PatchCount = 0 };
+        }
+
+        string backupPath = GetBackupFilePath(clientPath);
+        string flagFile = GetFlagFilePath(clientPath);
+
+        if (!File.Exists(backupPath))
+        {
+            Logger.Info("Patcher", "No client backup found — binary is likely already original");
+            // Clean up flag file if it exists without a backup (shouldn't happen, but be safe)
+            if (File.Exists(flagFile)) File.Delete(flagFile);
+            return new PatchResult { Success = true, PatchCount = 0 };
+        }
+
+        try
+        {
+            progressCallback?.Invoke("launch.detail.restoring_client", 20);
+            Logger.Info("Patcher", $"Restoring original client binary from {backupPath}");
+
+            File.Copy(backupPath, clientPath, overwrite: true);
+
+            // Remove the patch flag so the binary is considered unpatched
+            if (File.Exists(flagFile)) File.Delete(flagFile);
+
+            // Also clean up legacy flag file
+            string legacyFlag = clientPath + PatchedFlag;
+            if (legacyFlag != flagFile && File.Exists(legacyFlag)) File.Delete(legacyFlag);
+
+            progressCallback?.Invoke("launch.detail.client_restored", 100);
+            Logger.Success("Patcher", "Client binary restored to original (unpatched) state");
+
+            return new PatchResult { Success = true, PatchCount = 0 };
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Patcher", $"Failed to restore client from backup: {ex.Message}");
+            return new PatchResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Restore the server JAR from its .original backup, removing the patch.
+    /// </summary>
+    public static PatchResult RestoreServerJarFromBackup(string gameDir, Action<string, int?>? progressCallback = null)
+    {
+        string serverJarPath = Path.Combine(gameDir, "Server", "HytaleServer.jar");
+        string backupPath = serverJarPath + ".original";
+        string patchFlag = serverJarPath + PatchedFlag;
+
+        if (!File.Exists(backupPath))
+        {
+            Logger.Info("Patcher", "No server JAR backup found — JAR is likely already original");
+            if (File.Exists(patchFlag)) File.Delete(patchFlag);
+            return new PatchResult { Success = true, PatchCount = 0 };
+        }
+
+        try
+        {
+            progressCallback?.Invoke("launch.detail.restoring_server", 20);
+            Logger.Info("Patcher", $"Restoring original server JAR from {backupPath}");
+
+            File.Copy(backupPath, serverJarPath, overwrite: true);
+
+            if (File.Exists(patchFlag)) File.Delete(patchFlag);
+
+            progressCallback?.Invoke("launch.detail.server_restored", 100);
+            Logger.Success("Patcher", "Server JAR restored to original (unpatched) state");
+
+            return new PatchResult { Success = true, PatchCount = 0 };
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Patcher", $"Failed to restore server JAR from backup: {ex.Message}");
+            return new PatchResult { Success = false, Error = ex.Message };
+        }
+    }
+
+    /// <summary>
+    /// Restore both client and server JAR from backups.
+    /// Used when switching to official servers.
+    /// </summary>
+    public static PatchResult RestoreAllFromBackup(string gameDir, Action<string, int?>? progressCallback = null)
+    {
+        Logger.Info("Patcher", "=== Restoring originals (official mode) ===");
+
+        var clientResult = RestoreClientFromBackup(gameDir, progressCallback);
+        if (!clientResult.Success) return clientResult;
+
+        // Re-sign on macOS after restoring the original binary
+        if (clientResult.PatchCount == 0 && RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            string? clientPath = FindClientPath(gameDir);
+            if (clientPath != null && File.Exists(GetBackupFilePath(clientPath)))
+            {
+                // Backup existed, so we actually restored — re-sign the app
+                string appBundle = Path.Combine(gameDir, "Client", "Hytale.app");
+                if (Directory.Exists(appBundle))
+                {
+                    SignMacOSBinary(appBundle);
+                }
+            }
+        }
+
+        var serverResult = RestoreServerJarFromBackup(gameDir, progressCallback);
+        if (!serverResult.Success) return serverResult;
+
+        Logger.Info("Patcher", "=== Restore complete ===");
+        return new PatchResult { Success = true, PatchCount = 0 };
+    }
+
+    /// <summary>
     /// Sign macOS binary after patching (ad-hoc signature)
     /// </summary>
     public static bool SignMacOSBinary(string binaryPath)

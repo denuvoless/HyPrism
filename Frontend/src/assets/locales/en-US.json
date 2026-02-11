@@ -80,6 +80,7 @@
     "educationalOnly": "Educational only.",
     "likeIt": "Like it?",
     "buyIt": "BUY IT",
+    "officialServerBlocked": "Official servers require a purchased game and a Hytale account",
     "buyMeA": "Buy me a",
     "modManager": "Mod Manager",
     "openInstanceFolder": "Open Instance Folder",
@@ -332,7 +333,8 @@
     "tab": {
       "content": "Content",
       "worlds": "Worlds",
-      "logs": "Logs"
+      "logs": "Logs",
+      "browse": "Browse"
     },
     "saves": "Saves",
     "noSaves": "No saves found",
@@ -611,6 +613,14 @@
     "dragModFiles": "Drag mod files or a mod list",
     "updatesAvailableCount": "{{count}} updates available",
     "noDownloadableFiles": "No downloadable files found for the selected mods.",
+    "allMods": "All Mods",
+    "modsSelected": "mod(s) selected",
+    "downloadSelected": "Download Selected",
+    "downloading": "Downloading",
+    "selectVersion": "Select Version",
+    "noFilesAvailable": "No files available",
+    "author": "Author",
+    "downloads": "Downloads",
     "backendRefused": "Backend refused to install this mod. Please try again.",
     "selectExportFolder": "Please select an export folder",
     "exportedZip": "Mods exported as ZIP to {{path}}",
