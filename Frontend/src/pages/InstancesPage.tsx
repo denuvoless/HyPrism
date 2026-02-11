@@ -172,6 +172,8 @@ interface InstancesPageProps {
   runningBranch?: string;
   runningVersion?: number;
   onStopGame?: () => void;
+  activeTab?: InstanceTab;
+  onTabChange?: (tab: InstanceTab) => void;
 }
 
 export const InstancesPage: React.FC<InstancesPageProps> = ({ 
@@ -179,7 +181,9 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
   isGameRunning = false,
   runningBranch,
   runningVersion,
-  onStopGame
+  onStopGame,
+  activeTab: controlledTab,
+  onTabChange,
 }) => {
   const { t } = useTranslation();
   const { accentColor, accentTextColor } = useAccentColor();
@@ -194,7 +198,13 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
 
   // Selected instance for detail view
   const [selectedInstance, setSelectedInstance] = useState<InstalledVersionInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<InstanceTab>('content');
+  // Tab state — controlled from parent (persists across page navigations) or local fallback
+  const [localTab, setLocalTab] = useState<InstanceTab>(controlledTab ?? 'content');
+  const activeTab = controlledTab ?? localTab;
+  const setActiveTab = useCallback((tab: InstanceTab) => {
+    onTabChange?.(tab);
+    setLocalTab(tab);
+  }, [onTabChange]);
 
   // Installed mods for selected instance
   const [installedMods, setInstalledMods] = useState<ModInfo[]>([]);
@@ -223,6 +233,70 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
 
   // Create Instance Modal
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Tab slider animation state
+  const tabContainerRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [sliderStyle, setSliderStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 });
+  const [sliderReady, setSliderReady] = useState(false);
+  const prevTabRef = useRef<InstanceTab>(activeTab);
+
+  // Measure and update slider position
+  const updateSlider = useCallback(() => {
+    const btn = tabRefs.current[activeTab];
+    const container = tabContainerRef.current;
+    if (btn && container) {
+      const containerRect = container.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      // Only update if we got valid measurements (element is in DOM and visible)
+      if (btnRect.width > 0) {
+        setSliderStyle({
+          left: btnRect.left - containerRect.left,
+          width: btnRect.width,
+        });
+        if (!sliderReady) setSliderReady(true);
+      }
+    }
+  }, [activeTab, sliderReady]);
+
+  useEffect(() => {
+    // Use rAF to ensure DOM has been painted before measuring
+    const rafId = requestAnimationFrame(() => {
+      updateSlider();
+    });
+    window.addEventListener('resize', updateSlider);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', updateSlider);
+    };
+  }, [updateSlider]);
+
+  // Re-measure when selectedInstance changes (tabs become visible)
+  useEffect(() => {
+    if (selectedInstance) {
+      // Double rAF: first for React commit, second for browser paint
+      const id1 = requestAnimationFrame(() => {
+        const id2 = requestAnimationFrame(() => {
+          updateSlider();
+        });
+        // Clean up inner rAF on unmount
+        return () => cancelAnimationFrame(id2);
+      });
+      return () => cancelAnimationFrame(id1);
+    }
+  }, [selectedInstance, updateSlider]);
+
+  // Track previous tab for directional animation
+  useEffect(() => {
+    prevTabRef.current = activeTab;
+  }, [activeTab]);
+
+  // Determine slide direction for content: 1 = forward (right), -1 = backward (left)
+  const tabs: InstanceTab[] = ['content', 'browse', 'worlds', 'logs'];
+  const getTabDirection = (from: InstanceTab, to: InstanceTab) => {
+    return tabs.indexOf(to) > tabs.indexOf(from) ? 1 : -1;
+  };
+  const direction = getTabDirection(prevTabRef.current, activeTab);
 
   const loadInstances = useCallback(async () => {
     setIsLoading(true);
@@ -721,26 +795,40 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
             <div className="flex items-center justify-between gap-4 px-3 py-3 flex-shrink-0 border-b border-white/[0.06]">
               {/* Left side: Tabs */}
               <div className="flex items-center gap-3">
-                {/* Tabs */}
-                <div className="relative flex items-center gap-1 px-1.5 py-1 bg-black/20 rounded-xl border border-white/[0.06]">
-                  {(['content', 'browse', 'worlds', 'logs'] as InstanceTab[]).map((tab) => (
+                {/* Tabs with sliding indicator */}
+                <div
+                  ref={tabContainerRef}
+                  className="relative flex items-center gap-1 px-1.5 py-1 bg-black/20 rounded-xl border border-white/[0.06]"
+                >
+                  {/* Sliding indicator */}
+                  <div
+                    className="absolute rounded-lg shadow-sm"
+                    style={{
+                      backgroundColor: accentColor,
+                      left: sliderStyle.left,
+                      width: sliderStyle.width,
+                      top: '0.25rem',
+                      bottom: '0.25rem',
+                      transition: sliderReady
+                        ? 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                        : 'none',
+                      opacity: sliderReady ? 1 : 0,
+                      boxShadow: `0 1px 6px ${accentColor}40`,
+                    }}
+                  />
+                  {tabs.map((tab) => (
                   <button
                     key={tab}
+                    ref={(el) => { tabRefs.current[tab] = el; }}
                     onClick={() => setActiveTab(tab)}
-                    className={`relative z-10 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-150 ${
+                    className={`relative z-10 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
                       activeTab === tab
                         ? 'text-white'
                         : 'text-white/50 hover:text-white/70'
                     }`}
                     style={activeTab === tab ? { color: accentTextColor } : undefined}
                   >
-                    {activeTab === tab && (
-                      <div
-                        className="absolute inset-0 rounded-lg shadow-sm transition-all duration-200"
-                        style={{ backgroundColor: accentColor }}
-                      />
-                    )}
-                    <span className="relative z-10">{t(`instances.tab.${tab}`)}</span>
+                    {t(`instances.tab.${tab}`)}
                   </button>
                 ))}
                 </div>
@@ -856,9 +944,16 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
             <div className="flex-1 overflow-hidden relative">
                 {/* Content tab */}
                 <div
-                  className={`absolute inset-0 flex flex-col transition-opacity duration-100 ${
-                    activeTab === 'content' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                  className={`absolute inset-0 flex flex-col ${
+                    activeTab === 'content' ? 'z-10' : 'z-0 pointer-events-none'
                   }`}
+                  style={{
+                    opacity: activeTab === 'content' ? 1 : 0,
+                    transform: activeTab === 'content' ? 'translateX(0) scale(1)' : `translateX(${direction * -12}px) scale(0.98)`,
+                    transition: activeTab === 'content'
+                      ? 'opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1) 0.05s, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.05s'
+                      : 'opacity 0.15s cubic-bezier(0.4, 0, 1, 1), transform 0.15s cubic-bezier(0.4, 0, 1, 1)',
+                  }}
                 >
                   {/* Content Header */}
                   <div className="p-4 border-b border-white/[0.06] flex items-center gap-3">
@@ -1068,9 +1163,16 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
 
                 {/* Browse tab — always mounted so downloads survive tab switches */}
                 <div
-                  className={`absolute inset-0 transition-opacity duration-100 ${
-                    activeTab === 'browse' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                  className={`absolute inset-0 ${
+                    activeTab === 'browse' ? 'z-10' : 'z-0 pointer-events-none'
                   }`}
+                  style={{
+                    opacity: activeTab === 'browse' ? 1 : 0,
+                    transform: activeTab === 'browse' ? 'translateX(0) scale(1)' : `translateX(${direction * -12}px) scale(0.98)`,
+                    transition: activeTab === 'browse'
+                      ? 'opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1) 0.05s, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.05s'
+                      : 'opacity 0.15s cubic-bezier(0.4, 0, 1, 1), transform 0.15s cubic-bezier(0.4, 0, 1, 1)',
+                  }}
                 >
                   {selectedInstance && (
                     <InlineModBrowser
@@ -1086,9 +1188,16 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
 
                 {/* Worlds tab */}
                 <div
-                  className={`absolute inset-0 flex flex-col transition-opacity duration-100 ${
-                    activeTab === 'worlds' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                  className={`absolute inset-0 flex flex-col ${
+                    activeTab === 'worlds' ? 'z-10' : 'z-0 pointer-events-none'
                   }`}
+                  style={{
+                    opacity: activeTab === 'worlds' ? 1 : 0,
+                    transform: activeTab === 'worlds' ? 'translateX(0) scale(1)' : `translateX(${direction * -12}px) scale(0.98)`,
+                    transition: activeTab === 'worlds'
+                      ? 'opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1) 0.05s, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.05s'
+                      : 'opacity 0.15s cubic-bezier(0.4, 0, 1, 1), transform 0.15s cubic-bezier(0.4, 0, 1, 1)',
+                  }}
                 >
                   {/* Saves Header */}
                   <div className="p-4 border-b border-white/10 flex items-center justify-between">
@@ -1178,9 +1287,16 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
 
                 {/* Logs tab */}
                 <div
-                  className={`absolute inset-0 flex flex-col items-center justify-center text-white/30 transition-opacity duration-100 ${
-                    activeTab === 'logs' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                  className={`absolute inset-0 flex flex-col items-center justify-center text-white/30 ${
+                    activeTab === 'logs' ? 'z-10' : 'z-0 pointer-events-none'
                   }`}
+                  style={{
+                    opacity: activeTab === 'logs' ? 1 : 0,
+                    transform: activeTab === 'logs' ? 'translateX(0) scale(1)' : `translateX(${direction * -12}px) scale(0.98)`,
+                    transition: activeTab === 'logs'
+                      ? 'opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1) 0.05s, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) 0.05s'
+                      : 'opacity 0.15s cubic-bezier(0.4, 0, 1, 1), transform 0.15s cubic-bezier(0.4, 0, 1, 1)',
+                  }}
                 >
                     <FileText size={48} className="mb-4 opacity-50" />
                     <p className="text-lg font-medium">{t('instances.logsComingSoon')}</p>

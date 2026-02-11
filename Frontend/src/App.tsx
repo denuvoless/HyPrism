@@ -257,6 +257,9 @@ const App: React.FC = () => {
   // Page navigation state
   const [currentPage, setCurrentPage] = useState<PageType>('dashboard');
 
+  // Instance sub-tab state (persisted across page navigations)
+  const [instanceTab, setInstanceTab] = useState<'content' | 'browse' | 'worlds' | 'logs'>('content');
+
   // Settings state
   const [launcherBranch, setLauncherBranch] = useState<string>('release');
   const [rosettaWarning, setRosettaWarning] = useState<{ message: string; command: string; tutorialUrl?: string } | null>(null);
@@ -1308,6 +1311,8 @@ const App: React.FC = () => {
               runningBranch={runningBranch}
               runningVersion={runningVersion}
               onStopGame={handleExit}
+              activeTab={instanceTab}
+              onTabChange={setInstanceTab}
             />
           )}
 
