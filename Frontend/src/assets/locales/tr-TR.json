@@ -33,8 +33,9 @@
     "exporting": "Dışa aktarılıyor...",
     "importing": "İçe aktarılıyor...",
     "Latest": "En Son",
-    "refresh": "Refresh",
-    "unknown": "Unknown"
+    "refresh": "Yenile",
+    "unknown": "Bilinmiyor",
+    "clear": "Temizle"
   },
   "app": {
     "title": "HyPrism",
@@ -84,7 +85,8 @@
     "modManager": "Mod Yöneticisi",
     "openInstanceFolder": "Örnek klasörünü aç",
     "settings": "Ayarlar",
-    "stop": "DURDUR"
+    "stop": "DURDUR",
+    "officialServerBlocked": "Resmi sunucular satın alınmış bir oyun ve Hytale hesabı gerektirir"
   },
   "settings": {
     "title": "Ayarlar",
@@ -330,7 +332,15 @@
     "saves": "Saves",
     "noSaves": "No saves found",
     "noSavesHint": "Play the game to create your first save",
-    "logsComingSoon": "Logs viewer coming soon"
+    "logsComingSoon": "Logs viewer coming soon",
+    "createInstance": "Örnek Oluştur",
+    "createInstanceHint": "Yeni bir oyun örneği indir ve kur",
+    "instanceName": "Örnek Adı",
+    "instanceNamePlaceholder": "Bu örnek için bir ad girin",
+    "selectIcon": "Simge Seç",
+    "uploadIcon": "Simge Yükle",
+    "creating": "Oluşturuluyor...",
+    "create": "Oluştur"
   },
   "profiles": {
     "title": "Profiles",
@@ -351,7 +361,33 @@
     "editUuid": "Edit UUID",
     "saveUuid": "Save UUID",
     "openFolder": "Open Profile Folder",
-    "saved": "Profile saved!"
+    "saved": "Profile saved!",
+    "officialLocked": "Resmi Hytale profilleri düzenlenemez",
+    "wizard": {
+      "title": "Yeni Profil Oluştur",
+      "chooseType": "Profilinizi nasıl oluşturmak istediğinizi seçin",
+      "official": "Resmi Hytale Hesabı",
+      "officialDesc": "Resmi sunucularda oynamak için Hytale hesabınızla giriş yapın",
+      "unofficial": "Çevrimdışı Profil",
+      "unofficialDesc": "Özel ad ve UUID ile yerel profil oluşturun",
+      "authTitle": "Hytale ile Giriş Yap",
+      "authDesc": "Tarayıcınızda Hytale giriş sayfasına yönlendirileceksiniz. Giriş yaptıktan sonra profiliniz otomatik olarak oluşturulacak.",
+      "loginHytale": "Hytale ile Giriş Yap",
+      "waitingAuth": "Giriş bekleniyor...",
+      "browserHint": "Tarayıcınızda girişi tamamlayın. Bu pencere otomatik olarak güncellenecek.",
+      "authFailed": "Giriş tamamlanamadı. Lütfen tekrar deneyin.",
+      "authError": "Giriş sırasında bir hata oluştu. Lütfen tekrar deneyin.",
+      "noHytaleProfile": "Hytale hesabınızda henüz oyun profili yok. Oyuna ilk eriştiğinizde bir profil oluşturulacak.",
+      "nameTitle": "Takma Ad Seçin",
+      "nameDesc": "Çevrimdışı profiliniz için bir ad seçin (3-13 karakter, İngilizce harfler, rakamlar, - ve _)",
+      "namePlaceholder": "Takma ad girin...",
+      "characters": "karakter",
+      "nickRules": "Sadece A-Z, 0-9, - ve _",
+      "nickInvalid": "Takma ad 3-13 karakter olmalıdır: İngilizce harfler, rakamlar, tire veya alt çizgi.",
+      "create": "Profil Oluştur",
+      "createFailed": "Profil oluşturulamadı. Lütfen tekrar deneyin.",
+      "createError": "Profil oluşturulurken bir hata oluştu."
+    }
   },
   "launch": {
     "state": {
@@ -408,7 +444,10 @@
       "downloading_generic": "Hytale indiriliyor... {0}%",
       "installing_butler_pwr": "Butler ile oyun yükleniyor...",
       "using_cached_installer": "Önbellekteki yükleyici kullanılıyor...",
-      "download_complete": "İndirme tamamlandı!"
+      "download_complete": "İndirme tamamlandı!",
+      "checking_versions": "Mevcut sürümler kontrol ediliyor...",
+      "installing_butler": "İndirme motoru kuruluyor...",
+      "downloading_mirror": "Aynadan indiriliyor... {0}%"
     }
   },
   "profileEditor": {
@@ -600,7 +639,37 @@
     "deleteModTitle": "Delete Mod",
     "deleteModConfirm": "Are you sure you want to delete this mod?",
     "modDeleted": "Mod deleted successfully",
-    "modsDeleted": "Mods deleted successfully"
+    "modsDeleted": "Mods deleted successfully",
+    "browseMods": "Modlara Göz At",
+    "installSelected": "Seçilenleri Kur",
+    "selectedForInstall": "Kurulum için seçildi",
+    "selectForInstall": "Kurulum için seç (Aralık için Shift+tıkla)",
+    "allMods": "Tüm Modlar",
+    "modsSelected": "mod seçildi",
+    "downloadSelected": "Seçilenleri İndir",
+    "downloading": "İndiriliyor",
+    "selectVersion": "Sürüm Seç",
+    "noFilesAvailable": "Dosya mevcut değil",
+    "author": "Yazar",
+    "downloads": "İndirmeler",
+    "searchFailed": "Mod araması başarısız",
+    "downloadFailed": "İndirme başarısız",
+    "category": {
+      "all_mods": "Tüm Modlar",
+      "blocks": "Bloklar",
+      "cosmetics_armor": "Kozmetik / Zırh",
+      "food_farming": "Yiyecek / Tarım",
+      "furniture": "Mobilya",
+      "gameplay": "Oynanış",
+      "library": "Kütüphane",
+      "miscellaneous": "Çeşitli",
+      "mobs_characters": "Moblar / Karakterler",
+      "prefab": "Prefab",
+      "quality_of_life": "Yaşam Kalitesi",
+      "resource_packs": "Kaynak Paketleri",
+      "utility": "Araçlar",
+      "world_gen": "Dünya Oluşturma"
+    }
   },
   "onboarding": {
     "language": "Language",

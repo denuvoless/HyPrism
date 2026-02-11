@@ -33,8 +33,9 @@
     "exporting": "导出中...",
     "importing": "导入中...",
     "Latest": "最新",
-    "refresh": "Refresh",
-    "unknown": "Unknown"
+    "refresh": "刷新",
+    "unknown": "未知",
+    "clear": "清除"
   },
   "app": {
     "title": "HyPrism",
@@ -84,7 +85,8 @@
     "modManager": "模组管理",
     "openInstanceFolder": "打开实例文件夹",
     "settings": "设置",
-    "stop": "停止"
+    "stop": "停止",
+    "officialServerBlocked": "官方服务器需要购买游戏并拥有Hytale账户"
   },
   "settings": {
     "title": "设置",
@@ -330,7 +332,15 @@
     "saves": "Saves",
     "noSaves": "No saves found",
     "noSavesHint": "Play the game to create your first save",
-    "logsComingSoon": "Logs viewer coming soon"
+    "logsComingSoon": "Logs viewer coming soon",
+    "createInstance": "创建实例",
+    "createInstanceHint": "下载并设置新的游戏实例",
+    "instanceName": "实例名称",
+    "instanceNamePlaceholder": "输入此实例的名称",
+    "selectIcon": "选择图标",
+    "uploadIcon": "上传图标",
+    "creating": "创建中...",
+    "create": "创建"
   },
   "profiles": {
     "title": "Profiles",
@@ -351,7 +361,33 @@
     "editUuid": "Edit UUID",
     "saveUuid": "Save UUID",
     "openFolder": "Open Profile Folder",
-    "saved": "Profile saved!"
+    "saved": "Profile saved!",
+    "officialLocked": "官方Hytale配置文件无法编辑",
+    "wizard": {
+      "title": "创建新配置文件",
+      "chooseType": "选择创建配置文件的方式",
+      "official": "官方Hytale账户",
+      "officialDesc": "使用Hytale账户登录以在官方服务器上游玩",
+      "unofficial": "离线配置文件",
+      "unofficialDesc": "创建具有自定义名称和UUID的本地配置文件",
+      "authTitle": "使用Hytale登录",
+      "authDesc": "您将被重定向到浏览器中的Hytale登录页面。登录后，您的配置文件将自动创建。",
+      "loginHytale": "使用Hytale登录",
+      "waitingAuth": "等待登录...",
+      "browserHint": "在浏览器中完成登录。此窗口将自动更新。",
+      "authFailed": "登录未完成。请重试。",
+      "authError": "登录过程中发生错误。请重试。",
+      "noHytaleProfile": "您的Hytale账户还没有游戏配置文件。首次访问游戏时将创建配置文件。",
+      "nameTitle": "选择昵称",
+      "nameDesc": "为您的离线配置文件选择名称（3-13个字符，英文字母、数字、-和_）",
+      "namePlaceholder": "输入昵称...",
+      "characters": "个字符",
+      "nickRules": "仅限A-Z、0-9、-和_",
+      "nickInvalid": "昵称必须为3-13个字符：英文字母、数字、短横线或下划线。",
+      "create": "创建配置文件",
+      "createFailed": "创建配置文件失败。请重试。",
+      "createError": "创建配置文件时发生错误。"
+    }
   },
   "launch": {
     "state": {
@@ -408,7 +444,10 @@
       "downloading_generic": "正在下载 Hytale... {0}%",
       "installing_butler_pwr": "正在使用 Butler 安装游戏...",
       "using_cached_installer": "正在使用缓存的安装包...",
-      "download_complete": "下载完成！"
+      "download_complete": "下载完成！",
+      "checking_versions": "检查可用版本...",
+      "installing_butler": "设置下载引擎...",
+      "downloading_mirror": "从镜像下载中... {0}%"
     }
   },
   "profileEditor": {
@@ -600,7 +639,37 @@
     "deleteModTitle": "Delete Mod",
     "deleteModConfirm": "Are you sure you want to delete this mod?",
     "modDeleted": "Mod deleted successfully",
-    "modsDeleted": "Mods deleted successfully"
+    "modsDeleted": "Mods deleted successfully",
+    "browseMods": "浏览模组",
+    "installSelected": "安装选中项",
+    "selectedForInstall": "已选择安装",
+    "selectForInstall": "选择安装（Shift+点击选择范围）",
+    "allMods": "所有模组",
+    "modsSelected": "个模组已选择",
+    "downloadSelected": "下载选中项",
+    "downloading": "下载中",
+    "selectVersion": "选择版本",
+    "noFilesAvailable": "没有可用文件",
+    "author": "作者",
+    "downloads": "下载量",
+    "searchFailed": "搜索模组失败",
+    "downloadFailed": "下载失败",
+    "category": {
+      "all_mods": "所有模组",
+      "blocks": "方块",
+      "cosmetics_armor": "装饰/盔甲",
+      "food_farming": "食物/农业",
+      "furniture": "家具",
+      "gameplay": "玩法",
+      "library": "库",
+      "miscellaneous": "杂项",
+      "mobs_characters": "生物/角色",
+      "prefab": "预制件",
+      "quality_of_life": "生活质量",
+      "resource_packs": "资源包",
+      "utility": "实用工具",
+      "world_gen": "世界生成"
+    }
   },
   "onboarding": {
     "language": "语言",

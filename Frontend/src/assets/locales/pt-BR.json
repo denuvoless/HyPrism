@@ -33,8 +33,9 @@
     "exporting": "Exportando...",
     "importing": "Importando...",
     "Latest": "Última",
-    "refresh": "Refresh",
-    "unknown": "Unknown"
+    "refresh": "Atualizar",
+    "unknown": "Desconhecido",
+    "clear": "Limpar"
   },
   "app": {
     "title": "HyPrism",
@@ -84,7 +85,8 @@
     "modManager": "Gerenciador de Mods",
     "openInstanceFolder": "Abrir pasta da instância",
     "settings": "Configurações",
-    "stop": "PARAR"
+    "stop": "PARAR",
+    "officialServerBlocked": "Servidores oficiais requerem um jogo comprado e uma conta Hytale"
   },
   "settings": {
     "title": "Configurar",
@@ -330,7 +332,15 @@
     "saves": "Saves",
     "noSaves": "No saves found",
     "noSavesHint": "Play the game to create your first save",
-    "logsComingSoon": "Logs viewer coming soon"
+    "logsComingSoon": "Logs viewer coming soon",
+    "createInstance": "Criar Instância",
+    "createInstanceHint": "Baixe e configure uma nova instância do jogo",
+    "instanceName": "Nome da Instância",
+    "instanceNamePlaceholder": "Digite um nome para esta instância",
+    "selectIcon": "Selecionar Ícone",
+    "uploadIcon": "Enviar Ícone",
+    "creating": "Criando...",
+    "create": "Criar"
   },
   "profiles": {
     "title": "Profiles",
@@ -351,7 +361,33 @@
     "editUuid": "Edit UUID",
     "saveUuid": "Save UUID",
     "openFolder": "Open Profile Folder",
-    "saved": "Profile saved!"
+    "saved": "Profile saved!",
+    "officialLocked": "Perfis oficiais do Hytale não podem ser editados",
+    "wizard": {
+      "title": "Criar Novo Perfil",
+      "chooseType": "Escolha como você quer criar seu perfil",
+      "official": "Conta Oficial Hytale",
+      "officialDesc": "Entre com sua conta Hytale para jogar em servidores oficiais",
+      "unofficial": "Perfil Offline",
+      "unofficialDesc": "Crie um perfil local com nome e UUID personalizados",
+      "authTitle": "Entrar com Hytale",
+      "authDesc": "Você será redirecionado para a página de login do Hytale no seu navegador. Após entrar, seu perfil será criado automaticamente.",
+      "loginHytale": "Entrar com Hytale",
+      "waitingAuth": "Aguardando login...",
+      "browserHint": "Complete o login no seu navegador. Esta janela será atualizada automaticamente.",
+      "authFailed": "O login não foi concluído. Por favor, tente novamente.",
+      "authError": "Ocorreu um erro durante o login. Por favor, tente novamente.",
+      "noHytaleProfile": "Sua conta Hytale ainda não possui perfis de jogo. Um perfil será criado quando você acessar o jogo pela primeira vez.",
+      "nameTitle": "Escolha um Apelido",
+      "nameDesc": "Escolha um nome para seu perfil offline (3-13 caracteres, letras inglesas, dígitos, - e _)",
+      "namePlaceholder": "Digite o apelido...",
+      "characters": "caracteres",
+      "nickRules": "Apenas A-Z, 0-9, - e _",
+      "nickInvalid": "O apelido deve ter 3-13 caracteres: letras inglesas, dígitos, hífen ou sublinhado.",
+      "create": "Criar Perfil",
+      "createFailed": "Falha ao criar o perfil. Por favor, tente novamente.",
+      "createError": "Ocorreu um erro ao criar o perfil."
+    }
   },
   "launch": {
     "state": {
@@ -408,7 +444,10 @@
       "downloading_generic": "Baixando Hytale... {0}%",
       "installing_butler_pwr": "Instalando jogo com Butler...",
       "using_cached_installer": "Usando instalador em cache...",
-      "download_complete": "Download concluído!"
+      "download_complete": "Download concluído!",
+      "checking_versions": "Verificando versões disponíveis...",
+      "installing_butler": "Configurando motor de download...",
+      "downloading_mirror": "Baixando do espelho... {0}%"
     }
   },
   "profileEditor": {
@@ -600,7 +639,37 @@
     "deleteModTitle": "Delete Mod",
     "deleteModConfirm": "Are you sure you want to delete this mod?",
     "modDeleted": "Mod deleted successfully",
-    "modsDeleted": "Mods deleted successfully"
+    "modsDeleted": "Mods deleted successfully",
+    "browseMods": "Explorar Mods",
+    "installSelected": "Instalar Selecionados",
+    "selectedForInstall": "Selecionado para instalação",
+    "selectForInstall": "Selecionar para instalação (Shift+clique para intervalo)",
+    "allMods": "Todos os Mods",
+    "modsSelected": "mod(s) selecionado(s)",
+    "downloadSelected": "Baixar Selecionados",
+    "downloading": "Baixando",
+    "selectVersion": "Selecionar Versão",
+    "noFilesAvailable": "Nenhum arquivo disponível",
+    "author": "Autor",
+    "downloads": "Downloads",
+    "searchFailed": "Falha ao buscar mods",
+    "downloadFailed": "Falha no download",
+    "category": {
+      "all_mods": "Todos os Mods",
+      "blocks": "Blocos",
+      "cosmetics_armor": "Cosméticos / Armadura",
+      "food_farming": "Comida / Agricultura",
+      "furniture": "Móveis",
+      "gameplay": "Jogabilidade",
+      "library": "Biblioteca",
+      "miscellaneous": "Diversos",
+      "mobs_characters": "Mobs / Personagens",
+      "prefab": "Prefab",
+      "quality_of_life": "Qualidade de Vida",
+      "resource_packs": "Pacotes de Recursos",
+      "utility": "Utilitário",
+      "world_gen": "Geração de Mundo"
+    }
   },
   "onboarding": {
     "language": "Language",

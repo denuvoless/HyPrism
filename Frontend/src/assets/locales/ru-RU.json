@@ -33,8 +33,9 @@
     "exporting": "Экспорт...",
     "importing": "Импорт...",
     "Latest": "Последняя",
-    "refresh": "Refresh",
-    "unknown": "Unknown"
+    "refresh": "Обновить",
+    "unknown": "Неизвестно",
+    "clear": "Очистить"
   },
   "app": {
     "title": "HyPrism",
@@ -444,7 +445,9 @@
       "installing_butler_pwr": "Установка игры через Butler...",
       "using_cached_installer": "Использование кешированного установщика...",
       "download_complete": "Загрузка завершена!",
-      "downloading_mirror": "Загрузка с зеркала... {0}%"
+      "downloading_mirror": "Загрузка с зеркала... {0}%",
+      "checking_versions": "Проверка доступных версий...",
+      "installing_butler": "Настройка механизма загрузки..."
     }
   },
   "profileEditor": {
@@ -664,7 +667,9 @@
       "resource_packs": "Ресурс-паки",
       "utility": "Утилиты",
       "world_gen": "Генерация мира"
-    }
+    },
+    "selectedForInstall": "Выбрано для установки",
+    "selectForInstall": "Выбрать для установки (Shift+клик для диапазона)"
   },
   "onboarding": {
     "language": "Язык",

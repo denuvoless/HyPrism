@@ -34,7 +34,8 @@
     "importing": "Importing...",
     "Latest": "Latest",
     "refresh": "Refresh",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "clear": "Clear"
   },
   "app": {
     "title": "HyPrism",
@@ -586,6 +587,8 @@
     "selectShift": "Select (Shift+click for range)",
     "selectedForDownload": "Selected for download",
     "selectForDownload": "Select for download (Shift+click for range)",
+    "selectedForInstall": "Selected for install",
+    "selectForInstall": "Select for install (Shift+click for range)",
     "installedBadge": "Installed",
     "description": "Description",
     "noDescription": "No description",
