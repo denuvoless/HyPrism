@@ -7,18 +7,28 @@ using HyPrism.Services.User;
 namespace HyPrism.Services.Game.Sources;
 
 /// <summary>
+/// Exception thrown when Hytale API returns 401/403, indicating token needs refresh.
+/// </summary>
+internal class HytaleAuthExpiredException : Exception
+{
+    public HytaleAuthExpiredException(string message) : base(message) { }
+}
+
+/// <summary>
 /// Version source for official Hytale servers.
 /// Requires an authenticated Hytale account with a purchased game.
 /// </summary>
 /// <remarks>
 /// Endpoint: https://account-data.hytale.com/patches/{os}/{arch}/{channel}/{from_build}
 /// The official API returns patch steps with signed download URLs.
+/// Automatically refreshes access token on auth errors.
 /// </remarks>
 public class HytaleVersionSource : IVersionSource
 {
     private const string PatchesApiBaseUrl = "https://account-data.hytale.com/patches";
     private const string PatchesCacheFileName = "patches.json";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
+    private const int MaxAuthRetries = 2;
 
     private readonly string _appDir;
     private readonly HttpClient _httpClient;
@@ -206,17 +216,22 @@ public class HytaleVersionSource : IVersionSource
 
     /// <summary>
     /// Fetches patches from the official Hytale API.
+    /// Automatically retries with token refresh on auth errors.
     /// </summary>
     internal async Task<OfficialPatchesResponse?> GetPatchesAsync(
         string os, string arch, string branch, int fromBuild = 0, CancellationToken ct = default)
     {
-        var session = await _authService.GetValidSessionAsync();
-        if (session == null)
-        {
-            Logger.Debug("HytaleSource", "No valid Hytale session available");
-            return null;
-        }
+        return await FetchWithTokenRefreshAsync(
+            async (accessToken) => await FetchPatchesInternalAsync(os, arch, branch, fromBuild, accessToken, ct),
+            ct);
+    }
 
+    /// <summary>
+    /// Internal method that performs the actual patches fetch.
+    /// </summary>
+    private async Task<OfficialPatchesResponse?> FetchPatchesInternalAsync(
+        string os, string arch, string branch, int fromBuild, string accessToken, CancellationToken ct)
+    {
         string cacheKey = $"{os}:{arch}:{branch}:{fromBuild}";
         
         // Check cache
@@ -239,13 +254,20 @@ public class HytaleVersionSource : IVersionSource
             Logger.Info("HytaleSource", $"Fetching patches from {url}...");
 
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.AccessToken);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
             request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(30));
 
             var response = await _httpClient.SendAsync(request, cts.Token);
+
+            // Throw specific exception for auth errors so we can retry with refresh
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
+                response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                throw new HytaleAuthExpiredException($"Auth error: {response.StatusCode}");
+            }
 
             if (!response.IsSuccessStatusCode)
             {
@@ -265,6 +287,10 @@ public class HytaleVersionSource : IVersionSource
 
             return patchesResponse;
         }
+        catch (HytaleAuthExpiredException)
+        {
+            throw; // Re-throw to trigger refresh
+        }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             Logger.Warning("HytaleSource", "Patches API request timed out");
@@ -279,6 +305,55 @@ public class HytaleVersionSource : IVersionSource
         {
             _fetchLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Executes an API call with automatic token refresh on auth errors.
+    /// </summary>
+    /// <typeparam name="T">The return type of the API call.</typeparam>
+    /// <param name="apiCall">Function that takes access token and returns result.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Result of the API call, or default if all retries fail.</returns>
+    private async Task<T?> FetchWithTokenRefreshAsync<T>(
+        Func<string, Task<T?>> apiCall,
+        CancellationToken ct = default) where T : class
+    {
+        for (int attempt = 0; attempt < MaxAuthRetries; attempt++)
+        {
+            // Get valid session (this already checks expiry and refreshes proactively)
+            var session = await _authService.GetValidSessionAsync();
+            if (session == null)
+            {
+                Logger.Debug("HytaleSource", "No valid Hytale session available");
+                return default;
+            }
+
+            try
+            {
+                return await apiCall(session.AccessToken);
+            }
+            catch (HytaleAuthExpiredException ex)
+            {
+                if (attempt < MaxAuthRetries - 1)
+                {
+                    Logger.Warning("HytaleSource", $"Auth error ({ex.Message}), forcing token refresh (attempt {attempt + 1}/{MaxAuthRetries})...");
+                    
+                    // Force a token refresh by invalidating the current session's expiry
+                    // This will make GetValidSessionAsync trigger a refresh on next call
+                    await _authService.ForceRefreshAsync();
+                    
+                    // Clear cache since old URLs may have expired signatures
+                    ClearCache();
+                }
+                else
+                {
+                    Logger.Error("HytaleSource", $"Auth failed after {MaxAuthRetries} attempts, giving up");
+                    return default;
+                }
+            }
+        }
+
+        return default;
     }
 
     /// <summary>

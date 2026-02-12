@@ -218,6 +218,26 @@ public class HytaleAuthService
     }
 
     /// <summary>
+    /// Forces a token refresh regardless of expiry time.
+    /// Used when API returns 401/403 indicating token is invalid.
+    /// </summary>
+    public async Task<bool> ForceRefreshAsync()
+    {
+        if (CurrentSession == null) return false;
+        
+        Logger.Info("HytaleAuth", "Forcing token refresh...");
+        var refreshed = await RefreshTokenAsync();
+        if (!refreshed)
+        {
+            Logger.Warning("HytaleAuth", "Forced token refresh failed");
+            return false;
+        }
+        
+        Logger.Success("HytaleAuth", "Token refreshed successfully");
+        return true;
+    }
+
+    /// <summary>
     /// Ensures a valid session with fresh game session tokens for launching.
     /// Always creates a new game session even if the access token is still valid,
     /// because game session tokens (identityToken/sessionToken) expire independently
