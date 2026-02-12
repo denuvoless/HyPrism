@@ -56,21 +56,6 @@ public class ConfigService : IConfigService
                     Logger.Info("Config", $"Migrated to v2.0.0, UUID: {config.UUID}");
                 }
                 
-                // Migration: Migrate existing UUID to UserUuids mapping
-                config.UserUuids ??= new Dictionary<string, string>();
-                if (!string.IsNullOrEmpty(config.UUID) && !string.IsNullOrEmpty(config.Nick))
-                {
-                    var existingKey = config.UserUuids.Keys
-                        .FirstOrDefault(k => k.Equals(config.Nick, StringComparison.OrdinalIgnoreCase));
-                    
-                    if (existingKey == null)
-                    {
-                        config.UserUuids[config.Nick] = config.UUID;
-                        needsSave = true;
-                        Logger.Info("Config", $"Migrated existing UUID to UserUuids mapping for '{config.Nick}'");
-                    }
-                }
-                
                 // Validate language code exists in available languages
                 var availableLanguages = LocalizationService.GetAvailableLanguages();
                 if (!string.IsNullOrEmpty(config.Language) && !availableLanguages.ContainsKey(config.Language))
@@ -92,11 +77,13 @@ public class ConfigService : IConfigService
                 // Default nick to random name if empty or placeholder
                 
                 // Migration: Migrate legacy "latest" branch to release
+                #pragma warning disable CS0618 // Using obsolete fields for migration
                 if (config.VersionType == "latest")
                 {
                     config.VersionType = "release";
                     needsSave = true;
                 }
+                #pragma warning restore CS0618
                 
                 // Default nick to random name if empty or placeholder
                 if (string.IsNullOrWhiteSpace(config.Nick) || config.Nick == "Player" || config.Nick == "Hyprism" || config.Nick == "HyPrism")
@@ -133,13 +120,6 @@ public class ConfigService : IConfigService
             config.Nick = UtilityService.GenerateRandomUsername();
         }
         
-        // Initialize UserUuids
-        config.UserUuids ??= new Dictionary<string, string>();
-        if (!string.IsNullOrEmpty(config.Nick) && !string.IsNullOrEmpty(config.UUID))
-        {
-            config.UserUuids[config.Nick] = config.UUID;
-        }
-        
         // Validate default language
         var defaultAvailableLanguages = LocalizationService.GetAvailableLanguages();
         if (!defaultAvailableLanguages.ContainsKey(config.Language))
@@ -159,7 +139,8 @@ public class ConfigService : IConfigService
         {
             var json = JsonSerializer.Serialize(_config, new JsonSerializerOptions
             {
-                WriteIndented = true
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
             });
             
             File.WriteAllText(_configPath, json);

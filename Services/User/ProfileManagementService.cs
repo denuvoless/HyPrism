@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using HyPrism.Models;
 using HyPrism.Services.Core;
 using HyPrism.Services.Game;
+using HyPrism.Services.Game.Instance;
 
 namespace HyPrism.Services.User;
 
@@ -196,14 +197,10 @@ public class ProfileManagementService : IProfileManagementService
             // Restore the new profile's skin data
             _skinService.RestoreProfileSkinData(profile);
             
-            // Update current UUID and Nick - also update UserUuids mapping
+            // Update current UUID and Nick
             config.UUID = profile.UUID;
             config.Nick = profile.Name;
             config.ActiveProfileIndex = index;
-            
-            // Ensure the profile's UUID is in the UserUuids mapping
-            config.UserUuids ??= new Dictionary<string, string>();
-            config.UserUuids[profile.Name] = profile.UUID;
             
             // Switch mods symlink to the new profile's mods folder
             SwitchProfileModsSymlink(profile);
@@ -281,20 +278,6 @@ public class ProfileManagementService : IProfileManagementService
         {
             return null;
         }
-        
-        // Ensure the UserUuids mapping is up-to-date for the current nick
-        config.UserUuids ??= new Dictionary<string, string>();
-        // Remove any stale mapping pointing to this UUID (old nick)
-        var staleKey = config.UserUuids.FirstOrDefault(kvp => 
-            kvp.Value.Equals(uuid, StringComparison.OrdinalIgnoreCase) && 
-            !kvp.Key.Equals(name, StringComparison.OrdinalIgnoreCase)).Key;
-        if (staleKey != null)
-        {
-            config.UserUuids.Remove(staleKey);
-            Logger.Info("Profile", $"Removed stale UUID mapping for old nick '{staleKey}'");
-        }
-        // Set mapping for current nick → current UUID
-        config.UserUuids[name] = uuid;
         
         // Check if a profile with this UUID already exists
         var existing = config.Profiles?.FirstOrDefault(p => p.UUID == uuid);
@@ -379,7 +362,9 @@ public class ProfileManagementService : IProfileManagementService
             // Copy UserData from source profile if it exists
             try
             {
+                #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
                 var branch = UtilityService.NormalizeVersionType(config.VersionType);
+                #pragma warning restore CS0618
                 var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
                 var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
                 
@@ -605,7 +590,9 @@ public class ProfileManagementService : IProfileManagementService
             var profile = config.Profiles[config.ActiveProfileIndex];
             
             // Check if the game instance folder exists
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = Path.Combine(versionPath, "UserData");
             var gameModsPath = Path.Combine(userDataPath, "Mods");
@@ -682,7 +669,9 @@ public class ProfileManagementService : IProfileManagementService
         {
             var config = _configService.Configuration;
             // Get the game's UserData/Mods path
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = Path.Combine(versionPath, "UserData");
             var gameModsPath = Path.Combine(userDataPath, "Mods");

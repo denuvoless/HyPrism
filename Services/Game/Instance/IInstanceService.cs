@@ -1,6 +1,6 @@
 using HyPrism.Models;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Instance;
 
 /// <summary>
 /// Manages game instances including installation paths, version tracking, and instance lifecycle.
@@ -134,4 +134,53 @@ public interface IInstanceService
     /// <param name="version">The version number.</param>
     /// <param name="customName">The custom name to set, or null to clear.</param>
     void SetInstanceCustomName(string branch, int version, string? customName);
+
+    /// <summary>
+    /// Gets the instance metadata from the meta.json file.
+    /// </summary>
+    /// <param name="instancePath">The path to the instance directory.</param>
+    /// <returns>The instance metadata, or null if not found.</returns>
+    InstanceMeta? GetInstanceMeta(string instancePath);
+
+    /// <summary>
+    /// Saves instance metadata to the meta.json file.
+    /// </summary>
+    /// <param name="instancePath">The path to the instance directory.</param>
+    /// <param name="meta">The metadata to save.</param>
+    void SaveInstanceMeta(string instancePath, InstanceMeta meta);
+
+    /// <summary>
+    /// Creates a new instance with a generated ID.
+    /// </summary>
+    /// <param name="branch">The game branch.</param>
+    /// <param name="version">The version number.</param>
+    /// <param name="name">Optional custom name for the instance.</param>
+    /// <param name="isLatest">Whether this is the auto-updating "latest" instance.</param>
+    /// <returns>The created instance metadata.</returns>
+    InstanceMeta CreateInstanceMeta(string branch, int version, string? name = null, bool isLatest = false);
+
+    /// <summary>
+    /// Gets the currently selected instance based on SelectedInstanceId.
+    /// </summary>
+    /// <returns>The selected instance info, or null if none selected.</returns>
+    InstanceInfo? GetSelectedInstance();
+
+    /// <summary>
+    /// Sets the selected instance by ID.
+    /// </summary>
+    /// <param name="instanceId">The instance ID to select.</param>
+    void SetSelectedInstance(string instanceId);
+
+    /// <summary>
+    /// Synchronizes Config.Instances with the actual instance folders on disk.
+    /// Removes entries for missing instances and adds entries for new ones.
+    /// </summary>
+    void SyncInstancesWithConfig();
+
+    /// <summary>
+    /// Finds an instance by its ID.
+    /// </summary>
+    /// <param name="instanceId">The instance ID.</param>
+    /// <returns>The instance info, or null if not found.</returns>
+    InstanceInfo? FindInstanceById(string instanceId);
 }

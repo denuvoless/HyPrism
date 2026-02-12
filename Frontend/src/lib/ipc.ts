@@ -228,6 +228,7 @@ export interface AppConfig {
 }
 
 export interface InstalledInstance {
+  id: string;
   branch: string;
   version: number;
   path: string;
@@ -235,6 +236,14 @@ export interface InstalledInstance {
   userDataSize: number;
   totalSize: number;
   isValid: boolean;
+}
+
+export interface InstanceInfo {
+  id: string;
+  name: string;
+  branch: string;
+  version: number;
+  path: string;
 }
 
 export interface LanguageInfo {
@@ -246,6 +255,18 @@ export interface GpuAdapterInfo {
   name: string;
   vendor: string;
   type: string;
+}
+
+export interface VersionInfo {
+  version: number;
+  source: 'Official' | 'Mirror';
+  isLatest: boolean;
+}
+
+export interface VersionListResponse {
+  versions: VersionInfo[];
+  hasOfficialAccount: boolean;
+  officialSourceAvailable: boolean;
 }
 
 // #endregion
@@ -266,10 +287,11 @@ const _game = {
   onProgress: (cb: (data: ProgressUpdate) => void) => on('hyprism:game:progress', cb as (d: unknown) => void),
   onState: (cb: (data: GameState) => void) => on('hyprism:game:state', cb as (d: unknown) => void),
   onError: (cb: (data: GameError) => void) => on('hyprism:game:error', cb as (d: unknown) => void),
+  versionsWithSources: (data?: unknown) => invoke<VersionListResponse>('hyprism:game:versionsWithSources', data),
 };
 
 const _instance = {
-  create: (data?: unknown) => invoke<boolean>('hyprism:instance:create', data),
+  create: (data?: unknown) => invoke<InstanceInfo | null>('hyprism:instance:create', data),
   delete: (data?: unknown) => invoke<boolean>('hyprism:instance:delete', data),
   openFolder: (data?: unknown) => send('hyprism:instance:openFolder', data),
   openModsFolder: (data?: unknown) => send('hyprism:instance:openModsFolder', data),
@@ -278,6 +300,9 @@ const _instance = {
   saves: (data?: unknown) => invoke<SaveInfo[]>('hyprism:instance:saves', data),
   openSaveFolder: (data?: unknown) => send('hyprism:instance:openSaveFolder', data),
   getIcon: (data?: unknown) => invoke<string | null>('hyprism:instance:getIcon', data),
+  select: (data?: unknown) => invoke<boolean>('hyprism:instance:select', data),
+  getSelected: (data?: unknown) => invoke<InstanceInfo | null>('hyprism:instance:getSelected', data),
+  list: () => invoke<InstanceInfo[]>('hyprism:instance:list'),
 };
 
 const _news = {

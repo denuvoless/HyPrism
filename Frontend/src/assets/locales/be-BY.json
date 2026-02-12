@@ -73,6 +73,9 @@
     "preRelease": "Прэ-рэліз",
     "latest": "апошняя",
     "noVersions": "Няма версій",
+    "mirror": "Люстэрка",
+    "sourceOfficial": "Спампоўваецца з афіцыйных сервераў Hytale",
+    "sourceMirror": "Спампоўваецца з люстэрка супольнасці",
     "editProfile": "Рэдагаваць профіль",
     "updateAvailable": "Даступна абнаўленне",
     "joinDiscord": "Далучыцца да Discord",
@@ -445,7 +448,8 @@
       "download_complete": "Загрузка завершана!",
       "checking_versions": "Праверка даступных версій...",
       "installing_butler": "Наладка механізму загрузкі...",
-      "downloading_mirror": "Загрузка з люстэрка... {0}%"
+      "downloading_mirror": "Загрузка з люстэрка... {0}%",
+      "downloading_official": "Загрузка з Hytale... {0}%"
     }
   },
   "profileEditor": {

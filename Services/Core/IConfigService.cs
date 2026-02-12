@@ -19,7 +19,7 @@ public interface IConfigService
     void SaveConfig();
     
     /// <summary>
-    /// Resets configuration to default values while preserving essential user data (UUID, UserUuids).
+    /// Resets configuration to default values while preserving essential user data (UUID, Profiles).
     /// </summary>
     void ResetConfig();
     

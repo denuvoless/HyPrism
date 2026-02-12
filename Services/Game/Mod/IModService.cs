@@ -1,6 +1,6 @@
 using HyPrism.Models;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Mod;
 
 /// <summary>
 /// Provides mod management functionality including search, installation, and update checking.

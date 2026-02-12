@@ -73,6 +73,9 @@
     "preRelease": "预览版",
     "latest": "最新",
     "noVersions": "暂无版本",
+    "mirror": "镜像",
+    "sourceOfficial": "从Hytale官方服务器下载",
+    "sourceMirror": "从社区镜像下载",
     "editProfile": "编辑资料",
     "updateAvailable": "有可用更新",
     "joinDiscord": "加入Discord",
@@ -445,7 +448,8 @@
       "download_complete": "下载完成！",
       "checking_versions": "检查可用版本...",
       "installing_butler": "设置下载引擎...",
-      "downloading_mirror": "从镜像下载中... {0}%"
+      "downloading_mirror": "从镜像下载中... {0}%",
+      "downloading_official": "从Hytale下载中... {0}%"
     }
   },
   "profileEditor": {

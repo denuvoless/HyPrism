@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HyPrism.Models;
 using HyPrism.Services.Core;
 
 namespace HyPrism.Services.User;
@@ -13,6 +14,10 @@ namespace HyPrism.Services.User;
 /// Used to authenticate official Hytale accounts and obtain session tokens
 /// for launching the game in authenticated mode.
 /// </summary>
+/// <remarks>
+/// Session data is stored per-profile in the profile's folder to support
+/// multiple Hytale accounts across different launcher profiles.
+/// </remarks>
 public class HytaleAuthService
 {
     private const string AuthUrl = "https://oauth.accounts.hytale.com/oauth2/auth";
@@ -26,6 +31,7 @@ public class HytaleAuthService
     private readonly HttpClient _httpClient;
     private readonly string _appDir;
     private readonly IBrowserService _browserService;
+    private readonly ConfigService _configService;
     
     private string? _pendingCodeVerifier;
     private string? _pendingState;
@@ -37,14 +43,18 @@ public class HytaleAuthService
     /// </summary>
     public HytaleAuthSession? CurrentSession { get; private set; }
 
-    public HytaleAuthService(HttpClient httpClient, string appDir, IBrowserService browserService)
+    public HytaleAuthService(HttpClient httpClient, string appDir, IBrowserService browserService, ConfigService configService)
     {
         _httpClient = httpClient;
         _appDir = appDir;
         _browserService = browserService;
+        _configService = configService;
 
-        // Try to restore session from disk
+        // Try to restore session from disk for current profile
         LoadSession();
+        
+        // Also try migrating old global session if exists
+        MigrateOldSessionIfNeeded();
     }
 
     /// <summary>
@@ -505,7 +515,115 @@ public class HytaleAuthService
 
     #region Session Persistence
 
-    private string GetSessionFilePath() => Path.Combine(_appDir, "hytale_session.json");
+    /// <summary>
+    /// Gets the profile folder path for the current active profile.
+    /// Returns null if no profile is active.
+    /// </summary>
+    private string? GetCurrentProfileFolder()
+    {
+        var config = _configService.Configuration;
+        if (config.ActiveProfileIndex < 0 || config.Profiles == null ||
+            config.ActiveProfileIndex >= config.Profiles.Count)
+        {
+            return null;
+        }
+
+        var profile = config.Profiles[config.ActiveProfileIndex];
+        var safeName = SanitizeFileName(profile.Name);
+        var profilesDir = Path.Combine(_appDir, "Profiles");
+        return Path.Combine(profilesDir, safeName);
+    }
+
+    /// <summary>
+    /// Gets the session file path for the current profile.
+    /// Falls back to app root if no profile is active (legacy behavior).
+    /// </summary>
+    private string GetSessionFilePath()
+    {
+        var profileFolder = GetCurrentProfileFolder();
+        if (profileFolder != null)
+        {
+            Directory.CreateDirectory(profileFolder);
+            return Path.Combine(profileFolder, "hytale_session.json");
+        }
+        // Fallback to root (for migration or no profile case)
+        return Path.Combine(_appDir, "hytale_session.json");
+    }
+
+    /// <summary>
+    /// Gets the old (legacy) session file path at app root.
+    /// </summary>
+    private string GetLegacySessionFilePath() => Path.Combine(_appDir, "hytale_session.json");
+
+    /// <summary>
+    /// Migrates old global session file to current profile folder if needed.
+    /// </summary>
+    private void MigrateOldSessionIfNeeded()
+    {
+        try
+        {
+            var legacyPath = GetLegacySessionFilePath();
+            var profileFolder = GetCurrentProfileFolder();
+            
+            // Only migrate if: old file exists, profile folder exists, and no session loaded yet
+            if (profileFolder == null || CurrentSession != null || !File.Exists(legacyPath))
+                return;
+
+            var profileSessionPath = Path.Combine(profileFolder, "hytale_session.json");
+            
+            // Don't overwrite existing profile session
+            if (File.Exists(profileSessionPath))
+                return;
+
+            // Copy to profile folder
+            Directory.CreateDirectory(profileFolder);
+            File.Copy(legacyPath, profileSessionPath);
+            Logger.Info("HytaleAuth", $"Migrated session from root to profile folder");
+
+            // Reload session from new location
+            LoadSession();
+
+            // Mark the profile as official if session loaded successfully
+            if (CurrentSession != null)
+            {
+                var config = _configService.Configuration;
+                if (config.ActiveProfileIndex >= 0 && config.Profiles != null &&
+                    config.ActiveProfileIndex < config.Profiles.Count)
+                {
+                    var profile = config.Profiles[config.ActiveProfileIndex];
+                    profile.IsOfficial = true;
+                    _configService.SaveConfig();
+                    Logger.Info("HytaleAuth", $"Marked profile '{profile.Name}' as official after migration");
+                }
+            }
+
+            // Delete old file after successful migration
+            try { File.Delete(legacyPath); }
+            catch (Exception ex) { Logger.Warning("HytaleAuth", $"Could not delete old session file: {ex.Message}"); }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("HytaleAuth", $"Session migration failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Reloads session for the current profile. Call this after switching profiles.
+    /// </summary>
+    public void ReloadSessionForCurrentProfile()
+    {
+        CurrentSession = null;
+        LoadSession();
+        Logger.Info("HytaleAuth", CurrentSession != null 
+            ? $"Reloaded session for profile, user: {CurrentSession.Username}" 
+            : "No session for current profile");
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(name.Where(c => !invalid.Contains(c)).ToArray());
+    }
 
     private void SaveSession()
     {

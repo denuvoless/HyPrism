@@ -1,6 +1,9 @@
 using HyPrism.Services.Core;
+using HyPrism.Services.Game.Butler;
+using HyPrism.Services.Game.Instance;
+using HyPrism.Services.Game.Version;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Download;
 
 /// <summary>
 /// Manages differential game updates by downloading and applying Butler PWR patches.
@@ -19,7 +22,6 @@ public class PatchManager : IPatchManager
     private readonly IProgressNotificationService _progressService;
     private readonly HttpClient _httpClient;
     private readonly string _appDir;
-    private readonly MirrorService _mirrorService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PatchManager"/> class.
@@ -31,7 +33,6 @@ public class PatchManager : IPatchManager
     /// <param name="progressService">Service for reporting progress notifications.</param>
     /// <param name="httpClient">HTTP client for network operations.</param>
     /// <param name="appPath">Application path configuration.</param>
-    /// <param name="mirrorService">Fallback mirror service for when official servers are down.</param>
     public PatchManager(
         IVersionService versionService,
         IButlerService butlerService,
@@ -39,8 +40,7 @@ public class PatchManager : IPatchManager
         IInstanceService instanceService,
         IProgressNotificationService progressService,
         HttpClient httpClient,
-        AppPathConfiguration appPath,
-        MirrorService mirrorService)
+        AppPathConfiguration appPath)
     {
         _versionService = versionService;
         _butlerService = butlerService;
@@ -49,7 +49,6 @@ public class PatchManager : IPatchManager
         _progressService = progressService;
         _httpClient = httpClient;
         _appDir = appPath.AppDir;
-        _mirrorService = mirrorService;
     }
 
     /// <inheritdoc/>
@@ -73,7 +72,7 @@ public class PatchManager : IPatchManager
 
         // Mirror + release: each file is a full standalone game copy.
         // No need for intermediate patches — just download the latest version.
-        if (officialDown && !_mirrorService.IsDiffBasedBranch(normalizedBranch))
+        if (officialDown && !_versionService.IsDiffBasedBranch(normalizedBranch))
         {
             Logger.Info("Download", $"Mirror release: downloading full copy v{latestVersion}");
             await DownloadAndApplyMirrorFullCopyAsync(versionPath, normalizedBranch, os, arch, latestVersion, ct);
@@ -107,14 +106,27 @@ public class PatchManager : IPatchManager
             }
             else
             {
-                // Official: try official URL, fall back to mirror on failure
-                string officialUrl = $"https://game-patches.hytale.com/patches/{os}/{arch}/{normalizedBranch}/0/{patchVersion}.pwr";
-                Logger.Info("Download", $"Downloading patch: {officialUrl}");
-                await ValidatePatchFileAsync(officialUrl, ct);
-                await DownloadPatchWithFallbackAsync(officialUrl, patchPwrPath, os, arch, normalizedBranch,
+                // Get URL from cache (will refresh if needed)
+                string patchUrl;
+                try
+                {
+                    patchUrl = await _versionService.RefreshAndGetDownloadUrlAsync(normalizedBranch, patchVersion, ct);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning("Download", $"Failed to get official URL for patch v{patchVersion}: {ex.Message}");
+                    // Fall back to mirror diff
+                    await DownloadMirrorDiffAsync(os, arch, normalizedBranch, prevVersion, patchVersion,
+                        patchPwrPath, i, patchesToApply.Count, baseProgress, progressPerPatch, ct);
+                    goto applyPatch;
+                }
+                
+                Logger.Info("Download", $"Downloading patch: {patchUrl}");
+                await DownloadPatchWithFallbackAsync(patchUrl, patchPwrPath, os, arch, normalizedBranch,
                     prevVersion, patchVersion, i, patchesToApply.Count, baseProgress, progressPerPatch, ct);
             }
 
+            applyPatch:
             // Apply the downloaded patch with Butler
             ct.ThrowIfCancellationRequested();
             int applyBaseProgress = baseProgress + (progressPerPatch / 2);
@@ -145,7 +157,7 @@ public class PatchManager : IPatchManager
         string versionPath, string branch, string os, string arch,
         int version, CancellationToken ct)
     {
-        var mirrorUrl = await _mirrorService.GetMirrorUrlAsync(os, arch, branch, version, ct);
+        var mirrorUrl = await _versionService.GetMirrorDownloadUrlAsync(os, arch, branch, version, ct);
         if (mirrorUrl == null)
             throw new Exception($"Mirror does not have release v{version} for {os}/{arch}");
 
@@ -189,7 +201,7 @@ public class PatchManager : IPatchManager
         int baseProgress, int progressPerPatch,
         CancellationToken ct)
     {
-        var mirrorUrl = await _mirrorService.GetMirrorDiffUrlAsync(os, arch, branch, fromVersion, toVersion, ct);
+        var mirrorUrl = await _versionService.GetMirrorDiffUrlAsync(os, arch, branch, fromVersion, toVersion, ct);
         if (mirrorUrl == null)
             throw new Exception($"Mirror does not have diff v{fromVersion}~{toVersion} for {os}/{arch}/{branch}");
 
@@ -244,10 +256,10 @@ public class PatchManager : IPatchManager
         {
             // Try the correct mirror method based on branch type
             string? mirrorUrl;
-            if (_mirrorService.IsDiffBasedBranch(branch))
-                mirrorUrl = await _mirrorService.GetMirrorDiffUrlAsync(os, arch, branch, prevVersion, patchVersion, ct);
+            if (_versionService.IsDiffBasedBranch(branch))
+                mirrorUrl = await _versionService.GetMirrorDiffUrlAsync(os, arch, branch, prevVersion, patchVersion, ct);
             else
-                mirrorUrl = await _mirrorService.GetMirrorUrlAsync(os, arch, branch, patchVersion, ct);
+                mirrorUrl = await _versionService.GetMirrorDownloadUrlAsync(os, arch, branch, patchVersion, ct);
 
             if (mirrorUrl != null)
             {
@@ -280,31 +292,5 @@ public class PatchManager : IPatchManager
 
         if (!downloaded)
             throw new Exception($"Failed to download patch v{patchVersion} from both official server and mirror");
-    }
-
-    private async Task ValidatePatchFileAsync(string patchUrl, CancellationToken ct)
-    {
-        try
-        {
-            using var headRequest = new HttpRequestMessage(HttpMethod.Head, patchUrl);
-            using var headResponse = await _httpClient.SendAsync(headRequest, ct);
-
-            if (!headResponse.IsSuccessStatusCode)
-            {
-                Logger.Warning("Download", $"Patch file not found at official URL: {patchUrl}");
-                return;
-            }
-
-            var contentLength = headResponse.Content.Headers.ContentLength ?? 0;
-            if (contentLength > 500 * 1024 * 1024)
-            {
-                Logger.Warning("Download", $"Patch file is too large ({contentLength / 1024 / 1024} MB), likely wrong version detection");
-                throw new Exception("Patch file unexpectedly large - version detection may be incorrect");
-            }
-        }
-        catch (HttpRequestException)
-        {
-            Logger.Warning("Download", $"Cannot reach official server for {patchUrl}, will try mirror");
-        }
     }
 }

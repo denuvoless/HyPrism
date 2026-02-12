@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using HyPrism.Services.Core;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Auth;
 
 /// <summary>
 /// Handles authentication with the custom Hytale auth server.

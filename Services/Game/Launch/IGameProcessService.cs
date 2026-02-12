@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Launch;
 
 /// <summary>
 /// Manages the game process lifecycle, including tracking, monitoring, and termination.

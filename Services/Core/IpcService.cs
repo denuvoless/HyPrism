@@ -8,6 +8,10 @@ using ElectronNET.API;
 using Microsoft.Extensions.DependencyInjection;
 using HyPrism.Models;
 using HyPrism.Services.Game;
+using HyPrism.Services.Game.Instance;
+using HyPrism.Services.Game.Launch;
+using HyPrism.Services.Game.Mod;
+using HyPrism.Services.Game.Version;
 using HyPrism.Services.User;
 
 namespace HyPrism.Services.Core;
@@ -42,9 +46,12 @@ namespace HyPrism.Services.Core;
 /// @type InstalledMod { id: string; name: string; slug?: string; version?: string; fileId?: string; fileName?: string; enabled: boolean; author?: string; description?: string; iconUrl?: string; curseForgeId?: string; fileDate?: string; releaseType?: number; latestFileId?: string; latestVersion?: string; screenshots?: ModScreenshot[]; }
 /// @type SaveInfo { name: string; previewPath?: string; lastModified?: string; sizeBytes?: number; }
 /// @type AppConfig { language: string; dataDirectory: string; [key: string]: unknown; }
-/// @type InstalledInstance { branch: string; version: number; path: string; hasUserData: boolean; userDataSize: number; totalSize: number; isValid: boolean; }
+/// @type InstalledInstance { id: string; branch: string; version: number; path: string; hasUserData: boolean; userDataSize: number; totalSize: number; isValid: boolean; }
+/// @type InstanceInfo { id: string; name: string; branch: string; version: number; path: string; }
 /// @type LanguageInfo { code: string; name: string; }
 /// @type GpuAdapterInfo { name: string; vendor: string; type: string; }
+/// @type VersionInfo { version: number; source: 'Official' | 'Mirror'; isLatest: boolean; }
+/// @type VersionListResponse { versions: VersionInfo[]; hasOfficialAccount: boolean; officialSourceAvailable: boolean; }
 public class IpcService
 {
     private readonly IServiceProvider _services;
@@ -98,7 +105,7 @@ public class IpcService
         return raw;
     }
 
-    private static void Reply(string channel, object data)
+    private static void Reply(string channel, object? data)
     {
         var win = GetMainWindow();
         if (win == null) return;
@@ -220,12 +227,16 @@ public class IpcService
                         if (data.TryGetValue("branch", out var branchEl))
                         {
                             var branchValue = branchEl.GetString() ?? "release";
+                            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
                             configService.Configuration.VersionType = branchValue;
+                            #pragma warning restore CS0618
                             configService.Configuration.LauncherBranch = branchValue;
                         }
                         if (data.TryGetValue("version", out var versionEl))
                         {
+                            #pragma warning disable CS0618 // Backward compatibility: SelectedVersion kept for migration
                             configService.Configuration.SelectedVersion = versionEl.GetInt32();
+                            #pragma warning restore CS0618
                         }
                     }
                 }
@@ -265,7 +276,7 @@ public class IpcService
                 var isRunning = gameProcessService.CheckForRunningGame();
                 Reply("hyprism:game:isRunning:reply", isRunning);
             }
-            catch (Exception ex)
+            catch
             {
                 Reply("hyprism:game:isRunning:reply", false);
             }
@@ -275,7 +286,9 @@ public class IpcService
         {
             try
             {
+                #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
                 string branch = configService.Configuration.VersionType ?? "release";
+                #pragma warning restore CS0618
                 if (args != null)
                 {
                     var json = ArgsToJson(args);
@@ -296,11 +309,41 @@ public class IpcService
                 Reply("hyprism:game:versions:reply", new List<int>());
             }
         });
+
+        // Get versions with source information (official vs mirror)
+        // @ipc invoke hyprism:game:versionsWithSources -> VersionListResponse
+        Electron.IpcMain.On("hyprism:game:versionsWithSources", async (args) =>
+        {
+            try
+            {
+                #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
+                string branch = configService.Configuration.VersionType ?? "release";
+                #pragma warning restore CS0618
+                if (args != null)
+                {
+                    var json = ArgsToJson(args);
+                    var data = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOpts);
+                    if (data != null && data.TryGetValue("branch", out var b) && !string.IsNullOrEmpty(b))
+                    {
+                        branch = b;
+                    }
+                }
+                
+                var response = await versionService.GetVersionListWithSourcesAsync(branch);
+                Logger.Info("IPC", $"Returning {response.Versions.Count} versions with sources for branch {branch} (official={response.OfficialSourceAvailable})");
+                Reply("hyprism:game:versionsWithSources:reply", response);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to get versions with sources: {ex.Message}");
+                Reply("hyprism:game:versionsWithSources:reply", new { versions = new List<object>(), hasOfficialAccount = false, officialSourceAvailable = false });
+            }
+        });
     }
     // #endregion
 
     // #region Instance Management
-    // @ipc invoke hyprism:instance:create -> boolean
+    // @ipc invoke hyprism:instance:create -> InstanceInfo | null
     // @ipc invoke hyprism:instance:delete -> boolean
     // @ipc send hyprism:instance:openFolder
     // @ipc send hyprism:instance:openModsFolder
@@ -309,13 +352,16 @@ public class IpcService
     // @ipc invoke hyprism:instance:saves -> SaveInfo[]
     // @ipc send hyprism:instance:openSaveFolder
     // @ipc invoke hyprism:instance:getIcon -> string | null
+    // @ipc invoke hyprism:instance:select -> boolean
+    // @ipc invoke hyprism:instance:getSelected -> InstanceInfo | null
+    // @ipc invoke hyprism:instance:list -> InstanceInfo[]
 
     private void RegisterInstanceHandlers()
     {
         var instanceService = _services.GetRequiredService<IInstanceService>();
         var fileService = _services.GetRequiredService<IFileService>();
 
-        // Create an instance (directory + metadata only, no download)
+        // Create an instance with generated ID
         Electron.IpcMain.On("hyprism:instance:create", (args) =>
         {
             try
@@ -325,24 +371,94 @@ public class IpcService
                 var branch = data?["branch"].GetString() ?? "release";
                 var version = data?["version"].GetInt32() ?? 0;
                 var customName = data?.ContainsKey("customName") == true ? data["customName"].GetString() : null;
+                var isLatest = data?.ContainsKey("isLatest") == true && data["isLatest"].GetBoolean();
 
-                // Create the instance directory
-                var instancePath = instanceService.GetInstancePath(branch, version);
-                Directory.CreateDirectory(instancePath);
+                // Create the instance with generated ID
+                var meta = instanceService.CreateInstanceMeta(branch, version, customName, isLatest);
                 
-                // Set custom name if provided
-                if (!string.IsNullOrWhiteSpace(customName))
-                {
-                    instanceService.SetInstanceCustomName(branch, version, customName);
-                }
-
-                Logger.Success("IPC", $"Created instance {branch}/{version} (no download)");
-                Reply("hyprism:instance:create:reply", true);
+                Logger.Success("IPC", $"Created instance {meta.Id} ({meta.Name})");
+                Reply("hyprism:instance:create:reply", new {
+                    id = meta.Id,
+                    name = meta.Name,
+                    branch = meta.Branch,
+                    version = meta.Version
+                });
             }
             catch (Exception ex)
             {
                 Logger.Error("IPC", $"Failed to create instance: {ex.Message}");
-                Reply("hyprism:instance:create:reply", false);
+                Reply("hyprism:instance:create:reply", null);
+            }
+        });
+
+        // Select an instance by ID
+        Electron.IpcMain.On("hyprism:instance:select", (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOpts);
+                var instanceId = data?["id"].GetString() ?? "";
+                
+                if (string.IsNullOrEmpty(instanceId))
+                {
+                    Reply("hyprism:instance:select:reply", false);
+                    return;
+                }
+                
+                instanceService.SetSelectedInstance(instanceId);
+                Logger.Info("IPC", $"Selected instance: {instanceId}");
+                Reply("hyprism:instance:select:reply", true);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to select instance: {ex.Message}");
+                Reply("hyprism:instance:select:reply", false);
+            }
+        });
+
+        // Get selected instance
+        Electron.IpcMain.On("hyprism:instance:getSelected", (_) =>
+        {
+            try
+            {
+                var selected = instanceService.GetSelectedInstance();
+                Reply("hyprism:instance:getSelected:reply", selected != null ? new {
+                    id = selected.Id,
+                    name = selected.Name,
+                    branch = selected.Branch,
+                    version = selected.Version,
+                    path = selected.Path
+                } : null);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to get selected instance: {ex.Message}");
+                Reply("hyprism:instance:getSelected:reply", null);
+            }
+        });
+
+        // List all instances from config
+        Electron.IpcMain.On("hyprism:instance:list", (_) =>
+        {
+            try
+            {
+                instanceService.SyncInstancesWithConfig();
+                var config = _services.GetRequiredService<IConfigService>().Configuration;
+                var instances = config.Instances?.Select(i => (object)new {
+                    id = i.Id,
+                    name = i.Name,
+                    branch = i.Branch,
+                    version = i.Version,
+                    path = i.Path
+                }).ToList() ?? new List<object>();
+                
+                Reply("hyprism:instance:list:reply", instances);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to list instances: {ex.Message}");
+                Reply("hyprism:instance:list:reply", new List<object>());
             }
         });
 

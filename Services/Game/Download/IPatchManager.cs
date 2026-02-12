@@ -1,4 +1,4 @@
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Download;
 
 /// <summary>
 /// Manages differential game updates by downloading and applying Butler patches.

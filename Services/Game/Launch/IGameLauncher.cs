@@ -1,4 +1,4 @@
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Launch;
 
 /// <summary>
 /// Handles launching the game process, including client patching, 

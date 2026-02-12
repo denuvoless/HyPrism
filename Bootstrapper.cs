@@ -6,6 +6,15 @@ using HyPrism.Services;
 using HyPrism.Services.Core;
 using HyPrism.Services.User;
 using HyPrism.Services.Game;
+using HyPrism.Services.Game.Asset;
+using HyPrism.Services.Game.Auth;
+using HyPrism.Services.Game.Butler;
+using HyPrism.Services.Game.Download;
+using HyPrism.Services.Game.Instance;
+using HyPrism.Services.Game.Launch;
+using HyPrism.Services.Game.Mod;
+using HyPrism.Services.Game.Sources;
+using HyPrism.Services.Game.Version;
 
 namespace HyPrism;
 
@@ -64,11 +73,6 @@ public static class Bootstrapper
             services.AddSingleton<DownloadService>();
             services.AddSingleton<IDownloadService>(sp => sp.GetRequiredService<DownloadService>());
 
-            services.AddSingleton(sp =>
-                new MirrorService(
-                    sp.GetRequiredService<HttpClient>(),
-                    sp.GetRequiredService<AppPathConfiguration>().AppDir));
-
             services.AddSingleton<GitHubService>(sp =>
                 new GitHubService(sp.GetRequiredService<HttpClient>()));
             services.AddSingleton<IGitHubService>(sp => sp.GetRequiredService<GitHubService>());
@@ -76,9 +80,9 @@ public static class Bootstrapper
             services.AddSingleton<VersionService>(sp =>
                 new VersionService(
                     sp.GetRequiredService<AppPathConfiguration>().AppDir,
-                    sp.GetRequiredService<HttpClient>(),
                     sp.GetRequiredService<IConfigService>(),
-                    sp.GetRequiredService<MirrorService>()));
+                    sp.GetRequiredService<HytaleVersionSource>(),
+                    sp.GetRequiredService<MirrorVersionSource>()));
             services.AddSingleton<IVersionService>(sp => sp.GetRequiredService<VersionService>());
 
             #endregion
@@ -142,8 +146,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<IInstanceService>(),
                     sp.GetRequiredService<IProgressNotificationService>(),
                     sp.GetRequiredService<HttpClient>(),
-                    sp.GetRequiredService<AppPathConfiguration>(),
-                    sp.GetRequiredService<MirrorService>()));
+                    sp.GetRequiredService<AppPathConfiguration>()));
             services.AddSingleton<IPatchManager>(sp => sp.GetRequiredService<PatchManager>());
 
             services.AddSingleton(sp =>
@@ -173,8 +176,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<IPatchManager>(),
                     sp.GetRequiredService<IGameLauncher>(),
                     sp.GetRequiredService<HttpClient>(),
-                    sp.GetRequiredService<AppPathConfiguration>(),
-                    sp.GetRequiredService<MirrorService>()));
+                    sp.GetRequiredService<AppPathConfiguration>()));
             services.AddSingleton<IGameSessionService>(sp => sp.GetRequiredService<GameSessionService>());
 
             #endregion
@@ -204,7 +206,21 @@ public static class Bootstrapper
                 new HytaleAuthService(
                     sp.GetRequiredService<HttpClient>(),
                     sp.GetRequiredService<AppPathConfiguration>().AppDir,
-                    sp.GetRequiredService<IBrowserService>()));
+                    sp.GetRequiredService<IBrowserService>(),
+                    sp.GetRequiredService<ConfigService>()));
+
+            // Version Sources (unified interface for official and mirrors)
+            services.AddSingleton(sp =>
+                new HytaleVersionSource(
+                    sp.GetRequiredService<AppPathConfiguration>().AppDir,
+                    sp.GetRequiredService<HttpClient>(),
+                    sp.GetRequiredService<HytaleAuthService>(),
+                    sp.GetRequiredService<IConfigService>()));
+
+            services.AddSingleton(sp =>
+                new MirrorVersionSource(
+                    sp.GetRequiredService<HttpClient>(),
+                    "default"));
 
             #endregion
 

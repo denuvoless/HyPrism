@@ -73,6 +73,9 @@
     "preRelease": "プレリリース",
     "latest": "最新",
     "noVersions": "バージョンなし",
+    "mirror": "ミラー",
+    "sourceOfficial": "公式Hytaleサーバーからダウンロード",
+    "sourceMirror": "コミュニティミラーからダウンロード",
     "editProfile": "プロフィール編集",
     "updateAvailable": "アップデートあり",
     "joinDiscord": "Discordに参加",
@@ -445,7 +448,8 @@
       "download_complete": "ダウンロード完了！",
       "checking_versions": "利用可能なバージョンを確認中...",
       "installing_butler": "ダウンロードエンジンをセットアップ中...",
-      "downloading_mirror": "ミラーからダウンロード中... {0}%"
+      "downloading_mirror": "ミラーからダウンロード中... {0}%",
+      "downloading_official": "Hytaleからダウンロード中... {0}%"
     }
   },
   "profileEditor": {

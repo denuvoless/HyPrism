@@ -1,11 +1,12 @@
 using HyPrism.Services.Core;
+using HyPrism.Services.Game.Instance;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HyPrism.Models;
 using System.Text.RegularExpressions;
 using System.Net.Http.Json;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Mod;
 
 /// <summary>
 /// Manages game modifications including searching, installing, updating, and tracking.

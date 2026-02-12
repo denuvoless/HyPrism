@@ -25,8 +25,6 @@ export interface InstalledVersionInfo {
 // Settings-backed helpers
 async function GetCloseAfterLaunch(): Promise<boolean> { return (await ipc.settings.get()).closeAfterLaunch ?? false; }
 async function SetCloseAfterLaunch(v: boolean): Promise<void> { await ipc.settings.update({ closeAfterLaunch: v }); }
-async function GetDisableNews(): Promise<boolean> { return (await ipc.settings.get()).disableNews ?? false; }
-async function SetDisableNews(v: boolean): Promise<void> { await ipc.settings.update({ disableNews: v }); }
 async function GetBackgroundMode(): Promise<string> { return (await ipc.settings.get()).backgroundMode ?? 'image'; }
 async function SetBackgroundMode(v: string): Promise<void> { await ipc.settings.update({ backgroundMode: v }); }
 async function GetCustomInstanceDir(): Promise<string> { return (await ipc.settings.get()).dataDirectory ?? ''; }
@@ -93,7 +91,6 @@ interface SettingsModalProps {
     onShowModManager?: () => void;
     rosettaWarning?: { message: string; command: string; tutorialUrl?: string } | null;
     onBackgroundModeChange?: (mode: string) => void;
-    onNewsDisabledChange?: (disabled: boolean) => void;
     onAccentColorChange?: (color: string) => void;
     onInstanceDeleted?: () => void;
     onAuthSettingsChange?: () => void;
@@ -112,7 +109,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onShowModManager,
     rosettaWarning,
     onBackgroundModeChange,
-    onNewsDisabledChange,
     onAccentColorChange,
     onInstanceDeleted,
     onAuthSettingsChange,
@@ -130,7 +126,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [instanceDir, setInstanceDir] = useState('');
     const [devModeEnabled, setDevModeEnabled] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [disableNews, setDisableNews] = useState(false);
     const [showAlphaMods, setShowAlphaModsState] = useState(false);
     const [onlineMode, setOnlineMode] = useState(true);
     const [backgroundMode, setBackgroundModeState] = useState('slideshow');
@@ -185,9 +180,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 const customDir = await GetCustomInstanceDir();
                 setInstanceDir(customDir || folderPath); // Show real path
                 
-                const newsDisabled = await GetDisableNews();
-                setDisableNews(newsDisabled);
-                
                 const showAlpha = await GetShowAlphaMods();
                 setShowAlphaModsState(showAlpha);
 
@@ -234,7 +226,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 if (domain) {
                     setAuthDomain(domain);
                     // Derive auth mode from domain value
-                    if (domain === 'sessionserver.mojang.com' || domain === 'official') {
+                    if (domain === 'sessionserver.hytale.com' || domain === 'official') {
                         setAuthModeState('official');
                     } else if (domain === 'sessions.sanasol.ws' || domain === '' || !domain) {
                         setAuthModeState('default');
@@ -480,18 +472,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         }
     };
 
-    const handleDisableNewsChange = async (disabled: boolean) => {
-        setDisableNews(disabled);
-        try {
-            await SetDisableNews(disabled);
-            onNewsDisabledChange?.(disabled);
-        } catch (err) {
-            console.error('Failed to set news setting:', err);
-        }
-    };
-
-
-
     const handleBackgroundModeChange = async (mode: string) => {
         setBackgroundModeState(mode);
         try {
@@ -686,7 +666,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <div className="flex-1">
                                             <p className="text-yellow-500 text-sm font-medium mb-2">{rosettaWarning.message}</p>
                                             <div className="flex flex-col gap-2">
-                                                <code className="text-xs text-white/70 bg-black/30 px-2 py-1 rounded font-mono break-all">
+                                                <code className="text-xs text-white/70 bg-[#1c1c1e] px-2 py-1 rounded font-mono break-all">
                                                     {rosettaWarning.command}
                                                 </code>
                                                 {rosettaWarning.tutorialUrl && (
@@ -952,31 +932,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                                     </div>
 
-                                    {/* Disable News Toggle */}
-                                    <div 
-                                        className={`flex items-center justify-between p-4 rounded-2xl ${gc} cursor-pointer hover:border-white/[0.12] transition-all`}
-                                        onClick={() => handleDisableNewsChange(!disableNews)}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
-                                                <Globe size={16} className="text-white/70" />
-                                            </div>
-                                            <div>
-                                                <span className="text-white text-sm font-medium">{t('settings.visualSettings.hideNews')}</span>
-                                                <p className="text-xs text-white/40">{t('settings.visualSettings.hideNewsHint')}</p>
-                                            </div>
-                                        </div>
-                                        <div 
-                                            className="w-12 h-7 rounded-full flex items-center transition-all duration-200"
-                                            style={{ backgroundColor: disableNews ? accentColor : 'rgba(255,255,255,0.15)' }}
-                                        >
-                                            <div 
-                                                className={`w-5 h-5 rounded-full shadow-md transform transition-all duration-200 ${disableNews ? 'translate-x-6' : 'translate-x-1'}`}
-                                                style={{ backgroundColor: disableNews ? accentTextColor : 'white' }}
-                                            />
-                                        </div>
-                                    </div>
-
 
                                 </div>
                             )}
@@ -1060,8 +1015,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     style={authMode === 'official' ? { backgroundColor: `${accentColor}15`, borderColor: `${accentColor}50` } : undefined}
                                                     onClick={async () => {
                                                         setAuthModeState('official');
-                                                        setAuthDomain('sessionserver.mojang.com');
-                                                        await ipc.settings.update({ authDomain: 'sessionserver.mojang.com' });
+                                                        setAuthDomain('sessionserver.hytale.com');
+                                                        await ipc.settings.update({ authDomain: 'sessionserver.hytale.com' });
                                                         onAuthSettingsChange?.();
                                                     }}
                                                 >
@@ -1122,7 +1077,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                         }
                                                                     }}
                                                                     placeholder="auth.example.com"
-                                                                    className="flex-1 h-10 px-3 rounded-lg bg-black/30 border border-white/[0.08] text-white text-sm placeholder-white/30 focus:outline-none focus:border-white/20 transition-colors"
+                                                                    className="flex-1 h-10 px-3 rounded-lg bg-[#1c1c1e] border border-white/[0.08] text-white text-sm placeholder-white/30 focus:outline-none focus:border-white/20 transition-colors"
                                                                 />
                                                                 <button
                                                                     onClick={async () => {
@@ -1139,7 +1094,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                                     {t('common.save')}
                                                                 </button>
                                                             </div>
-                                                            {authDomain && authDomain !== 'sessions.sanasol.ws' && authDomain !== 'sessionserver.mojang.com' && (
+                                                            {authDomain && authDomain !== 'sessions.sanasol.ws' && authDomain !== 'sessionserver.hytale.com' && (
                                                                 <p className="text-xs text-white/30 mt-2">
                                                                     {t('settings.networkSettings.currentServer')}: <span className="text-white/50">{authDomain}</span>
                                                                 </p>
@@ -1161,7 +1116,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                         <label className="block text-sm text-white/60 mb-2">{t('settings.graphicsSettings.gpuPreference')}</label>
                                         <p className="text-xs text-white/40 mb-4">{t('settings.graphicsSettings.gpuPreferenceHint')}</p>
                                         {hasSingleGpu && (
-                                            <div className="mb-3 p-2.5 rounded-lg bg-white/5 border border-white/10 text-xs text-white/50 flex items-center gap-2">
+                                            <div className="mb-3 p-2.5 rounded-lg bg-[#2c2c2e] border border-white/[0.08] text-xs text-white/50 flex items-center gap-2">
                                                 <Settings size={14} className="flex-shrink-0 text-white/40" />
                                                 {t('settings.graphicsSettings.singleGpuNotice')}
                                             </div>

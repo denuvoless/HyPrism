@@ -1,20 +1,12 @@
-import React, { useState, useRef, useEffect, memo } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { Play, Download, Loader2, X, GitBranch, ChevronDown, Check, RefreshCw, Copy, User, ShieldAlert } from 'lucide-react';
+import { Play, Download, Loader2, X, RefreshCw, User, ShieldAlert } from 'lucide-react';
 import { useAccentColor } from '../contexts/AccentColorContext';
 
-import { ipc } from '@/lib/ipc';
-import { GameBranch } from '../constants/enums';
+import { ipc, InstanceInfo } from '@/lib/ipc';
 import { DiscordIcon } from '../components/icons/DiscordIcon';
 import { formatBytes } from '../utils/format';
-
-// VersionStatus type
-export type VersionStatus = {
-  status: 'installed' | 'update_available' | 'not_installed' | 'unknown';
-  installedVersion?: number;
-  latestVersion?: number;
-};
 
 interface DashboardPageProps {
   // Profile
@@ -30,29 +22,22 @@ interface DashboardPageProps {
   downloadState: 'downloading' | 'extracting' | 'launching';
   canCancel: boolean;
   isGameRunning: boolean;
-  isVersionInstalled: boolean;
-  isCheckingInstalled: boolean;
-  versionStatus: VersionStatus | null;
   progress: number;
   downloaded: number;
   total: number;
   launchState: string;
   launchDetail: string;
-  // Version
-  currentBranch: string;
-  currentVersion: number;
-  availableVersions: number[];
-  installedVersions: { version: number; isValid: boolean }[];
-  isLoadingVersions: boolean;
-  onBranchChange: (branch: string) => void;
-  onVersionChange: (version: number) => void;
+  // Instance-based
+  selectedInstance: InstanceInfo | null;
+  hasInstances: boolean;
+  isCheckingInstance: boolean;
+  hasUpdateAvailable: boolean;
   // Actions
   onPlay: () => void;
   onDownload: () => void;
   onUpdate: () => void;
-  onDuplicate: () => void;
-  onExit: () => void;
   onCancelDownload: () => void;
+  onNavigateToInstances: () => void;
   // Official server blocked
   officialServerBlocked: boolean;
 }
@@ -68,34 +53,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
   const { accentColor, accentTextColor } = useAccentColor();
 
   const [localAvatar, setLocalAvatar] = useState<string | null>(null);
-  const [isBranchOpen, setIsBranchOpen] = useState(false);
-  const [isVersionOpen, setIsVersionOpen] = useState(false);
-  const [versionDropdownLeft, setVersionDropdownLeft] = useState(0);
   const [showCancelButton, setShowCancelButton] = useState(false);
-  const branchRef = useRef<HTMLDivElement>(null);
-  const versionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     ipc.profile.get().then(p => { if (p.avatarPath) setLocalAvatar(p.avatarPath); }).catch(() => {});
   }, [props.uuid, props.avatarRefreshTrigger]);
 
-  // Close dropdowns on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (branchRef.current && !branchRef.current.contains(e.target as Node)) setIsBranchOpen(false);
-      if (versionRef.current && !versionRef.current.contains(e.target as Node)) setIsVersionOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
   useEffect(() => {
     if (!props.isDownloading) setShowCancelButton(false);
   }, [props.isDownloading]);
-
-  const branchLabel = props.currentBranch === GameBranch.RELEASE ? t('main.release')
-    : props.currentBranch === GameBranch.PRE_RELEASE ? t('main.preRelease')
-    : t('main.release');
 
   // Get translated launch state label
   const getLaunchStateLabel = () => {
@@ -106,16 +72,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
   };
 
   // Check if selectors should be hidden (during download/launch or game running)
-  const shouldHideSelectors = props.isDownloading || props.isGameRunning;
+  const shouldHideInfo = props.isDownloading || props.isGameRunning;
 
-  // Render the action section of the merged play button
+  // Render the action section of the play button
   const renderActionButton = () => {
     // Official servers with unofficial profile — block play
     if (props.officialServerBlocked) {
       return (
         <button
           disabled
-          className="h-full px-8 flex items-center gap-2 font-black text-base rounded-r-2xl cursor-not-allowed opacity-50 bg-white/5 text-white/40"
+          className="h-full px-8 flex items-center gap-2 font-black text-base rounded-2xl cursor-not-allowed opacity-50 bg-white/5 text-white/40"
         >
           <ShieldAlert size={16} />
           <span>{t('main.play')}</span>
@@ -127,7 +93,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
       return (
         <button
           disabled
-          className="h-full px-8 flex items-center gap-2 font-black text-base tracking-tight bg-gradient-to-r from-red-600 to-red-500 text-white rounded-r-2xl cursor-not-allowed opacity-90"
+          className="h-full px-8 flex items-center gap-2 font-black text-base tracking-tight bg-gradient-to-r from-red-600 to-red-500 text-white rounded-2xl cursor-not-allowed opacity-90"
         >
           <Loader2 size={16} className="animate-spin" />
           <span>{t('main.running')}</span>
@@ -138,7 +104,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
     if (props.isDownloading) {
       return (
         <div
-          className={`h-full px-6 flex items-center justify-center relative overflow-hidden w-[160px] rounded-r-2xl ${props.canCancel ? 'cursor-pointer' : 'cursor-default'}`}
+          className={`h-full px-6 flex items-center justify-center relative overflow-hidden w-[160px] rounded-2xl ${props.canCancel ? 'cursor-pointer' : 'cursor-default'}`}
           style={{ background: 'rgba(255,255,255,0.05)' }}
           onMouseEnter={() => props.canCancel && setShowCancelButton(true)}
           onMouseLeave={() => setShowCancelButton(false)}
@@ -163,22 +129,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
       );
     }
 
-    if (props.isCheckingInstalled) {
+    if (props.isCheckingInstance) {
       return (
-        <button disabled className="h-full px-8 flex items-center gap-2 font-black text-base bg-white/10 text-white/50 cursor-not-allowed rounded-r-2xl">
+        <button disabled className="h-full px-8 flex items-center gap-2 font-black text-base bg-white/10 text-white/50 cursor-not-allowed rounded-2xl">
           <Loader2 size={16} className="animate-spin" />
           <span>{t('main.checking')}</span>
         </button>
       );
     }
 
-    // Update available + installed
-    if (props.isVersionInstalled && props.versionStatus?.status === 'update_available' && props.currentVersion === 0) {
+    // Has instance with update available
+    if (props.selectedInstance && props.hasUpdateAvailable) {
       return (
         <div className="flex items-center h-full">
           <button
             onClick={props.onUpdate}
-            className="h-full px-5 flex items-center gap-2 font-black text-sm bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:brightness-110 active:scale-[0.98] transition-all"
+            className="h-full px-5 flex items-center gap-2 font-black text-sm bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-l-2xl hover:brightness-110 active:scale-[0.98] transition-all"
           >
             <RefreshCw size={14} />
             <span>{t('main.update')}</span>
@@ -196,12 +162,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
       );
     }
 
-    // Version installed - play
-    if (props.isVersionInstalled) {
+    // Has selected instance - play
+    if (props.selectedInstance) {
       return (
         <button
           onClick={props.onPlay}
-          className="h-full px-8 flex items-center gap-2 font-black text-lg rounded-r-2xl hover:brightness-110 active:scale-[0.98] transition-all"
+          className="h-full px-8 flex items-center gap-2 font-black text-lg rounded-2xl hover:brightness-110 active:scale-[0.98] transition-all"
           style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`, color: accentTextColor }}
         >
           <Play size={18} fill="currentColor" />
@@ -210,24 +176,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
       );
     }
 
-    // Duplicate available
-    if (props.currentVersion > 0 && props.versionStatus?.installedVersion === props.currentVersion) {
+    // No instance selected but instances exist - go to instances page
+    if (props.hasInstances) {
       return (
         <button
-          onClick={props.onDuplicate}
-          className="h-full px-6 flex items-center gap-2 font-black text-base rounded-r-2xl bg-gradient-to-r from-purple-500 to-violet-600 text-white hover:brightness-110 active:scale-[0.98] transition-all"
+          onClick={props.onNavigateToInstances}
+          className="h-full px-8 flex items-center gap-2 font-black text-base rounded-2xl bg-gradient-to-r from-purple-500 to-violet-600 text-white hover:brightness-110 active:scale-[0.98] transition-all"
         >
-          <Copy size={16} />
-          <span>{t('main.duplicate')}</span>
+          <span>{t('main.selectInstance')}</span>
         </button>
       );
     }
 
-    // Download
+    // No instances - download
     return (
       <button
         onClick={props.onDownload}
-        className="h-full px-8 flex items-center gap-2 font-black text-base rounded-r-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:brightness-110 active:scale-[0.98] transition-all"
+        className="h-full px-8 flex items-center gap-2 font-black text-base rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:brightness-110 active:scale-[0.98] transition-all"
       >
         <Download size={16} />
         <span>{t('main.download')}</span>
@@ -331,18 +296,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
           </div>
         </motion.div>
 
-        {/* Merged Branch/Version/Play Button */}
+        {/* Play Button */}
         <motion.div
           initial={{ y: 16 }}
           animate={{ y: 0 }}
           transition={{ delay: 0.35, duration: 0.4, ease: 'easeOut' }}
           className="flex flex-col items-center"
         >
-          {/* Button bar with relative positioning for dropdowns */}
+          {/* Button bar with relative positioning */}
           <div className="relative mt-7">
             {/* Educational label */}
             <AnimatePresence>
-              {!shouldHideSelectors && (
+              {!shouldHideInfo && (
                 <motion.div
                   initial={{ opacity: 0, y: 12, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -350,7 +315,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
                   transition={{ duration: 0.2, ease: 'easeOut' }}
                   className="absolute bottom-full flex w-full justify-center"
                 >
-                  <div className={`bg-[#1a1a1a]/90 rounded-t-lg px-4 py-1.5 border-x border-t border-white/5`}>
+                  <div className={`bg-[#1c1c1e] rounded-t-lg px-4 py-1.5 border-x border-t border-white/[0.08]`}>
                     <p className="text-white/40 text-[11px] whitespace-nowrap text-center">
                       {t('main.educational')}{' '}
                       <button
@@ -368,9 +333,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
             <div
               className={`flex items-center h-14 rounded-2xl overflow-hidden glass-bar-dashboard-solid`}
             >
-              {/* Branch & Version Selectors - hidden during download/game running */}
+              {/* Instance info label - show selected instance name */}
               <AnimatePresence mode="wait">
-                {!shouldHideSelectors && (
+                {!shouldHideInfo && props.selectedInstance && (
                   <motion.div
                     initial={{ opacity: 0, width: 0 }}
                     animate={{ opacity: 1, width: 'auto' }}
@@ -378,119 +343,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
                     transition={{ duration: 0.25, ease: 'easeInOut' }}
                     className="flex items-center h-full overflow-hidden"
                   >
-                    {/* Branch Selector Button */}
-                    <div ref={branchRef} className="h-full">
-                      <button
-                        onClick={() => { setIsBranchOpen(!isBranchOpen); setIsVersionOpen(false); }}
-                        disabled={props.isLoadingVersions}
-                        className="h-full px-4 flex items-center gap-2 text-white/60 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all"
-                      >
-                        <GitBranch size={14} className="text-white/70" />
-                        <span className="text-sm font-medium whitespace-nowrap">{branchLabel}</span>
-                        <ChevronDown size={11} className={`text-white/40 transition-transform ${isBranchOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    </div>
-
-                    <div className="w-px h-7 bg-white/10" />
-
-                    {/* Version Selector Button */}
-                    <div ref={versionRef} className="h-full">
-                      <button
-                        onClick={() => { 
-                          if (versionRef.current) setVersionDropdownLeft(versionRef.current.offsetLeft);
-                          setIsVersionOpen(!isVersionOpen); 
-                          setIsBranchOpen(false); 
-                        }}
-                        disabled={props.isLoadingVersions}
-                        className="h-full px-4 flex items-center gap-2 text-white/60 hover:text-white hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all"
-                      >
-                        <span className="text-sm font-medium whitespace-nowrap">
-                          {props.isLoadingVersions ? '...' : props.currentVersion === 0 ? t('main.latest') : `v${props.currentVersion}`}
-                        </span>
-                        <ChevronDown size={11} className={`text-white/40 transition-transform ${isVersionOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    </div>
-
+                    <button
+                      onClick={props.onNavigateToInstances}
+                      className="h-full px-4 flex items-center gap-2 text-white/60 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
+                    >
+                      <span className="text-sm font-medium whitespace-nowrap max-w-[150px] truncate">
+                        {props.selectedInstance.name}
+                      </span>
+                      <span className="text-xs text-white/40">
+                        v{props.selectedInstance.version}
+                      </span>
+                    </button>
                     <div className="w-px h-7 bg-white/10" />
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* Action Button (Play/Download/Update/Exit) - fixed width to prevent jumping */}
-              <div className="min-w-[140px] h-full flex items-center justify-end">
+              {/* Action Button (Play/Download/Update) */}
+              <div className="min-w-[140px] h-full flex items-center justify-center">
                 {renderActionButton()}
               </div>
             </div>
-
-            {/* Dropdown Menus - positioned relative to the button bar */}
-            <AnimatePresence>
-              {!shouldHideSelectors && isBranchOpen && (
-                <motion.div 
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.15 }}
-                  className={`absolute top-full left-0 mt-2 z-[100] min-w-[140px] bg-[#1a1a1a]  border border-white/10 rounded-xl shadow-xl shadow-black/50 overflow-hidden p-1`}
-                >
-                  {[GameBranch.RELEASE, GameBranch.PRE_RELEASE].map((branch) => (
-                    <button
-                      key={branch}
-                      onClick={() => { props.onBranchChange(branch); setIsBranchOpen(false); }}
-                      className="w-full px-3 py-2 flex items-center gap-2 text-sm rounded-lg transition-colors"
-                      style={props.currentBranch === branch ? { backgroundColor: `${accentColor}33`, color: 'white' } : undefined}
-                      onMouseEnter={(e) => { if (props.currentBranch !== branch) { e.currentTarget.style.backgroundColor = `${accentColor}1a`; e.currentTarget.style.color = accentColor; } }}
-                      onMouseLeave={(e) => { if (props.currentBranch !== branch) { e.currentTarget.style.backgroundColor = ''; e.currentTarget.style.color = ''; } }}
-                    >
-                      {props.currentBranch === branch && <Check size={14} className="text-white" strokeWidth={3} />}
-                      <span className={props.currentBranch === branch ? '' : 'ml-[22px]'}>
-                        {branch === GameBranch.RELEASE ? t('main.release') : t('main.preRelease')}
-                      </span>
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <AnimatePresence>
-              {!shouldHideSelectors && isVersionOpen && (
-                <motion.div 
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.15 }}
-                  className={`absolute top-full mt-2 z-[100] min-w-[140px] max-h-[168px] overflow-y-auto bg-[#1a1a1a]  border border-white/10 rounded-xl shadow-xl shadow-black/50 p-1`}
-                  style={{ left: versionDropdownLeft }}
-                >
-                  {props.availableVersions.length > 0 ? (
-                    props.availableVersions.map((version) => {
-                      const installedInfo = props.installedVersions.find(v => v.version === version);
-                      const isInstalled = !!installedInfo;
-                      const isValid = installedInfo?.isValid ?? false;
-                      const isSelected = props.currentVersion === version;
-                      return (
-                        <button
-                          key={version}
-                          onClick={() => { props.onVersionChange(version); setIsVersionOpen(false); }}
-                          className={`w-full px-3 py-2 flex items-center gap-2 text-sm rounded-lg ${isSelected ? '' : 'text-white/70 hover:bg-white/10 hover:text-white'}`}
-                          style={isSelected ? { backgroundColor: `${accentColor}33`, color: accentColor } : undefined}
-                        >
-                          {isInstalled && isValid ? (
-                            <Check size={14} className={isSelected ? '' : 'text-green-400'} style={isSelected ? { color: accentColor } : undefined} strokeWidth={3} />
-                          ) : isInstalled ? (
-                            <Download size={14} className="text-yellow-500" />
-                          ) : (
-                            <Download size={14} className="text-white/40" />
-                          )}
-                          <span>{version === 0 ? t('main.latest') : `v${version}`}</span>
-                        </button>
-                      );
-                    })
-                  ) : (
-                    <div className="px-3 py-2 text-sm text-white/40">{t('main.noVersions')}</div>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
 
             {/* Progress Bar - only show when downloading and NOT in complete state */}
             <AnimatePresence>

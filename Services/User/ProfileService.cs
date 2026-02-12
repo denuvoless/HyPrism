@@ -1,6 +1,7 @@
 using HyPrism.Models;
 using HyPrism.Services.Core;
 using HyPrism.Services.Game;
+using HyPrism.Services.Game.Asset;
 
 namespace HyPrism.Services.User;
 

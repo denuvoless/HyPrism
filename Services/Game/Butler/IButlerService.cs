@@ -1,4 +1,4 @@
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Butler;
 
 /// <summary>
 /// Provides functionality for managing the Butler patching tool,

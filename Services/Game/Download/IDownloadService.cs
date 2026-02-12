@@ -1,4 +1,4 @@
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Download;
 
 /// <summary>
 /// Provides file download functionality with progress reporting and HTTP utilities.

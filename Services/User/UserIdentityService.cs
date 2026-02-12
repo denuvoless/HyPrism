@@ -1,6 +1,7 @@
 using HyPrism.Models;
 using HyPrism.Services.Core;
 using HyPrism.Services.Game;
+using HyPrism.Services.Game.Instance;
 
 namespace HyPrism.Services.User;
 
@@ -41,26 +42,26 @@ public class UserIdentityService : IUserIdentityService
             return config.UUID; // Fallback to legacy single UUID
         }
         
-        // Initialize UserUuids if null
-        config.UserUuids ??= new Dictionary<string, string>();
+        // Look up UUID from Profiles (case-insensitive)
+        var existingProfile = config.Profiles?
+            .FirstOrDefault(p => p.Name.Equals(username, StringComparison.OrdinalIgnoreCase));
         
-        // Case-insensitive lookup - find if any existing username matches
-        var existingKey = config.UserUuids.Keys
-            .FirstOrDefault(k => k.Equals(username, StringComparison.OrdinalIgnoreCase));
-        
-        if (existingKey != null)
+        if (existingProfile != null)
         {
-            return config.UserUuids[existingKey];
+            return existingProfile.UUID;
         }
         
-        // No existing UUID for this username - before creating a new one,
-        // check if there are orphaned skin files we should adopt.
-        // This handles the case where config was reset but skin data still exists.
+        // No existing profile for this username - check current UUID
+        if (config.Nick?.Equals(username, StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return config.UUID;
+        }
+        
+        // Before creating a new one, check if there are orphaned skin files we should adopt
         var orphanedUuid = _skinService.FindOrphanedSkinUuid();
         if (!string.IsNullOrEmpty(orphanedUuid))
         {
             Logger.Info("UUID", $"Recovered orphaned skin UUID for user '{username}': {orphanedUuid}");
-            config.UserUuids[username] = orphanedUuid;
             config.UUID = orphanedUuid;
             _configService.SaveConfig();
             return orphanedUuid;
@@ -68,9 +69,6 @@ public class UserIdentityService : IUserIdentityService
         
         // No orphaned skins found - create a new UUID
         var newUuid = Guid.NewGuid().ToString();
-        config.UserUuids[username] = newUuid;
-        
-        // Also update the legacy UUID field for backwards compatibility
         config.UUID = newUuid;
         
         _configService.SaveConfig();
@@ -90,15 +88,30 @@ public class UserIdentityService : IUserIdentityService
     public List<UuidMapping> GetAllUuidMappings()
     {
         var config = _configService.Configuration;
-        config.UserUuids ??= new Dictionary<string, string>();
-        
         var currentNick = config.Nick;
-        return config.UserUuids.Select(kvp => new UuidMapping
+        
+        // Build mappings from Profiles
+        var mappings = (config.Profiles ?? new List<Profile>())
+            .Select(p => new UuidMapping
+            {
+                Username = p.Name,
+                Uuid = p.UUID,
+                IsCurrent = p.Name.Equals(currentNick, StringComparison.OrdinalIgnoreCase)
+            })
+            .ToList();
+        
+        // Add current user if not in any profile
+        if (!mappings.Any(m => m.IsCurrent) && !string.IsNullOrEmpty(config.Nick) && !string.IsNullOrEmpty(config.UUID))
         {
-            Username = kvp.Key,
-            Uuid = kvp.Value,
-            IsCurrent = kvp.Key.Equals(currentNick, StringComparison.OrdinalIgnoreCase)
-        }).ToList();
+            mappings.Insert(0, new UuidMapping
+            {
+                Username = config.Nick,
+                Uuid = config.UUID,
+                IsCurrent = true
+            });
+        }
+        
+        return mappings;
     }
 
     /// <inheritdoc/>
@@ -109,17 +122,15 @@ public class UserIdentityService : IUserIdentityService
         if (!Guid.TryParse(uuid.Trim(), out var parsed)) return false;
         
         var config = _configService.Configuration;
-        config.UserUuids ??= new Dictionary<string, string>();
         
-        // Remove any existing entry with same username (case-insensitive)
-        var existingKey = config.UserUuids.Keys
-            .FirstOrDefault(k => k.Equals(username, StringComparison.OrdinalIgnoreCase));
-        if (existingKey != null)
+        // Find profile with this username (case-insensitive)
+        var existingProfile = config.Profiles?
+            .FirstOrDefault(p => p.Name.Equals(username, StringComparison.OrdinalIgnoreCase));
+        
+        if (existingProfile != null)
         {
-            config.UserUuids.Remove(existingKey);
+            existingProfile.UUID = parsed.ToString();
         }
-        
-        config.UserUuids[username] = parsed.ToString();
         
         // Update legacy UUID if this is the current user
         if (username.Equals(config.Nick, StringComparison.OrdinalIgnoreCase))
@@ -146,16 +157,15 @@ public class UserIdentityService : IUserIdentityService
             return false;
         }
         
-        config.UserUuids ??= new Dictionary<string, string>();
+        // Find profile with this username (case-insensitive)
+        var existingProfile = config.Profiles?
+            .FirstOrDefault(p => p.Name.Equals(username, StringComparison.OrdinalIgnoreCase));
         
-        var existingKey = config.UserUuids.Keys
-            .FirstOrDefault(k => k.Equals(username, StringComparison.OrdinalIgnoreCase));
-        
-        if (existingKey != null)
+        if (existingProfile != null)
         {
-            config.UserUuids.Remove(existingKey);
+            config.Profiles?.Remove(existingProfile);
             _configService.SaveConfig();
-            Logger.Info("UUID", $"Deleted UUID for user '{username}'");
+            Logger.Info("UUID", $"Deleted profile for user '{username}'");
             return true;
         }
         
@@ -167,17 +177,15 @@ public class UserIdentityService : IUserIdentityService
     {
         var config = _configService.Configuration;
         var newUuid = Guid.NewGuid().ToString();
-        config.UserUuids ??= new Dictionary<string, string>();
         
-        // Remove old entry (case-insensitive)
-        var existingKey = config.UserUuids.Keys
-            .FirstOrDefault(k => k.Equals(config.Nick, StringComparison.OrdinalIgnoreCase));
-        if (existingKey != null)
+        // Update profile if exists
+        var existingProfile = config.Profiles?
+            .FirstOrDefault(p => p.Name.Equals(config.Nick, StringComparison.OrdinalIgnoreCase));
+        if (existingProfile != null)
         {
-            config.UserUuids.Remove(existingKey);
+            existingProfile.UUID = newUuid;
         }
         
-        config.UserUuids[config.Nick] = newUuid;
         config.UUID = newUuid;
         
         _configService.SaveConfig();
@@ -191,27 +199,25 @@ public class UserIdentityService : IUserIdentityService
         if (string.IsNullOrWhiteSpace(username)) return null;
         
         var config = _configService.Configuration;
-        config.UserUuids ??= new Dictionary<string, string>();
         
-        // Find the username (case-insensitive)
-        var existingKey = config.UserUuids.Keys
-            .FirstOrDefault(k => k.Equals(username, StringComparison.OrdinalIgnoreCase));
+        // Find profile with this username (case-insensitive)
+        var existingProfile = config.Profiles?
+            .FirstOrDefault(p => p.Name.Equals(username, StringComparison.OrdinalIgnoreCase));
         
-        if (existingKey != null)
+        if (existingProfile != null)
         {
-            // Switch to existing username with its UUID
-            config.Nick = existingKey; // Use original casing
-            config.UUID = config.UserUuids[existingKey];
+            // Switch to existing profile
+            config.Nick = existingProfile.Name;
+            config.UUID = existingProfile.UUID;
             _configService.SaveConfig();
-            Logger.Info("UUID", $"Switched to existing user '{existingKey}' with UUID {config.UUID}");
+            Logger.Info("UUID", $"Switched to existing user '{existingProfile.Name}' with UUID {config.UUID}");
             return config.UUID;
         }
         
-        // Username doesn't exist in mappings - create new entry
+        // Username doesn't exist - create new UUID
         var newUuid = Guid.NewGuid().ToString();
         config.Nick = username;
         config.UUID = newUuid;
-        config.UserUuids[username] = newUuid;
         _configService.SaveConfig();
         Logger.Info("UUID", $"Created new user '{username}' with UUID {newUuid}");
         return newUuid;
@@ -233,7 +239,9 @@ public class UserIdentityService : IUserIdentityService
             }
             
             // If the current UUID already has a skin, don't overwrite
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");

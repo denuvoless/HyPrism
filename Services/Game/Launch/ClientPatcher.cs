@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using HyPrism.Services.Core;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Launch;
 
 /// <summary>
 /// Patches the HytaleClient binary to replace hytale.com domain references

@@ -3,9 +3,10 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using HyPrism.Services.Core;
+using HyPrism.Services.Game.Instance;
 using HyPrism.Models;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Asset;
 
 /// <summary>
 /// Manages game asset files including Assets.zip extraction and cosmetic item parsing.

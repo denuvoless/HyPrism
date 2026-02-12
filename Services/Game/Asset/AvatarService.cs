@@ -1,6 +1,7 @@
 using HyPrism.Services.Core;
+using HyPrism.Services.Game.Instance;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Asset;
 
 /// <summary>
 /// Manages user avatar cache and preview images for game instances.

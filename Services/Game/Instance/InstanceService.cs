@@ -1,9 +1,10 @@
 using HyPrism.Services.Core;
 using System.Runtime.InteropServices;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using HyPrism.Models;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Instance;
 
 /// <summary>
 /// Manages game instance paths, versioning, and data organization.
@@ -22,8 +23,9 @@ public class InstanceService : IInstanceService
     
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        WriteIndented = true
     };
 
     /// <summary>
@@ -101,12 +103,14 @@ public class InstanceService : IInstanceService
     {
         var config = GetConfig();
         if (version > 0) return version;
+        #pragma warning disable CS0618 // Backward compatibility: SelectedVersion and VersionType kept for migration
         if (config.SelectedVersion > 0) return config.SelectedVersion;
 
         var info = LoadLatestInfo(branch);
         if (info?.Version > 0) return info.Version;
 
         string resolvedBranch = string.IsNullOrWhiteSpace(branch) ? config.VersionType : branch;
+        #pragma warning restore CS0618
         string branchDir = GetBranchPath(resolvedBranch);
         if (Directory.Exists(branchDir))
         {
@@ -346,6 +350,7 @@ public class InstanceService : IInstanceService
                         updated = true;
                     }
 
+                    #pragma warning disable CS0618 // Legacy migration: reading old config values
                     if (config.SelectedVersion == 0 && legacyConfig.SelectedVersion > 0)
                     {
                         config.SelectedVersion = legacyConfig.SelectedVersion;
@@ -357,6 +362,7 @@ public class InstanceService : IInstanceService
                         config.VersionType = NormalizeVersionType(legacyConfig.VersionType);
                         updated = true;
                     }
+                    #pragma warning restore CS0618
                 }
 
                 // Fallback: pick up a legacy uuid file if config lacked one
@@ -949,10 +955,14 @@ public class InstanceService : IInstanceService
                         break;
                     case "versiontype":
                     case "branch":
+                        #pragma warning disable CS0618 // Legacy migration: parsing old config format
                         cfg.VersionType = NormalizeVersionType(val);
+                        #pragma warning restore CS0618
                         break;
                     case "selectedversion":
+                        #pragma warning disable CS0618 // Legacy migration: parsing old config format
                         if (int.TryParse(val, out var sel)) cfg.SelectedVersion = sel;
+                        #pragma warning restore CS0618
                         break;
                 }
             }
@@ -1053,18 +1063,45 @@ public class InstanceService : IInstanceService
                     }
                     catch { }
 
-                    // Load custom name from metadata file
+                    // Load instance metadata from meta.json
                     string? customName = null;
-                    var metadataPath = Path.Combine(folder, "metadata.json");
-                    if (File.Exists(metadataPath))
+                    string instanceId = "";
+                    var metaPath = Path.Combine(folder, "meta.json");
+                    if (File.Exists(metaPath))
                     {
                         try
                         {
-                            var json = File.ReadAllText(metadataPath);
-                            var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions);
-                            metadata?.TryGetValue("customName", out customName);
+                            var json = File.ReadAllText(metaPath);
+                            var meta = JsonSerializer.Deserialize<InstanceMeta>(json, JsonOptions);
+                            if (meta != null)
+                            {
+                                instanceId = meta.Id ?? "";
+                                customName = meta.Name;
+                            }
                         }
                         catch { }
+                    }
+                    
+                    // Fallback: try legacy metadata.json
+                    if (string.IsNullOrEmpty(instanceId))
+                    {
+                        var metadataPath = Path.Combine(folder, "metadata.json");
+                        if (File.Exists(metadataPath))
+                        {
+                            try
+                            {
+                                var json = File.ReadAllText(metadataPath);
+                                var metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions);
+                                metadata?.TryGetValue("customName", out customName);
+                            }
+                            catch { }
+                        }
+                    }
+                    
+                    // Generate ID if not found
+                    if (string.IsNullOrEmpty(instanceId))
+                    {
+                        instanceId = Guid.NewGuid().ToString();
                     }
 
                     // Perform deep validation
@@ -1072,6 +1109,7 @@ public class InstanceService : IInstanceService
 
                     results.Add(new InstalledInstance
                     {
+                        Id = instanceId,
                         Branch = branch,
                         Version = version,
                         Path = folder,
@@ -1362,5 +1400,244 @@ public class InstanceService : IInstanceService
             Logger.Error("InstanceService", $"Failed to save custom name: {ex.Message}");
         }
     }
+
+    #region Instance Meta Management
+
+    /// <inheritdoc/>
+    public InstanceMeta? GetInstanceMeta(string instancePath)
+    {
+        var metaPath = Path.Combine(instancePath, "meta.json");
+        if (!File.Exists(metaPath))
+        {
+            // Try legacy metadata.json
+            var legacyPath = Path.Combine(instancePath, "metadata.json");
+            if (File.Exists(legacyPath))
+            {
+                return MigrateLegacyMetadata(instancePath, legacyPath);
+            }
+            return null;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(metaPath);
+            return JsonSerializer.Deserialize<InstanceMeta>(json, JsonOptions);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("InstanceService", $"Failed to load meta.json: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <inheritdoc/>
+    public void SaveInstanceMeta(string instancePath, InstanceMeta meta)
+    {
+        try
+        {
+            Directory.CreateDirectory(instancePath);
+            var metaPath = Path.Combine(instancePath, "meta.json");
+            var json = JsonSerializer.Serialize(meta, JsonOptions);
+            File.WriteAllText(metaPath, json);
+            Logger.Debug("InstanceService", $"Saved meta.json for instance {meta.Id}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("InstanceService", $"Failed to save meta.json: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc/>
+    public InstanceMeta CreateInstanceMeta(string branch, int version, string? name = null, bool isLatest = false)
+    {
+        var normalizedBranch = NormalizeVersionType(branch);
+        var instancePath = isLatest 
+            ? GetLatestInstancePath(normalizedBranch)
+            : GetInstancePath(normalizedBranch, version);
+
+        // Check if meta already exists
+        var existingMeta = GetInstanceMeta(instancePath);
+        if (existingMeta != null)
+        {
+            Logger.Debug("InstanceService", $"Instance meta already exists for {branch}/{version}");
+            return existingMeta;
+        }
+
+        // Create new meta with generated ID
+        var meta = new InstanceMeta
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = name ?? (isLatest ? $"{normalizedBranch} (Latest)" : $"{normalizedBranch} v{version}"),
+            Branch = normalizedBranch,
+            Version = version,
+            CreatedAt = DateTime.UtcNow,
+            IsLatest = isLatest
+        };
+
+        // Save to disk
+        SaveInstanceMeta(instancePath, meta);
+
+        // Also add to Config.Instances for fallback
+        var config = GetConfig();
+        config.Instances ??= new List<InstanceInfo>();
+        
+        var relativePath = isLatest ? $"{normalizedBranch}/latest" : $"{normalizedBranch}/{version}";
+        var existingInfo = config.Instances.FirstOrDefault(i => i.Id == meta.Id);
+        if (existingInfo == null)
+        {
+            config.Instances.Add(new InstanceInfo
+            {
+                Id = meta.Id,
+                Name = meta.Name,
+                Branch = meta.Branch,
+                Version = meta.Version,
+                Path = relativePath
+            });
+            SaveConfig(config);
+        }
+
+        Logger.Info("InstanceService", $"Created instance meta: {meta.Id} ({meta.Name})");
+        return meta;
+    }
+
+    /// <inheritdoc/>
+    public InstanceInfo? GetSelectedInstance()
+    {
+        var config = GetConfig();
+        if (string.IsNullOrEmpty(config.SelectedInstanceId))
+            return null;
+
+        return FindInstanceById(config.SelectedInstanceId);
+    }
+
+    /// <inheritdoc/>
+    public void SetSelectedInstance(string instanceId)
+    {
+        var config = GetConfig();
+        config.SelectedInstanceId = instanceId;
+        SaveConfig(config);
+        Logger.Info("InstanceService", $"Selected instance: {instanceId}");
+    }
+
+    /// <inheritdoc/>
+    public InstanceInfo? FindInstanceById(string instanceId)
+    {
+        var config = GetConfig();
+        config.Instances ??= new List<InstanceInfo>();
+        
+        // First check Config.Instances
+        var info = config.Instances.FirstOrDefault(i => i.Id == instanceId);
+        if (info != null)
+            return info;
+
+        // If not in config, scan disk
+        SyncInstancesWithConfig();
+        return config.Instances.FirstOrDefault(i => i.Id == instanceId);
+    }
+
+    /// <inheritdoc/>
+    public void SyncInstancesWithConfig()
+    {
+        var config = GetConfig();
+        config.Instances ??= new List<InstanceInfo>();
+        var existingIds = new HashSet<string>();
+
+        foreach (var root in GetInstanceRootsIncludingLegacy())
+        {
+            if (!Directory.Exists(root)) continue;
+
+            foreach (var branchDir in Directory.GetDirectories(root))
+            {
+                var branchName = Path.GetFileName(branchDir);
+                foreach (var instanceDir in Directory.GetDirectories(branchDir))
+                {
+                    var meta = GetInstanceMeta(instanceDir);
+                    if (meta == null) continue;
+
+                    existingIds.Add(meta.Id);
+
+                    // Update or add to config
+                    var relativePath = Path.GetRelativePath(GetInstanceRoot(), instanceDir);
+                    var existingInfo = config.Instances.FirstOrDefault(i => i.Id == meta.Id);
+                    
+                    if (existingInfo != null)
+                    {
+                        // Update existing entry
+                        existingInfo.Name = meta.Name;
+                        existingInfo.Branch = meta.Branch;
+                        existingInfo.Version = meta.Version;
+                        existingInfo.Path = relativePath;
+                    }
+                    else
+                    {
+                        // Add new entry
+                        config.Instances.Add(new InstanceInfo
+                        {
+                            Id = meta.Id,
+                            Name = meta.Name,
+                            Branch = meta.Branch,
+                            Version = meta.Version,
+                            Path = relativePath
+                        });
+                    }
+                }
+            }
+        }
+
+        // Remove entries for instances that no longer exist
+        config.Instances.RemoveAll(i => !existingIds.Contains(i.Id));
+        
+        SaveConfig(config);
+        Logger.Debug("InstanceService", $"Synced {config.Instances.Count} instances with config");
+    }
+
+    /// <summary>
+    /// Migrates legacy metadata.json to new meta.json format.
+    /// </summary>
+    private InstanceMeta? MigrateLegacyMetadata(string instancePath, string legacyPath)
+    {
+        try
+        {
+            var json = File.ReadAllText(legacyPath);
+            var legacyData = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions);
+            
+            // Parse branch and version from path
+            var dirName = Path.GetFileName(instancePath);
+            var parentName = Path.GetFileName(Path.GetDirectoryName(instancePath) ?? "");
+            
+            int version = 0;
+            bool isLatest = dirName.Equals("latest", StringComparison.OrdinalIgnoreCase);
+            if (!isLatest && int.TryParse(dirName, out var parsedVersion))
+            {
+                version = parsedVersion;
+            }
+
+            var meta = new InstanceMeta
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = legacyData?.GetValueOrDefault("customName") ?? (isLatest ? $"{parentName} (Latest)" : $"{parentName} v{version}"),
+                Branch = parentName,
+                Version = version,
+                CreatedAt = DateTime.UtcNow,
+                IsLatest = isLatest
+            };
+
+            // Save new format
+            SaveInstanceMeta(instancePath, meta);
+
+            // Delete legacy file
+            try { File.Delete(legacyPath); } catch { }
+
+            Logger.Info("InstanceService", $"Migrated legacy metadata to meta.json: {meta.Id}");
+            return meta;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("InstanceService", $"Failed to migrate legacy metadata: {ex.Message}");
+            return null;
+        }
+    }
+
+    #endregion
 }
 

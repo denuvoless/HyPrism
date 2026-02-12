@@ -16,7 +16,6 @@ interface SettingsPageProps {
   onLauncherBranchChange: (branch: string) => void;
   rosettaWarning?: { message: string; command: string; tutorialUrl?: string } | null;
   onBackgroundModeChange?: (mode: string) => void;
-  onNewsDisabledChange?: (disabled: boolean) => void;
   onAccentColorChange?: (color: string) => void;
   onInstanceDeleted?: () => void;
   onNavigateToMods?: () => void;
@@ -57,7 +56,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = (props) => {
             onShowModManager={props.onNavigateToMods}
             rosettaWarning={props.rosettaWarning}
             onBackgroundModeChange={props.onBackgroundModeChange}
-            onNewsDisabledChange={props.onNewsDisabledChange}
             onAccentColorChange={props.onAccentColorChange}
             onInstanceDeleted={props.onInstanceDeleted}
             onAuthSettingsChange={props.onAuthSettingsChange}

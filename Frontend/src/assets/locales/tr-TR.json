@@ -73,6 +73,9 @@
     "preRelease": "Ön Sürüm",
     "latest": "son",
     "noVersions": "Sürüm yok",
+    "mirror": "Ayna",
+    "sourceOfficial": "Resmi Hytale sunucularından indirildi",
+    "sourceMirror": "Topluluk aynasından indirildi",
     "editProfile": "Profili Düzenle",
     "updateAvailable": "Güncelleme Mevcut",
     "joinDiscord": "Discord'a Katıl",
@@ -445,7 +448,8 @@
       "download_complete": "İndirme tamamlandı!",
       "checking_versions": "Mevcut sürümler kontrol ediliyor...",
       "installing_butler": "İndirme motoru kuruluyor...",
-      "downloading_mirror": "Aynadan indiriliyor... {0}%"
+      "downloading_mirror": "Aynadan indiriliyor... {0}%",
+      "downloading_official": "Hytale'dan indiriliyor... {0}%"
     }
   },
   "profileEditor": {

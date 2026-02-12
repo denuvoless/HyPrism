@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AnimatePresence } from 'framer-motion';
-import { ipc, on, send, NewsItem } from '@/lib/ipc';
-import { GameBranch } from './constants/enums';
+import { ipc, on, send, NewsItem, InstanceInfo } from '@/lib/ipc';
 import { BackgroundImage } from './components/layout/BackgroundImage';
 import { MusicPlayer } from './components/layout/MusicPlayer';
 import { UpdateOverlay } from './components/layout/UpdateOverlay';
@@ -19,15 +18,7 @@ import { SettingsPage } from './pages/SettingsPage';
 const NewsPreview = lazy(() => import('./components/NewsPreview').then(m => ({ default: m.NewsPreview })));
 const ErrorModal = lazy(() => import('./components/modals/ErrorModal').then(m => ({ default: m.ErrorModal })));
 const DeleteConfirmationModal = lazy(() => import('./components/modals/DeleteConfirmationModal').then(m => ({ default: m.DeleteConfirmationModal })));
-const UpdateConfirmationModal = lazy(() => import('./components/modals/UpdateConfirmationModal').then(m => ({ default: m.UpdateConfirmationModal })));
 const OnboardingModal = lazy(() => import('./components/modals/OnboardingModal').then(m => ({ default: m.OnboardingModal })));
-
-// VersionStatus type (was in api/backend)
-type VersionStatus = {
-  status: 'installed' | 'update_available' | 'not_installed' | 'unknown';
-  installedVersion?: number;
-  latestVersion?: number;
-};
 
 // Functions that map to real IPC channels
 const _BrowserOpenURL = (url: string) => ipc.browser.open(url);
@@ -52,7 +43,6 @@ async function GetBackgroundMode(): Promise<string> { return (await ipc.settings
 async function GetMusicEnabled(): Promise<boolean> { return (await ipc.settings.get()).musicEnabled ?? true; }
 async function GetAccentColor(): Promise<string> { return (await ipc.settings.get()).accentColor ?? '#FF6B2B'; }
 async function GetCloseAfterLaunch(): Promise<boolean> { return (await ipc.settings.get()).closeAfterLaunch ?? false; }
-async function GetDisableNews(): Promise<boolean> { return (await ipc.settings.get()).disableNews ?? false; }
 async function GetHasCompletedOnboarding(): Promise<boolean> { return (await ipc.settings.get()).hasCompletedOnboarding ?? false; }
 async function GetLauncherBranch(): Promise<string> { return (await ipc.settings.get()).launcherBranch ?? 'release'; }
 async function GetLauncherVersion(): Promise<string> { return (await ipc.settings.get()).launcherVersion ?? ''; }
@@ -61,10 +51,8 @@ async function GetLauncherVersion(): Promise<string> { return (await ipc.setting
 async function GetNick(): Promise<string> { return (await ipc.profile.get()).nick ?? 'HyPrism'; }
 async function GetUUID(): Promise<string> { return (await ipc.profile.get()).uuid ?? ''; }
 
-// Game actions - map to ipc.game where possible, stub rest
-function DownloadAndLaunch(_username?: string): void { ipc.game.launch(); }
-function DownloadOnly(): void { ipc.game.launch(); }
-function LaunchOnly(): void { ipc.game.launch(); }
+// Game actions
+function LaunchGame(): void { ipc.game.launch(); }
 
 // TODO: These need dedicated IPC channels in IpcService.cs
 const stub = <T,>(name: string, fallback: T) => async (..._args: any[]): Promise<T> => {
@@ -77,17 +65,6 @@ const Update = stub('Update', undefined as void);
 const ExitGame = stub('ExitGame', undefined as void);
 const GetRecentLogs = stub<string[]>('GetRecentLogs', []);
 
-// Real IPC implementation for Version Persistence
-async function GetVersionType(): Promise<string> { 
-  return (await ipc.settings.get()).versionType as string ?? 'release'; 
-}
-async function SetVersionType(type: string): Promise<void> { 
-  await ipc.settings.update({ versionType: type });
-}
-async function SetSelectedVersion(version: number): Promise<void> {
-  await ipc.settings.update({ selectedVersion: version });
-}
-
 // Real IPC call to check if game is running
 async function IsGameRunning(): Promise<boolean> {
   try {
@@ -98,62 +75,25 @@ async function IsGameRunning(): Promise<boolean> {
   }
 }
 
-// Get available versions from server (includes versions for download)
-async function GetVersionList(branch: string): Promise<number[]> {
+// Instance-based functions
+async function GetSelectedInstance(): Promise<InstanceInfo | null> {
   try {
-    // Get available versions from server
-    const availableVersions = await ipc.game.versions({ branch });
-    console.log('[IPC] GetVersionList: available versions for', branch, ':', availableVersions);
-    // Always include "latest" (0) as an option at the start
-    if (!availableVersions.includes(0)) {
-      availableVersions.unshift(0);
-    }
-    return availableVersions;
+    return await ipc.instance.getSelected();
   } catch (e) {
-    console.error('[IPC] GetVersionList failed:', e);
-    return [0];
+    console.error('[IPC] GetSelectedInstance failed:', e);
+    return null;
   }
 }
 
-async function IsVersionInstalled(branch: string, version: number): Promise<boolean> {
+async function GetInstances(): Promise<InstanceInfo[]> {
   try {
-    const instances = await ipc.game.instances();
-    console.log('[IPC] IsVersionInstalled: checking', branch, version, 'in', instances);
-    // Version 0 means "latest" - check if there's at least one instance of the branch that IS VALID
-    if (version === 0) {
-      return instances.some(inst => inst.branch === branch && inst.isValid);
-    }
-    return instances.some(inst => inst.branch === branch && inst.version === version && inst.isValid);
+    return await ipc.instance.list();
   } catch (e) {
-    console.error('[IPC] IsVersionInstalled failed:', e);
-    return false;
-  }
-}
-
-export interface InstalledVersionInfo {
-  version: number;
-  isValid: boolean;
-}
-
-async function GetInstalledVersionsForBranch(branch: string): Promise<InstalledVersionInfo[]> {
-  try {
-    const instances = await ipc.game.instances();
-    console.log('[IPC] GetInstalledVersionsForBranch: for', branch, 'found', instances);
-    return instances
-      .filter(inst => inst.branch === branch)
-      .map(inst => ({ version: inst.version, isValid: inst.isValid }))
-      .sort((a, b) => b.version - a.version); // Sort descending
-  } catch (e) {
-    console.error('[IPC] GetInstalledVersionsForBranch failed:', e);
+    console.error('[IPC] GetInstances failed:', e);
     return [];
   }
 }
 
-const GetLatestVersionStatus = stub<VersionStatus | null>('GetLatestVersionStatus', null);
-const _ForceUpdateLatest = stub('ForceUpdateLatest', undefined as void);
-const DuplicateLatest = stub('DuplicateLatest', true);
-const GetPendingUpdateInfo = stub<{ HasOldUserData: boolean; OldVersion: number; NewVersion: number; Branch: string } | null>('GetPendingUpdateInfo', null);
-const CopyUserData = stub('CopyUserData', false);
 const GetCustomInstanceDir = stub('GetCustomInstanceDir', '');
 const SetInstanceDirectory = stub('SetInstanceDirectory', '');
 const GetWrapperStatus = stub<null>('GetWrapperStatus', null);
@@ -174,10 +114,6 @@ const ModalFallback = () => (
 const withLatest = (versions: number[] | null | undefined): number[] => {
   const base = Array.isArray(versions) ? versions : [];
   return base.includes(0) ? base : [0, ...base];
-};
-
-const normalizeBranch = (branch: string | null | undefined): string => {
-  return branch === GameBranch.PRE_RELEASE ? GameBranch.PRE_RELEASE : GameBranch.RELEASE;
 };
 
 const parseDateMs = (dateValue: string | number | Date | undefined): number => {
@@ -256,7 +192,7 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<PageType>('dashboard');
 
   // Instance sub-tab state (persisted across page navigations)
-  const [instanceTab, setInstanceTab] = useState<'content' | 'worlds' | 'logs'>('content');
+  const [instanceTab, setInstanceTab] = useState<'content' | 'browse' | 'worlds' | 'logs'>('content');
 
   // Settings state
   const [launcherBranch, setLauncherBranch] = useState<string>('release');
@@ -265,19 +201,14 @@ const App: React.FC = () => {
   // Game launch tracking
   const gameLaunchTimeRef = useRef<number | null>(null);
 
-  // Version state
-  const [currentBranch, setCurrentBranch] = useState<string>(GameBranch.RELEASE);
-  const [currentVersion, setCurrentVersion] = useState<number>(0);
-  // Refs to track current values for event listeners
-  const currentBranchRef = useRef<string>(GameBranch.RELEASE);
-  const currentVersionRef = useRef<number>(0);
-  const [availableVersions, setAvailableVersions] = useState<number[]>([]);
-  const [installedVersions, setInstalledVersions] = useState<InstalledVersionInfo[]>([]);
-  const [isLoadingVersions, setIsLoadingVersions] = useState<boolean>(false);
-  const [isVersionInstalled, setIsVersionInstalled] = useState<boolean>(false);
-  const [isCheckingInstalled, setIsCheckingInstalled] = useState<boolean>(false);
+  // Instance-based state
+  const [selectedInstance, setSelectedInstance] = useState<InstanceInfo | null>(null);
+  const [instances, setInstances] = useState<InstanceInfo[]>([]);
+  const [isCheckingInstance, setIsCheckingInstance] = useState<boolean>(false);
+  const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
+  // Refs to track current instance for event listeners
+  const selectedInstanceRef = useRef<InstanceInfo | null>(null);
   const [customInstanceDir, setCustomInstanceDir] = useState<string>("");
-  const [versionStatus, setVersionStatus] = useState<VersionStatus | null>(null);
 
   // Official server blocked state: true when using official servers with an unofficial profile in online mode
   const [isOfficialProfile, setIsOfficialProfile] = useState<boolean>(false);
@@ -286,7 +217,6 @@ const App: React.FC = () => {
 
   // Background, news, and accent color settings
   const [backgroundMode, setBackgroundMode] = useState<string>('slideshow');
-  const [newsDisabled, setNewsDisabled] = useState<boolean>(false);
   const [_accentColor, setAccentColor] = useState<string>('#FFA845'); // Used only for SettingsModal callback
   const [isMuted, setIsMuted] = useState<boolean>(false);
   
@@ -300,12 +230,8 @@ const App: React.FC = () => {
 
   // Keep refs in sync with state for event listeners
   useEffect(() => {
-    currentBranchRef.current = currentBranch;
-  }, [currentBranch]);
-
-  useEffect(() => {
-    currentVersionRef.current = currentVersion;
-  }, [currentVersion]);
+    selectedInstanceRef.current = selectedInstance;
+  }, [selectedInstance]);
 
   // Onboarding state
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
@@ -338,123 +264,41 @@ const App: React.FC = () => {
     refreshWrapperStatus();
   }, []);
 
-  // Pending game update modal
-  const [pendingUpdate, setPendingUpdate] = useState<{
-    oldVersion: number;
-    newVersion: number;
-    hasOldUserData: boolean;
-    branch: string;
-  } | null>(null);
-
-  // Check if current version is installed when branch or version changes
+  // Load selected instance and instances list on startup
   useEffect(() => {
-    console.log('[checkInstalled] Effect triggered, currentVersion:', currentVersion, 'currentBranch:', currentBranch);
-    const checkInstalled = async () => {
-      if (currentVersion === 0) {
-        console.log('[checkInstalled] currentVersion is 0, checking latest instance...');
-        // Version 0 is the auto-updating "latest" instance
-        // Check if it's actually installed
-        setIsCheckingInstalled(true);
-        try {
-          const installed = await IsVersionInstalled(currentBranch, 0);
-          console.log('[checkInstalled] IsVersionInstalled result:', installed);
-          setIsVersionInstalled(installed);
-          // Get version status (not_installed, update_available, or current)
-          console.log('[checkInstalled] Calling GetLatestVersionStatus...');
-          const status = await GetLatestVersionStatus(currentBranch);
-          console.log('[checkInstalled] GetLatestVersionStatus response:', status);
-          setVersionStatus(status);
-        } catch (e) {
-          console.error('Failed to check latest instance:', e);
-          setIsVersionInstalled(false);
-          setVersionStatus(null);
-        }
-        setIsCheckingInstalled(false);
-        return;
-      }
-      if (currentVersion < 0) {
-        // Uninitialized or invalid version
-        setIsVersionInstalled(false);
-        setVersionStatus(null);
-        return;
-      }
-      setIsCheckingInstalled(true);
+    const loadInstanceState = async () => {
+      setIsCheckingInstance(true);
       try {
-        const installed = await IsVersionInstalled(currentBranch, currentVersion);
-        setIsVersionInstalled(installed);
-        // For historical versions, still get version status to check if duplication is possible
-        const status = await GetLatestVersionStatus(currentBranch);
-        setVersionStatus(status);
+        const [selected, allInstances] = await Promise.all([
+          GetSelectedInstance(),
+          GetInstances()
+        ]);
+        setSelectedInstance(selected);
+        setInstances(allInstances);
+        // TODO: Check if update is available for selected instance
+        setHasUpdateAvailable(false);
       } catch (e) {
-        console.error('Failed to check if version installed:', e);
-        setIsVersionInstalled(false);
-        setVersionStatus(null);
+        console.error('Failed to load instance state:', e);
+        setSelectedInstance(null);
+        setInstances([]);
       }
-      setIsCheckingInstalled(false);
+      setIsCheckingInstance(false);
     };
-    checkInstalled();
-  }, [currentBranch, currentVersion]);
+    loadInstanceState();
+  }, []);
 
-  // Load version list when branch changes
-  useEffect(() => {
-    const loadVersions = async () => {
-      setIsLoadingVersions(true);
-      try {
-        const versions = await GetVersionList(currentBranch);
-        setAvailableVersions(withLatest(versions || []));
-
-        // Load installed versions
-        const installed = await GetInstalledVersionsForBranch(currentBranch);
-        const latestInstalled = await IsVersionInstalled(currentBranch, 0);
-        const installedWithLatest = [...(installed || [])];
-        if (latestInstalled && !installedWithLatest.some(v => v.version === 0)) installedWithLatest.unshift({ version: 0, isValid: true });
-        setInstalledVersions(installedWithLatest);
-
-        // If current version is not valid for this branch, set to latest
-        if (currentVersion !== 0 && versions && !versions.includes(currentVersion) && versions.length > 0) {
-          setCurrentVersion(0);
-          await SetSelectedVersion(0);
-        }
-      } catch (e) {
-        console.error('Failed to load versions:', e);
-        setAvailableVersions([]);
-        setInstalledVersions([]);
-      }
-      setIsLoadingVersions(false);
-    };
-    loadVersions();
-  }, [currentBranch]);
-
-  // Handle branch change - immediately load and set latest version for new branch
-  const handleBranchChange = async (branch: string) => {
-    setCurrentBranch(branch);
-    await SetVersionType(branch);
-
-    // Load versions for new branch and set to latest (version 0)
-    setIsLoadingVersions(true);
+  // Refresh instances list
+  const refreshInstances = async () => {
     try {
-      const versions = await GetVersionList(branch);
-      setAvailableVersions(withLatest(versions));
-
-      const installed = await GetInstalledVersionsForBranch(branch);
-      const latestInstalled = await IsVersionInstalled(branch, 0);
-      const installedWithLatest = [...(installed || [])];
-      if (latestInstalled && !installedWithLatest.some(v => v.version === 0)) installedWithLatest.unshift({ version: 0, isValid: true });
-      setInstalledVersions(installedWithLatest);
-
-      // Always set to "latest" (version 0) when switching branches
-      setCurrentVersion(0);
-      await SetSelectedVersion(0);
+      const [selected, allInstances] = await Promise.all([
+        GetSelectedInstance(),
+        GetInstances()
+      ]);
+      setSelectedInstance(selected);
+      setInstances(allInstances);
     } catch (e) {
-      console.error('Failed to load versions for branch:', e);
+      console.error('Failed to refresh instances:', e);
     }
-    setIsLoadingVersions(false);
-  };
-
-  // Handle version change
-  const handleVersionChange = async (version: number) => {
-    setCurrentVersion(version);
-    await SetSelectedVersion(version);
   };
 
   // Check for existing game process on startup
@@ -520,7 +364,7 @@ const App: React.FC = () => {
     try {
       const settings = await ipc.settings.get();
       const domain = settings.authDomain?.trim() ?? '';
-      const isOfficial = domain === 'sessionserver.mojang.com' || domain === 'official'
+      const isOfficial = domain === 'sessionserver.hytale.com' || domain === 'official'
         || domain.includes('hytale.com');
       setIsOfficialServerMode(isOfficial && settings.onlineMode);
 
@@ -589,18 +433,12 @@ const App: React.FC = () => {
 
     // Load background mode, news settings, and accent color
     GetBackgroundMode().then((mode: string) => setBackgroundMode(mode || 'slideshow'));
-    GetDisableNews().then((disabled: boolean) => setNewsDisabled(disabled));
     GetAccentColor().then((color: string) => setAccentColor(color || '#FFA845'));
     GetMusicEnabled().then((enabled: boolean) => setIsMuted(!enabled));
 
-    // Load saved branch and version - must load branch first, then version
+    // Load launcher branch and other settings
     const loadSettings = async () => {
       try {
-        // Get saved branch (defaults to "release" in backend if not set)
-        const savedBranch = await GetVersionType();
-        const branch = normalizeBranch(savedBranch || GameBranch.RELEASE);
-        setCurrentBranch(branch);
-
         // Load launcher branch (release/beta channel)
         try {
           const savedLauncherBranch = await GetLauncherBranch();
@@ -622,68 +460,8 @@ const App: React.FC = () => {
         } catch (e) {
           console.error('Failed to check Rosetta status:', e);
         }
-
-        // Load version list for this branch
-        setIsLoadingVersions(true);
-        const versions = await GetVersionList(branch);
-        setAvailableVersions(withLatest(versions));
-
-        // Load installed versions
-        const installed = await GetInstalledVersionsForBranch(branch);
-        const latestInstalled = await IsVersionInstalled(branch, 0);
-        const installedWithLatest = [...(installed || [])];
-        if (latestInstalled && !installedWithLatest.some(v => v.version === 0)) installedWithLatest.unshift({ version: 0, isValid: true });
-        setInstalledVersions(installedWithLatest);
-
-        // Check if "latest" (version 0) is installed first
-
-        if (latestInstalled) {
-          // Use latest if installed
-          setCurrentVersion(0);
-          await SetSelectedVersion(0);
-          setIsVersionInstalled(true);
-          // Get version status for latest instance
-          try {
-            const status = await GetLatestVersionStatus(branch);
-            console.log('loadSettings: GetLatestVersionStatus response:', status);
-            setVersionStatus(status);
-          } catch (e) {
-            console.error('Failed to get version status:', e);
-            setVersionStatus(null);
-          }
-        } else if (installed && installed.length > 0) {
-          // If latest not installed but other versions exist, select the highest installed version
-          const highestInstalled = Math.max(...installed.map(x => x.version).filter(v => v > 0));
-          if (highestInstalled > 0) {
-            setCurrentVersion(highestInstalled);
-            await SetSelectedVersion(highestInstalled);
-            setIsVersionInstalled(true);
-          } else {
-            // Only version 0 in the list but not actually installed
-            setCurrentVersion(0);
-            await SetSelectedVersion(0);
-            setIsVersionInstalled(false);
-          }
-        } else {
-          // No versions installed, default to latest
-          setCurrentVersion(0);
-          await SetSelectedVersion(0);
-          setIsVersionInstalled(false);
-          // Get version status even if not installed (will show not_installed)
-          try {
-            const status = await GetLatestVersionStatus(branch);
-            console.log('loadSettings (not installed): GetLatestVersionStatus response:', status);
-            setVersionStatus(status);
-          } catch (e) {
-            console.error('Failed to get version status:', e);
-            setVersionStatus(null);
-          }
-        }
-
-        setIsLoadingVersions(false);
       } catch (e) {
         console.error('Failed to load settings:', e);
-        setIsLoadingVersions(false);
       }
     };
     loadSettings();
@@ -729,17 +507,9 @@ const App: React.FC = () => {
       } else if (data.state === 'complete') {
         console.log('[App] Progress complete state received, waiting for game-state event');
         setDownloadState('launching');
-        // Game is now installed, update state
+        // Refresh instances after download completes
         if (data.progress >= 100) {
-          setIsVersionInstalled(true);
-          // Update version status for latest instance so DUPLICATE button appears
-          if (currentVersionRef.current === 0) {
-            GetLatestVersionStatus(currentBranchRef.current).then(status => {
-              setVersionStatus(status);
-            }).catch(err => {
-              console.error('Failed to get version status after download:', err);
-            });
-          }
+          refreshInstances();
         }
       } else if (data.state === 'launch' || data.state === 'launching') {
         // Game is launching - set running immediately for better UX
@@ -767,9 +537,12 @@ const App: React.FC = () => {
       if (data.state === 'started') {
         console.log('[App] Game started, resetting download state');
         setIsGameRunning(true);
-        // Track which instance is running
-        setRunningBranch(currentBranchRef.current);
-        setRunningVersion(currentVersionRef.current);
+        // Track which instance is running (use current selected instance)
+        const inst = selectedInstanceRef.current;
+        if (inst) {
+          setRunningBranch(inst.branch);
+          setRunningVersion(inst.version);
+        }
         setIsDownloading(false);
         setProgress(0);
         setLaunchState('');
@@ -891,52 +664,15 @@ const App: React.FC = () => {
       return;
     }
 
-    // Check if using "Latest" and there's a pending update with userdata
-    if (currentVersion === 0) {
-      try {
-        const updateInfo = await GetPendingUpdateInfo(currentBranch);
-        if (updateInfo && updateInfo.HasOldUserData) {
-          // Show the update confirmation modal
-          setPendingUpdate({
-            oldVersion: updateInfo.OldVersion,
-            newVersion: updateInfo.NewVersion,
-            hasOldUserData: updateInfo.HasOldUserData,
-            branch: updateInfo.Branch
-          });
-          return; // Don't proceed, wait for modal decision
-        }
-      } catch (err) {
-        console.error('Failed to check pending update:', err);
-        // Continue anyway if check fails
-      }
-    }
-
-    // If there's an update available and user is on latest (version 0), 
-    // use LaunchOnly to skip the update check
-    if (currentVersion === 0 && versionStatus?.status === 'update_available') {
-      doLaunchOnly();
-    } else {
-      doLaunch();
-    }
-  };
-
-  const doLaunchOnly = async () => {
-    setIsDownloading(true);
-    setDownloadState('launching');
-    try {
-      await LaunchOnly();
-      // Button state will be managed by progress events
-    } catch (err) {
-      console.error('Launch failed:', err);
-      setIsDownloading(false);
-    }
+    // Launch the selected instance
+    doLaunch();
   };
 
   const doLaunch = async () => {
     setIsDownloading(true);
     setDownloadState('downloading');
     try {
-      await DownloadAndLaunch(username);
+      LaunchGame();
       // Button state will be managed by progress events:
       // - 'launch' event sets isGameRunning=true and isDownloading=false
       // - 'error' event sets isDownloading=false
@@ -949,68 +685,28 @@ const App: React.FC = () => {
   // Launch a specific instance from the Instances page — properly tracks download state
   const handleLaunchFromInstances = (branch: string, version: number) => {
     if (isGameRunning || isDownloading) return;
-    // Update refs so game-state handler tracks the correct instance
-    currentBranchRef.current = branch;
-    currentVersionRef.current = version;
     setIsDownloading(true);
     setDownloadState('downloading');
     send('hyprism:game:launch', { branch, version });
   };
 
   const handleGameUpdate = async () => {
-    // Trigger update/download for the latest instance
+    // TODO: Implement instance update
     setIsDownloading(true);
     setDownloadState('downloading');
     try {
-      // Download/update the latest version without launching
-      await DownloadOnly();
-      // Button state will be managed by progress events
-      // After download completes, refresh version status
-      const status = await GetLatestVersionStatus(currentBranch);
-      setVersionStatus(status);
+      LaunchGame();
+      // Refresh instances after update
+      await refreshInstances();
     } catch (err) {
       console.error('Update failed:', err);
       setIsDownloading(false);
     }
   };
 
-  const handleGameDuplicate = async () => {
-    try {
-      const result = await DuplicateLatest(currentBranch);
-      if (result) {
-        // Refresh the installed versions list
-        const installed = await GetInstalledVersionsForBranch(currentBranch);
-        const latestInstalled = await IsVersionInstalled(currentBranch, 0);
-        const installedWithLatest = [...(installed || [])];
-        if (latestInstalled && !installedWithLatest.some(v => v.version === 0)) {
-          installedWithLatest.unshift({ version: 0, isValid: true });
-        }
-        setInstalledVersions(installedWithLatest);
-      }
-    } catch (err) {
-      console.error('Failed to duplicate latest:', err);
-    }
-  };
-
-  const handleUpdateConfirmWithCopy = async () => {
-    if (!pendingUpdate) return;
-    try {
-      // Copy userdata from old version (0 = latest instance) to the new version
-      await CopyUserData(pendingUpdate.branch, 0, pendingUpdate.newVersion);
-    } catch (err) {
-      console.error('Failed to copy userdata:', err);
-    }
-    setPendingUpdate(null);
-    doLaunch();
-  };
-
-  const handleUpdateConfirmWithoutCopy = async () => {
-    setPendingUpdate(null);
-    doLaunch();
-  };
-
-  const handleUpdateCancel = () => {
-    setPendingUpdate(null);
+  const handleDownload = async () => {
+    // Navigate to instances page to create a new instance
+    setCurrentPage('instances');
   };
 
   const handleCancelDownload = async () => {
@@ -1059,67 +755,7 @@ const App: React.FC = () => {
     }
   };
 
-  const _handleCustomDirChange = async () => {
-    try {
-      const input = window.prompt(
-        t('app.enterInstancePath'),
-        customInstanceDir || ''
-      );
-
-      if (!input || !input.trim()) return;
-
-      const selectedDir = await SetInstanceDirectory(input.trim());
-
-      if (!selectedDir) {
-        setError({
-          type: 'SETTINGS_ERROR',
-          message: t('app.failedChangeDir'),
-          technical: t('app.pathError'),
-          timestamp: new Date().toISOString()
-        });
-        return;
-      }
-
-      setCustomInstanceDir(selectedDir);
-      console.log('Instance directory updated to:', selectedDir);
-
-      window.alert(
-        t('app.instanceDirUpdated') + '\n\n' +
-        t('app.instanceDirUpdatedDetail', { dir: selectedDir })
-      );
-
-      // Reload version list and check installed versions for new directory
-      setIsLoadingVersions(true);
-      try {
-        const versions = await GetVersionList(currentBranch);
-        setAvailableVersions(versions || []);
-
-        const installed = await GetInstalledVersionsForBranch(currentBranch);
-        setInstalledVersions(installed || []);
-
-        // Re-check if current version is installed in new directory
-        const isInstalled = await IsVersionInstalled(currentBranch, currentVersion);
-        setIsVersionInstalled(isInstalled);
-
-        // Check version status for latest
-        if (currentVersion === 0) {
-          const status = await GetLatestVersionStatus(currentBranch);
-          setVersionStatus(status);
-        }
-      } catch (e) {
-        console.error('Failed to reload versions after directory change:', e);
-      }
-      setIsLoadingVersions(false);
-    } catch (err) {
-      console.error('Failed to change instance directory:', err);
-      setError({
-        type: 'SETTINGS_ERROR',
-        message: t('app.failedChangeDir'),
-        technical: err instanceof Error ? err.message : String(err),
-        timestamp: new Date().toISOString()
-      });
-    }
-  };
+  // Instance directory change is now handled through Settings -> Instance management
 
   // Show loading screen until onboarding check is complete to prevent UI flash
   if (!onboardingChecked) {
@@ -1227,17 +863,7 @@ const App: React.FC = () => {
   };
 
   const handleInstanceDeleted = async () => {
-    const installed = await GetInstalledVersionsForBranch(currentBranch);
-    const latestInstalled = await IsVersionInstalled(currentBranch, 0);
-    const installedWithLatest = [...(installed || [])];
-    if (latestInstalled && !installedWithLatest.some(v => v.version === 0)) installedWithLatest.unshift({ version: 0, isValid: true });
-    setInstalledVersions(installedWithLatest);
-    const stillInstalled = await IsVersionInstalled(currentBranch, currentVersion);
-    setIsVersionInstalled(stillInstalled);
-    if (currentVersion === 0) {
-      const status = await GetLatestVersionStatus(currentBranch);
-      setVersionStatus(status);
-    }
+    await refreshInstances();
   };
 
   return (
@@ -1275,27 +901,20 @@ const App: React.FC = () => {
               downloadState={downloadState}
               canCancel={isDownloading && !isGameRunning}
               isGameRunning={isGameRunning}
-              isVersionInstalled={isVersionInstalled}
-              isCheckingInstalled={isCheckingInstalled}
-              versionStatus={versionStatus}
               progress={progress}
               downloaded={downloaded}
               total={total}
               launchState={launchState}
               launchDetail={launchDetail}
-              currentBranch={currentBranch}
-              currentVersion={currentVersion}
-              availableVersions={availableVersions}
-              installedVersions={installedVersions}
-              isLoadingVersions={isLoadingVersions}
-              onBranchChange={handleBranchChange}
-              onVersionChange={handleVersionChange}
+              selectedInstance={selectedInstance}
+              hasInstances={instances.length > 0}
+              isCheckingInstance={isCheckingInstance}
+              hasUpdateAvailable={hasUpdateAvailable}
               onPlay={handlePlay}
-              onDownload={handlePlay}
+              onDownload={handleDownload}
               onUpdate={handleGameUpdate}
-              onDuplicate={handleGameDuplicate}
-              onExit={handleExit}
               onCancelDownload={handleCancelDownload}
+              onNavigateToInstances={() => setCurrentPage('instances')}
               officialServerBlocked={officialServerBlocked}
             />
           )}
@@ -1304,7 +923,6 @@ const App: React.FC = () => {
             <NewsPage
               key="news"
               getNews={getCombinedNews}
-              newsDisabled={newsDisabled}
             />
           )}
 
@@ -1345,7 +963,6 @@ const App: React.FC = () => {
               onLauncherBranchChange={handleLauncherBranchChange}
               rosettaWarning={rosettaWarning}
               onBackgroundModeChange={(mode) => setBackgroundMode(mode)}
-              onNewsDisabledChange={(disabled) => setNewsDisabled(disabled)}
               onAccentColorChange={(color) => setAccentColor(color)}
               onInstanceDeleted={handleInstanceDeleted}
               onAuthSettingsChange={refreshOfficialStatus}
@@ -1368,24 +985,15 @@ const App: React.FC = () => {
       {/* Modals - only essential overlays */}
       
       <Suspense fallback={<ModalFallback />}>
-        {showDelete && (
+        {showDelete && selectedInstance && (
           <DeleteConfirmationModal
-            onConfirm={() => {
-              DeleteGame(currentBranch, currentVersion);
+            onConfirm={async () => {
+              // TODO: Implement instance deletion via InstanceService
+              console.log('Delete instance:', selectedInstance.id);
               setShowDelete(false);
+              await refreshInstances();
             }}
             onCancel={() => setShowDelete(false)}
-          />
-        )}
-
-        {pendingUpdate && (
-          <UpdateConfirmationModal
-            oldVersion={pendingUpdate.oldVersion}
-            newVersion={pendingUpdate.newVersion}
-            hasOldUserData={pendingUpdate.hasOldUserData}
-            onConfirmWithCopy={handleUpdateConfirmWithCopy}
-            onConfirmWithoutCopy={handleUpdateConfirmWithoutCopy}
-            onCancel={handleUpdateCancel}
           />
         )}
 

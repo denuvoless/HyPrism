@@ -32,7 +32,6 @@ const InstallModFromBase64 = _stub('InstallModFromBase64', false);
 const GetShowAlphaMods = _stub('GetShowAlphaMods', false);
 import { GameBranch } from '@/constants/enums';
 import { useAccentColor } from '../contexts/AccentColorContext';
-import { useAnimatedGlass } from '../contexts/AnimatedGlassContext';
 
 // Types
 interface Mod {
@@ -119,12 +118,11 @@ const ConfirmModal: React.FC<{
   onConfirm: () => void;
   onCancel: () => void;
   children?: React.ReactNode;
-  animatedGlass?: boolean;
-}> = ({ title, message, confirmText, confirmColor, confirmStyle, confirmTextColor, onConfirm, onCancel, children, animatedGlass }) => {
+}> = ({ title, message, confirmText, confirmColor, confirmStyle, confirmTextColor, onConfirm, onCancel, children }) => {
   const { t } = useTranslation();
   return (
-    <div className={`fixed inset-0 z-[200] flex items-center justify-center ${animatedGlass ? 'bg-black/60 modal-overlay-glass' : 'bg-[#0a0a0a]/90'}`}>
-      <div className={`p-6 max-w-md w-full mx-4 ${animatedGlass ? 'glass-panel-static' : 'glass-panel-static-solid'}`}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0a0a0a]/90">
+      <div className="p-6 max-w-md w-full mx-4 glass-panel-static-solid">
         <h3 className="text-lg font-bold text-white mb-2">{title}</h3>
         <p className="text-white/60 text-sm mb-4">{message}</p>
         {children}
@@ -170,7 +168,6 @@ export const ModManager: React.FC<ModManagerProps> = ({
 }) => {
   const { t } = useTranslation();
   const { accentColor, accentTextColor } = useAccentColor();
-  const { animatedGlass } = useAnimatedGlass();
   // Tab state
   const [activeTab, setActiveTab] = useState<'installed' | 'browse'>(initialSearchQuery ? 'browse' : 'installed');
 
@@ -1156,13 +1153,13 @@ export const ModManager: React.FC<ModManagerProps> = ({
     <div 
       className={isPageMode
         ? "w-full h-full"
-        : `fixed inset-0 z-50 flex items-center justify-center p-8 ${animatedGlass ? 'bg-black/80 modal-overlay-glass' : 'bg-[#0a0a0a]/95'}`
+        : "fixed inset-0 z-50 flex items-center justify-center p-8 bg-[#0a0a0a]/95"
       }
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className={`w-full ${isPageMode ? 'h-full !rounded-none' : 'max-w-6xl h-[85vh]'} flex flex-col overflow-hidden transition-colors ${animatedGlass ? 'glass-panel-static' : 'glass-panel-static-solid'} ${isDragging ? '!border-2' : ''}`} style={isDragging ? { borderColor: accentColor } : undefined}>
+      <div className={`w-full ${isPageMode ? 'h-full !rounded-none' : 'max-w-6xl h-[85vh]'} flex flex-col overflow-hidden transition-colors glass-panel-static-solid ${isDragging ? '!border-2' : ''}`} style={isDragging ? { borderColor: accentColor } : undefined}>
         {/* Drag overlay */}
         {isDragging && (
           <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 rounded-2xl pointer-events-none">
@@ -1270,7 +1267,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
             <>
               {/* Portal action buttons to page header in pageMode */}
               {isPageMode && headerActionsRef?.current && createPortal(
-                <div className={`flex items-center gap-0.5 px-1.5 py-1 ${animatedGlass ? 'glass-panel' : 'glass-panel-static-solid'}`}>{actionButtons}</div>,
+                <div className="flex items-center gap-0.5 px-1.5 py-1 glass-panel-static-solid">{actionButtons}</div>,
                 headerActionsRef.current
               )}
 
@@ -2034,10 +2031,10 @@ export const ModManager: React.FC<ModManagerProps> = ({
       {showUpdatesModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
-            className={`absolute inset-0 ${animatedGlass ? 'bg-black/60 modal-overlay-glass' : 'bg-[#0a0a0a]/90'}`}
+            className="absolute inset-0 bg-[#0a0a0a]/90"
             onClick={() => setShowUpdatesModal(false)}
           />
-          <div className={`relative w-full max-w-lg mx-4 overflow-hidden ${animatedGlass ? 'glass-panel-static' : 'glass-panel-static-solid'}`}>
+          <div className="relative w-full max-w-lg mx-4 overflow-hidden glass-panel-static-solid">
             <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <h3 className="text-lg font-bold text-white">{t('modManager.checkForUpdates')}</h3>
               <button
@@ -2153,7 +2150,6 @@ export const ModManager: React.FC<ModManagerProps> = ({
           confirmTextColor={confirmModal.type === 'download' ? accentTextColor : undefined}
           onConfirm={confirmModal.type === 'download' ? handleConfirmDownload : handleConfirmDelete}
           onCancel={() => setConfirmModal(null)}
-          animatedGlass={animatedGlass}
         >
           <div className="max-h-40 overflow-y-auto space-y-1">
             {confirmModal.items.map((item) => (
@@ -2167,8 +2163,8 @@ export const ModManager: React.FC<ModManagerProps> = ({
 
       {/* Download Progress Overlay */}
       {isDownloading && downloadProgress && (
-        <div className={`fixed inset-0 flex items-center justify-center z-50 ${animatedGlass ? 'bg-black/60 modal-overlay-glass' : 'bg-[#0a0a0a]/90'}`}>
-          <div className={`p-6 max-w-md w-full mx-4 shadow-xl ${animatedGlass ? 'glass-panel-static' : 'glass-panel-static-solid'}`}>
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-[#0a0a0a]/90">
+          <div className="p-6 max-w-md w-full mx-4 shadow-xl glass-panel-static-solid">
             <div className="flex items-center gap-3 mb-4">
               <Loader2 size={24} className="animate-spin" style={{ color: accentColor }} />
               <div>
@@ -2214,7 +2210,7 @@ export const ModManager: React.FC<ModManagerProps> = ({
       {/* Fullscreen Image Viewer */}
       {fullscreenImage && (
         <div
-          className={`fixed inset-0 flex items-center justify-center z-[60] ${animatedGlass ? 'bg-black/90 backdrop-blur-sm' : 'bg-[#0a0a0a]/98'}`}
+          className="fixed inset-0 flex items-center justify-center z-[60] bg-[#0a0a0a]/98"
           onClick={() => setFullscreenImage(null)}
         >
           <button
@@ -2244,8 +2240,8 @@ export const ModManager: React.FC<ModManagerProps> = ({
 
       {/* Export Modal */}
       {showExportModal && (
-        <div className={`fixed inset-0 flex items-center justify-center z-[60] ${animatedGlass ? 'bg-black/80 modal-overlay-glass' : 'bg-[#0a0a0a]/95'}`}>
-          <div className={`p-6 w-full max-w-md ${animatedGlass ? 'glass-panel-static' : 'glass-panel-static-solid'}`}>
+        <div className="fixed inset-0 flex items-center justify-center z-[60] bg-[#0a0a0a]/95">
+          <div className="p-6 w-full max-w-md glass-panel-static-solid">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold text-white">{t('modManager.exportMods')}</h3>
               <button

@@ -1,6 +1,11 @@
 using System.Runtime.InteropServices;
 using HyPrism.Models;
 using HyPrism.Services.Core;
+using HyPrism.Services.Game.Butler;
+using HyPrism.Services.Game.Download;
+using HyPrism.Services.Game.Instance;
+using HyPrism.Services.Game.Launch;
+using HyPrism.Services.Game.Version;
 
 namespace HyPrism.Services.Game;
 
@@ -25,7 +30,6 @@ public class GameSessionService : IGameSessionService
     private readonly IGameLauncher _gameLauncher;
     private readonly HttpClient _httpClient;
     private readonly string _appDir;
-    private readonly MirrorService _mirrorService;
     
     private volatile bool _cancelRequested;
     private CancellationTokenSource? _downloadCts;
@@ -45,7 +49,6 @@ public class GameSessionService : IGameSessionService
     /// <param name="gameLauncher">Launcher for the game process.</param>
     /// <param name="httpClient">HTTP client for network requests.</param>
     /// <param name="appPath">Application path configuration.</param>
-    /// <param name="mirrorService">Fallback mirror service for when official servers are down.</param>
     public GameSessionService(
         IConfigService configService,
         IInstanceService instanceService,
@@ -57,8 +60,7 @@ public class GameSessionService : IGameSessionService
         IPatchManager patchManager,
         IGameLauncher gameLauncher,
         HttpClient httpClient,
-        AppPathConfiguration appPath,
-        MirrorService mirrorService)
+        AppPathConfiguration appPath)
     {
         _configService = configService;
         _instanceService = instanceService;
@@ -71,7 +73,6 @@ public class GameSessionService : IGameSessionService
         _gameLauncher = gameLauncher;
         _httpClient = httpClient;
         _appDir = appPath.AppDir;
-        _mirrorService = mirrorService;
     }
 
     private Config _config => _configService.Configuration;
@@ -95,6 +96,7 @@ public class GameSessionService : IGameSessionService
         {
             _progressService.ReportDownloadProgress("preparing", 0, "launch.detail.preparing_session", null, 0, 0);
 
+            #pragma warning disable CS0618 // Backward compatibility: VersionType and SelectedVersion kept for migration
             string branch = UtilityService.NormalizeVersionType(_config.VersionType);
             _progressService.ReportDownloadProgress("preparing", 1, "launch.detail.checking_versions", null, 0, 0);
             var versions = await _versionService.GetVersionListAsync(branch, cts.Token);
@@ -105,6 +107,7 @@ public class GameSessionService : IGameSessionService
 
             bool isLatestInstance = _config.SelectedVersion == 0;
             int targetVersion = _config.SelectedVersion > 0 ? _config.SelectedVersion : versions[0];
+            #pragma warning restore CS0618
             if (!versions.Contains(targetVersion))
                 targetVersion = versions[0];
 
@@ -299,7 +302,7 @@ public class GameSessionService : IGameSessionService
 
         // Mirror + pre-release: diff-based branch requires applying the entire patch chain
         // from version 0 (empty) up to the target version sequentially.
-        if (officialDown && _mirrorService.IsDiffBasedBranch(apiVersionType))
+        if (officialDown && _versionService.IsDiffBasedBranch(apiVersionType))
         {
             Logger.Info("Download", $"Mirror pre-release: installing via diff chain v0 -> v{targetVersion}");
             _progressService.ReportDownloadProgress("download", 5, "launch.detail.downloading_mirror", null, 0, 0);
@@ -318,16 +321,34 @@ public class GameSessionService : IGameSessionService
         else
         {
             // Official server or mirror release: download a single full PWR and apply.
-            // On the official server, each version's PWR is self-contained.
-            // On the mirror, release files are also full standalone copies.
-            string downloadUrl = $"https://game-patches.hytale.com/patches/{osName}/{arch}/{apiVersionType}/0/{targetVersion}.pwr";
+            // Get the download URL (will refresh cache if needed)
+            string downloadUrl;
+            CachedVersionEntry versionEntry;
+            try
+            {
+                versionEntry = await _versionService.RefreshAndGetVersionEntryAsync(apiVersionType, targetVersion, ct);
+                downloadUrl = versionEntry.PwrUrl;
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("Download", $"Failed to get download URL: {ex.Message}");
+                return new DownloadProgress { Error = $"Failed to get download URL for v{targetVersion}: {ex.Message}" };
+            }
+            
+            bool hasOfficialUrl = !string.IsNullOrEmpty(versionEntry.PwrUrl) 
+                && versionEntry.PwrUrl.Contains("game-patches.hytale.com") 
+                && versionEntry.PwrUrl.Contains("verify=");
+            
             string pwrPath = Path.Combine(_appDir, "Cache", $"{branch}_{(isLatestInstance ? "latest" : "version")}_{targetVersion}.pwr");
 
             Directory.CreateDirectory(Path.GetDirectoryName(pwrPath)!);
 
+            // Determine if we should skip official and go straight to mirror
+            bool skipOfficial = officialDown || !hasOfficialUrl;
+
             try
             {
-                await DownloadPwrWithCachingAsync(downloadUrl, pwrPath, osName, arch, apiVersionType, targetVersion, officialDown, ct);
+                await DownloadPwrWithCachingAsync(downloadUrl, pwrPath, osName, arch, apiVersionType, targetVersion, skipOfficial, hasOfficialUrl, ct);
             }
             catch (MirrorDiffRequiredException)
             {
@@ -430,13 +451,13 @@ public class GameSessionService : IGameSessionService
     private async Task DownloadPwrWithCachingAsync(
         string downloadUrl, string pwrPath,
         string os, string arch, string branch, int version,
-        bool officialDown, CancellationToken ct)
+        bool skipOfficial, bool hasOfficialUrl, CancellationToken ct)
     {
         bool needDownload = true;
         long remoteSize = -1;
 
-        // Only check remote size from official if it's not known to be down
-        if (!officialDown)
+        // Only check remote size from official if we have a valid URL
+        if (!skipOfficial && hasOfficialUrl)
         {
             try { remoteSize = await _downloadService.GetFileSizeAsync(downloadUrl, ct); }
             catch { /* Proceed to download anyway */ }
@@ -470,18 +491,20 @@ public class GameSessionService : IGameSessionService
             string partPath = pwrPath + ".part";
             bool downloaded = false;
 
-            // Try official URL first (skip if server is known to be down)
-            if (!officialDown)
+            // Try official URL first (skip if server is known to be down or no valid URL)
+            if (!skipOfficial && hasOfficialUrl)
             {
                 try
                 {
                     Logger.Info("Download", $"Downloading from official: {downloadUrl}");
+                    _progressService.ReportDownloadProgress("download", 5, "launch.detail.downloading_official", null, 0, 0);
                     await _downloadService.DownloadFileAsync(downloadUrl, partPath, (progress, downloaded, total) =>
                     {
                         int mappedProgress = 5 + (int)(progress * 0.60);
-                        _progressService.ReportDownloadProgress("download", mappedProgress, "launch.detail.downloading_generic", [progress], downloaded, total);
+                        _progressService.ReportDownloadProgress("download", mappedProgress, "launch.detail.downloading_official", [progress], downloaded, total);
                     }, ct);
                     downloaded = true;
+                    Logger.Success("Download", "Downloaded from official successfully");
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -491,6 +514,10 @@ public class GameSessionService : IGameSessionService
                     if (File.Exists(partPath)) try { File.Delete(partPath); } catch { }
                 }
             }
+            else if (!skipOfficial)
+            {
+                Logger.Info("Download", "No signed official URL available, skipping to mirror...");
+            }
             else
             {
                 Logger.Info("Download", "Official server is down, skipping to mirror...");
@@ -499,7 +526,7 @@ public class GameSessionService : IGameSessionService
             // Fallback to mirror (or primary if official is known down)
             if (!downloaded)
             {
-                var mirrorUrl = await _mirrorService.GetMirrorUrlAsync(os, arch, branch, version, ct);
+                var mirrorUrl = await _versionService.GetMirrorDownloadUrlAsync(os, arch, branch, version, ct);
                 if (mirrorUrl != null)
                 {
                     try
@@ -521,7 +548,7 @@ public class GameSessionService : IGameSessionService
                         Logger.Error("Download", $"Mirror download also failed: {mirrorEx.Message}");
                     }
                 }
-                else if (_mirrorService.IsDiffBasedBranch(branch))
+                else if (_versionService.IsDiffBasedBranch(branch))
                 {
                     // Pre-release uses diff patches on the mirror; signal caller to use diff chain
                     Logger.Info("Download", "Pre-release branch detected - falling back to diff-based mirror download");

@@ -1,6 +1,7 @@
 using HyPrism.Models;
 using HyPrism.Services.Core;
 using HyPrism.Services.Game;
+using HyPrism.Services.Game.Instance;
 
 namespace HyPrism.Services.User;
 
@@ -218,7 +219,9 @@ public class SkinService : ISkinService
             }
             
             // Get the current instance's UserData path
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");
@@ -238,9 +241,9 @@ public class SkinService : ISkinService
                 return;
             }
             
-            // Get all existing UUIDs from UserUuids mapping
+            // Get all existing UUIDs from Profiles
             var knownUuids = new HashSet<string>(
-                (config.UserUuids?.Values ?? Enumerable.Empty<string>())
+                (config.Profiles?.Select(p => p.UUID) ?? Enumerable.Empty<string>())
                     .Concat(new[] { config.UUID ?? "" })
                     .Where(u => !string.IsNullOrEmpty(u)),
                 StringComparer.OrdinalIgnoreCase
@@ -279,18 +282,6 @@ public class SkinService : ISkinService
             Logger.Info("Startup", $"Current user '{config.Nick}' has no skin - recovering orphaned skin");
             
             // Strategy: Update the current user's UUID to match the orphaned skin
-            config.UserUuids ??= new Dictionary<string, string>();
-            
-            // Remove old mapping for current nick (case-insensitive)
-            var existingKey = config.UserUuids.Keys
-                .FirstOrDefault(k => k.Equals(config.Nick, StringComparison.OrdinalIgnoreCase));
-            if (existingKey != null)
-            {
-                config.UserUuids.Remove(existingKey);
-            }
-            
-            // Set current user to use orphaned UUID
-            config.UserUuids[config.Nick] = orphanedUuid;
             config.UUID = orphanedUuid;
             _configService.SaveConfig();
             
@@ -309,7 +300,9 @@ public class SkinService : ISkinService
         {
             var config = _configService.Configuration;
             // Get the current instance's UserData path
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");
@@ -319,9 +312,9 @@ public class SkinService : ISkinService
                 return null;
             }
             
-            // Get all existing UUIDs from UserUuids mapping
+            // Get all existing UUIDs from Profiles
             var knownUuids = new HashSet<string>(
-                (config.UserUuids?.Values ?? Enumerable.Empty<string>())
+                (config.Profiles?.Select(p => p.UUID) ?? Enumerable.Empty<string>())
                     .Concat(new[] { config.UUID ?? "" })
                     .Where(u => !string.IsNullOrEmpty(u)),
                 StringComparer.OrdinalIgnoreCase
@@ -404,7 +397,9 @@ public class SkinService : ISkinService
             }
             
             // If the current UUID already has a skin, don't overwrite
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             var skinCacheDir = Path.Combine(userDataPath, "CachedPlayerSkins");
@@ -470,7 +465,9 @@ public class SkinService : ISkinService
             Directory.CreateDirectory(profileDir);
             
             // Get game UserData path
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             
@@ -522,7 +519,9 @@ public class SkinService : ISkinService
             }
             
             // Get game UserData path
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             
@@ -561,7 +560,9 @@ public class SkinService : ISkinService
         {
             var config = _configService.Configuration;
             // Get game UserData path
+            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
             var branch = UtilityService.NormalizeVersionType(config.VersionType);
+            #pragma warning restore CS0618
             var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
             var userDataPath = _instanceService.GetInstanceUserDataPath(versionPath);
             

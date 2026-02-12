@@ -69,10 +69,14 @@
     "update": "UPDATE",
     "duplicate": "DUPLICATE",
     "download": "DOWNLOAD",
+    "selectInstance": "SELECT INSTANCE",
     "release": "Release",
     "preRelease": "Pre-Release",
     "latest": "latest",
     "noVersions": "No versions",
+    "mirror": "Mirror",
+    "sourceOfficial": "Downloaded from official Hytale servers",
+    "sourceMirror": "Downloaded from community mirror",
     "editProfile": "Edit Profile",
     "updateAvailable": "Update Available",
     "joinDiscord": "Join Discord",
@@ -445,7 +449,8 @@
       "installing_butler_pwr": "Installing game with Butler...",
       "using_cached_installer": "Using cached installer...",
       "download_complete": "Download complete!",
-      "downloading_mirror": "Downloading from mirror... {0}%"
+      "downloading_mirror": "Downloading from mirror... {0}%",
+      "downloading_official": "Downloading from Hytale... {0}%"
     }
   },
   "profileEditor": {

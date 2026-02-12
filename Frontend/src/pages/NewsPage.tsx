@@ -19,7 +19,6 @@ interface EnrichedNewsItem {
 
 interface NewsPageProps {
   getNews: (count: number) => Promise<EnrichedNewsItem[]>;
-  newsDisabled: boolean;
 }
 
 const pageVariants = {
@@ -37,7 +36,7 @@ const cardVariants = {
   }),
 };
 
-export const NewsPage: React.FC<NewsPageProps> = memo(({ getNews, newsDisabled }) => {
+export const NewsPage: React.FC<NewsPageProps> = memo(({ getNews }) => {
   const { t } = useTranslation();
   const { accentColor, accentTextColor } = useAccentColor();
   const [news, setNews] = useState<EnrichedNewsItem[]>([]);
@@ -85,19 +84,6 @@ export const NewsPage: React.FC<NewsPageProps> = memo(({ getNews, newsDisabled }
   }, [loading, isRefreshing]);
 
   const openLink = useCallback((url: string) => { ipc.browser.open(url); }, []);
-
-  if (newsDisabled) {
-    return (
-      <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit"
-        transition={{ duration: 0.3 }} className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <Newspaper size={48} className="text-white/20 mx-auto mb-4" />
-          <p className="text-white/40 text-lg">{t('news.disabled')}</p>
-          <p className="text-white/25 text-sm mt-2">{t('news.enableInSettings')}</p>
-        </div>
-      </motion.div>
-    );
-  }
 
   return (
     <motion.div

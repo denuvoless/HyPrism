@@ -1,4 +1,4 @@
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Launch;
 
 /// <summary>
 /// Manages launch prerequisites including Java Runtime Environment and Visual C++ Redistributable.

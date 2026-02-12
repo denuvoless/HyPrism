@@ -3,9 +3,12 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using HyPrism.Models;
 using HyPrism.Services.Core;
+using HyPrism.Services.Game.Asset;
+using HyPrism.Services.Game.Auth;
+using HyPrism.Services.Game.Instance;
 using HyPrism.Services.User;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Launch;
 
 /// <summary>
 /// Handles the game launch process including client patching, authentication,
@@ -191,8 +194,7 @@ public class GameLauncher : IGameLauncher
 
         // Known official domains / sentinel values
         return domain.Equals("official", StringComparison.OrdinalIgnoreCase)
-            || domain.Contains("hytale.com", StringComparison.OrdinalIgnoreCase)
-            || domain.Equals("sessionserver.mojang.com", StringComparison.OrdinalIgnoreCase);
+            || domain.Contains("hytale.com", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task PatchClientIfNeededAsync(string versionPath)

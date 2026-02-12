@@ -69,10 +69,14 @@
     "update": "ОБНОВИТЬ",
     "duplicate": "ДУБЛИРОВАТЬ",
     "download": "СКАЧАТЬ",
+    "selectInstance": "ВЫБРАТЬ",
     "release": "Релиз",
     "preRelease": "Пре-релиз",
     "latest": "последняя",
     "noVersions": "Нет версий",
+    "mirror": "Зеркало",
+    "sourceOfficial": "Загружается с официальных серверов Hytale",
+    "sourceMirror": "Загружается с зеркала сообщества",
     "editProfile": "Редактировать профиль",
     "updateAvailable": "Доступно обновление",
     "joinDiscord": "Discord",
@@ -444,6 +448,7 @@
       "using_cached_installer": "Использование кешированного установщика...",
       "download_complete": "Загрузка завершена!",
       "downloading_mirror": "Загрузка с зеркала... {0}%",
+      "downloading_official": "Загрузка с Hytale... {0}%",
       "checking_versions": "Проверка доступных версий...",
       "installing_butler": "Настройка механизма загрузки..."
     }

@@ -8,8 +8,33 @@ public class Config
     public string Version { get; set; } = "2.0.0";
     public string UUID { get; set; } = "";
     public string Nick { get; set; } = "Hyprism";
+    
+    /// <summary>
+    /// ID of the currently selected instance to launch.
+    /// Empty string means no instance selected (will prompt to create one).
+    /// </summary>
+    public string SelectedInstanceId { get; set; } = "";
+    
+    /// <summary>
+    /// List of known instances for quick lookup and fallback.
+    /// Synced with meta.json files in instance folders.
+    /// </summary>
+    public List<InstanceInfo> Instances { get; set; } = new();
+    
+    /// <summary>
+    /// [DEPRECATED] Use SelectedInstanceId instead.
+    /// Game branch type. Kept for backwards compatibility during migration.
+    /// </summary>
+    [Obsolete("Use SelectedInstanceId and Instances instead")]
     public string VersionType { get; set; } = "release";
+    
+    /// <summary>
+    /// [DEPRECATED] Use SelectedInstanceId instead.
+    /// Selected version number. Kept for backwards compatibility during migration.
+    /// </summary>
+    [Obsolete("Use SelectedInstanceId and Instances instead")]
     public int SelectedVersion { get; set; } = 0;
+    
     public string InstanceDirectory { get; set; } = "";
     public bool MusicEnabled { get; set; } = true;
     
@@ -95,13 +120,6 @@ public class Config
     /// Whether the user has completed the initial onboarding flow.
     /// </summary>
     public bool HasCompletedOnboarding { get; set; } = false;
-    
-    /// <summary>
-    /// Username to UUID mappings. Each username gets a consistent UUID across sessions.
-    /// This ensures skins persist when changing usernames - switching back uses the same UUID.
-    /// Keys are case-insensitive for lookup but preserve original casing.
-    /// </summary>
-    public Dictionary<string, string> UserUuids { get; set; } = new();
     
     /// <summary>
     /// GPU preference for game launch: "dedicated" (default), "integrated", or "auto".

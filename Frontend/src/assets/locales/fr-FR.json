@@ -73,6 +73,9 @@
     "preRelease": "Pré-Release",
     "latest": "dernière",
     "noVersions": "Aucune version",
+    "mirror": "Miroir",
+    "sourceOfficial": "Téléchargé depuis les serveurs officiels Hytale",
+    "sourceMirror": "Téléchargé depuis le miroir communautaire",
     "editProfile": "Modifier le profil",
     "updateAvailable": "Mise à jour disponible",
     "joinDiscord": "Rejoindre Discord",
@@ -445,7 +448,8 @@
       "download_complete": "Téléchargement terminé !",
       "checking_versions": "Vérification des versions disponibles...",
       "installing_butler": "Configuration du moteur de téléchargement...",
-      "downloading_mirror": "Téléchargement depuis le miroir... {0}%"
+      "downloading_mirror": "Téléchargement depuis le miroir... {0}%",
+      "downloading_official": "Téléchargement depuis Hytale... {0}%"
     }
   },
   "profileEditor": {

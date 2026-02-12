@@ -100,7 +100,10 @@ public class SettingsService : ISettingsService
     }
 
     // ========== Version & Branch Settings ==========
+    // NOTE: These methods use deprecated Config fields for backward compatibility
+    // They will be removed in a future version when migration to Instances is complete
 
+    #pragma warning disable CS0618 // Using obsolete fields for backward compatibility
     /// <inheritdoc/>
     public string GetVersionType() => _configService.Configuration.VersionType;
 
@@ -124,6 +127,7 @@ public class SettingsService : ISettingsService
         _configService.SaveConfig();
         return true;
     }
+    #pragma warning restore CS0618
 
     // ========== Close After Launch Setting ==========
     

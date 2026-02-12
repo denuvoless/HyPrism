@@ -36,6 +36,7 @@ public class InstanceValidationDetails
 
 public class InstalledInstance
 {
+    public string Id { get; set; } = "";
     public string Branch { get; set; } = "";
     public int Version { get; set; }
     public string Path { get; set; } = "";

@@ -73,6 +73,9 @@
     "preRelease": "프리릴리즈",
     "latest": "최신",
     "noVersions": "버전 없음",
+    "mirror": "미러",
+    "sourceOfficial": "공식 Hytale 서버에서 다운로드",
+    "sourceMirror": "커뮤니티 미러에서 다운로드",
     "editProfile": "프로필 편집",
     "updateAvailable": "업데이트 가능",
     "joinDiscord": "Discord 참여",
@@ -445,7 +448,8 @@
       "download_complete": "다운로드 완료!",
       "checking_versions": "사용 가능한 버전 확인 중...",
       "installing_butler": "다운로드 엔진 설정 중...",
-      "downloading_mirror": "미러에서 다운로드 중... {0}%"
+      "downloading_mirror": "미러에서 다운로드 중... {0}%",
+      "downloading_official": "Hytale에서 다운로드 중... {0}%"
     }
   },
   "profileEditor": {

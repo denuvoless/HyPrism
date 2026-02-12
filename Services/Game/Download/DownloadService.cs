@@ -1,6 +1,6 @@
 using HyPrism.Services.Core;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Download;
 
 /// <summary>
 /// Provides file download functionality with progress tracking and resume support.

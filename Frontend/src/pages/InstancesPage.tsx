@@ -11,11 +11,10 @@ import {
 import { useAccentColor } from '../contexts/AccentColorContext';
 
 import { ipc, InstalledInstance, invoke, send, SaveInfo } from '@/lib/ipc';
+import { InlineModBrowser } from '../components/InlineModBrowser';
 import { formatBytes } from '../utils/format';
 import { GameBranch } from '@/constants/enums';
 import { CreateInstanceModal } from '../components/modals/CreateInstanceModal';
-
-const ModManager = React.lazy(() => import('../components/ModManager').then(m => ({ default: m.ModManager })));
 
 // IPC calls for instance operations - uses invoke to send to backend
 const ExportInstance = async (branch: string, version: number): Promise<string> => {
@@ -131,6 +130,7 @@ interface ModInfo {
 
 // Convert InstalledInstance to InstalledVersionInfo
 const toVersionInfo = (inst: InstalledInstance): InstalledVersionInfo => ({
+  id: inst.id,
   branch: inst.branch,
   version: inst.version,
   path: inst.path,
@@ -144,6 +144,7 @@ const toVersionInfo = (inst: InstalledInstance): InstalledVersionInfo => ({
 });
 
 export interface InstalledVersionInfo {
+  id: string;
   branch: string;
   version: number;
   path: string;
@@ -168,7 +169,7 @@ const pageVariants = {
 };
 
 // Instance detail tabs
-type InstanceTab = 'content' | 'worlds' | 'logs';
+type InstanceTab = 'content' | 'browse' | 'worlds' | 'logs';
 
 interface InstancesPageProps {
   onInstanceDeleted?: () => void;
@@ -317,10 +318,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
     prevTabRef.current = activeTab;
   }, [activeTab]);
 
-  const tabs: InstanceTab[] = ['content', 'worlds', 'logs'];
-
-  // Mod Manager modal state
-  const [showModManager, setShowModManager] = useState(false);
+  const tabs: InstanceTab[] = ['content', 'browse', 'worlds', 'logs'];
 
   const loadInstances = useCallback(async () => {
     setIsLoading(true);
@@ -743,13 +741,19 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
           ) : (
             instances.map((inst) => {
               const key = `${inst.branch}-${inst.version}`;
-              const isSelected = selectedInstance?.branch === inst.branch && selectedInstance?.version === inst.version;
+              const isSelected = selectedInstance?.id === inst.id;
               const validation = getValidationInfo(inst);
               
               return (
                 <button
                   key={key}
-                  onClick={() => setSelectedInstance(inst)}
+                  onClick={() => {
+                    setSelectedInstance(inst);
+                    // Save selected instance to config
+                    if (inst.id) {
+                      ipc.instance.select({ id: inst.id }).catch(console.error);
+                    }
+                  }}
                   className={`w-full p-3 rounded-xl flex items-center gap-3 text-left transition-all duration-150 ${
                     isSelected 
                       ? 'shadow-md' 
@@ -822,7 +826,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                 {/* Tabs with sliding indicator */}
                 <div
                   ref={tabContainerRef}
-                  className="relative flex items-center gap-1 px-1.5 py-1 bg-black/20 rounded-xl border border-white/[0.06]"
+                  className="relative flex items-center gap-1 px-1.5 py-1 bg-[#1c1c1e] rounded-xl border border-white/[0.06]"
                 >
                   {/* Sliding indicator */}
                   <div
@@ -945,16 +949,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                   );
                 })()}
 
-                {/* Install Content Button — opens full ModManager */}
-                <button
-                  onClick={() => setShowModManager(true)}
-                  className="px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-all bg-white/10 hover:bg-white/20 text-white"
-                >
-                  <Plus size={14} />
-                  {t('instances.installContent')}
-                </button>
-
-                {/* Settings Menu */}
+{/* Settings Menu */}
                 <div className="relative" ref={instanceMenuRef}>
                   <button
                     onClick={() => setShowInstanceMenu(!showInstanceMenu)}
@@ -964,7 +959,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                   </button>
 
                   {showInstanceMenu && (
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-[#1c1c1e] border border-white/[0.08] rounded-xl shadow-xl z-50 overflow-hidden">
                       <button
                         onClick={() => {
                           setEditNameValue(selectedInstance.customName || '');
@@ -1039,11 +1034,11 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                   className="px-4 py-2 border-b border-white/[0.06] flex-shrink-0"
                 >
                   <div
-                    className={`rounded-xl px-3 py-2 border border-white/5 ${canCancel ? 'cursor-pointer' : ''}`}
-                    style={{ background: 'rgba(26,26,26,0.8)' }}
+                    className={`rounded-xl px-3 py-2 border border-white/[0.06] ${canCancel ? 'cursor-pointer' : ''}`}
+                    style={{ background: 'rgba(28,28,30,0.98)' }}
                     onClick={() => canCancel && onCancelDownload?.()}
                   >
-                    <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mb-1.5">
+                    <div className="h-1.5 w-full bg-[#1c1c1e] rounded-full overflow-hidden mb-1.5">
                       <div
                         className="h-full rounded-full transition-all duration-300"
                         style={{ width: `${Math.min(progress, 100)}%`, backgroundColor: accentColor }}
@@ -1155,7 +1150,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                         <p className="text-lg font-medium text-white/60">{t('modManager.noModsInstalled')}</p>
                         <p className="text-sm mt-1">{t('modManager.clickInstallContent')}</p>
                         <button
-                          onClick={() => setShowModManager(true)}
+                          onClick={() => onTabChange?.('browse')}
                           className="mt-4 px-4 py-2 rounded-xl text-sm font-medium flex items-center gap-2 shadow-lg"
                           style={{ backgroundColor: accentColor, color: accentTextColor }}
                         >
@@ -1198,7 +1193,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                               </button>
 
                               {/* Mod Icon */}
-                              <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              <div className="w-10 h-10 rounded-lg bg-[#1c1c1e] flex items-center justify-center overflow-hidden flex-shrink-0">
                                 {mod.iconUrl ? (
                                   <img src={mod.iconUrl} alt="" className="w-full h-full object-cover" />
                                 ) : (
@@ -1286,6 +1281,24 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     <div className="p-4 border-t border-white/10 flex items-center justify-between text-sm text-white/50">
                       <span>{filteredMods.length} {t('modManager.modsInstalled')}</span>
                     </div>
+                  )}
+                </div>
+
+                {/* Browse tab — always mounted so downloads survive tab switches */}
+                <div
+                  className={`absolute inset-0 ${
+                    activeTab === 'browse' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+                  }`}
+                >
+                  {selectedInstance && (
+                    <InlineModBrowser
+                      currentBranch={selectedInstance.branch}
+                      currentVersion={selectedInstance.version}
+                      installedModIds={new Set(installedMods.map(m => m.curseForgeId ? `cf-${m.curseForgeId}` : m.id))}
+                      installedFileIds={new Set(installedMods.filter(m => m.fileId).map(m => String(m.fileId)))}
+                      onModsInstalled={() => loadInstalledMods()}
+                      onBack={() => setActiveTab('content')}
+                    />
                   )}
                 </div>
 
@@ -1625,58 +1638,6 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
           loadInstances();
         }}
       />
-
-      {/* Mod Manager Modal — opened by Install Content */}
-      <AnimatePresence>
-        {showModManager && selectedInstance && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className={`fixed inset-0 z-[200] flex items-center justify-center bg-[#0a0a0a]/90`}
-            onClick={(e) => e.target === e.currentTarget && setShowModManager(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className={`w-[90vw] h-[80vh] max-w-6xl flex flex-col overflow-hidden glass-panel-static-solid`}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <Package size={18} className="text-white/70" />
-                  <h2 className="text-white font-bold text-base">{t('modManager.title')}</h2>
-                </div>
-                <button
-                  onClick={() => setShowModManager(false)}
-                  className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-              {/* ModManager component */}
-              <div className="flex-1 min-h-0">
-                <React.Suspense fallback={
-                  <div className="flex items-center justify-center h-full">
-                    <Loader2 size={24} className="animate-spin" style={{ color: accentColor }} />
-                  </div>
-                }>
-                  <ModManager
-                    onClose={() => {
-                      setShowModManager(false);
-                      loadInstalledMods();
-                    }}
-                    currentBranch={selectedInstance.branch}
-                    currentVersion={selectedInstance.version}
-                    pageMode={true}
-                  />
-                </React.Suspense>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </motion.div>
   );
 };

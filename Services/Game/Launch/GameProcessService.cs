@@ -3,7 +3,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.IO;
 
-namespace HyPrism.Services.Game;
+namespace HyPrism.Services.Game.Launch;
 
 /// <summary>
 /// Manages the game process lifecycle including tracking, monitoring, and termination.

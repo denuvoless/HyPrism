@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using HyPrism.Models;
 using HyPrism.Services.Game;
+using HyPrism.Services.Game.Instance;
+using HyPrism.Services.Game.Version;
 
 namespace HyPrism.Services.Core;
 
@@ -82,7 +84,9 @@ public class UpdateService : IUpdateService
     /// <returns>The path to the latest instance directory.</returns>
     private string GetLatestInstancePath()
     {
+        #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
         var branch = UtilityService.NormalizeVersionType(_config.VersionType);
+        #pragma warning restore CS0618
         var info = _instanceService.LoadLatestInfo(branch);
         if (info != null)
         {
