@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
 using HyPrism.Services.Game.Instance;
 using HyPrism.Models;
 
@@ -16,7 +16,7 @@ namespace HyPrism.Services.Game.Asset;
 /// Cosmetics are parsed from JSON files within Assets.zip and mapped to
 /// category names used by the authentication server.
 /// </remarks>
-public class AssetService : IAssetService
+public class AssetService
 {
     private readonly InstanceService _instanceService;
     private readonly string _appDir;

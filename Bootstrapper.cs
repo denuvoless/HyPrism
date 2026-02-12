@@ -2,13 +2,13 @@ using System;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
-using HyPrism.Models;
-using HyPrism.Services.Core;
+using HyPrism.Services;
+using HyPrism.Services.Core.Infrastructure;
+using HyPrism.Services.Core.Platform;
+using HyPrism.Services.Core.Integration;
+using HyPrism.Services.Core.App;
 using HyPrism.Services.Core.Ipc;
-using HyPrism.Services.User.Auth;
-using HyPrism.Services.User.Identity;
-using HyPrism.Services.User.Profiles;
-using HyPrism.Services.User.Skin;
+using HyPrism.Services.User;
 using HyPrism.Services.Game;
 using HyPrism.Services.Game.Asset;
 using HyPrism.Services.Game.Auth;
@@ -66,6 +66,13 @@ public static class Bootstrapper
 
             services.AddSingleton<NewsService>();
             services.AddSingleton<INewsService>(sp => sp.GetRequiredService<NewsService>());
+
+            services.AddSingleton<ProfileService>(sp =>
+                new ProfileService(
+                    sp.GetRequiredService<AppPathConfiguration>().AppDir,
+                    sp.GetRequiredService<ConfigService>(),
+                    sp.GetRequiredService<AvatarService>()));
+            services.AddSingleton<IProfileService>(sp => sp.GetRequiredService<ProfileService>());
 
             services.AddSingleton<DownloadService>();
             services.AddSingleton<IDownloadService>(sp => sp.GetRequiredService<DownloadService>());
@@ -196,8 +203,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<ConfigService>(),
                     sp.GetRequiredService<SkinService>(),
                     sp.GetRequiredService<InstanceService>(),
-                    sp.GetRequiredService<UserIdentityService>(),
-                    sp.GetRequiredService<AvatarService>()));
+                    sp.GetRequiredService<UserIdentityService>()));
             services.AddSingleton<IProfileManagementService>(sp => sp.GetRequiredService<ProfileManagementService>());
 
             services.AddSingleton(sp =>
@@ -206,6 +212,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<AppPathConfiguration>().AppDir,
                     sp.GetRequiredService<IBrowserService>(),
                     sp.GetRequiredService<ConfigService>()));
+            services.AddSingleton<IHytaleAuthService>(sp => sp.GetRequiredService<HytaleAuthService>());
 
             // Version Sources (unified interface for official and mirrors)
             services.AddSingleton(sp =>
@@ -247,7 +254,6 @@ public static class Bootstrapper
             services.AddSingleton<IButlerService>(sp => sp.GetRequiredService<ButlerService>());
 
             services.AddSingleton<GpuDetectionService>();
-            services.AddSingleton<IGpuDetectionService>(sp => sp.GetRequiredService<GpuDetectionService>());
 
             services.AddSingleton(sp =>
                 new SettingsService(
@@ -265,8 +271,8 @@ public static class Bootstrapper
 
             #region IPC Bridge
 
-            // IpcRouter needs all other services → receives IServiceProvider
-            services.AddSingleton<IpcRouter>();
+            // IpcService needs all other services → receives IServiceProvider
+            services.AddSingleton<IpcService>();
 
             #endregion
 

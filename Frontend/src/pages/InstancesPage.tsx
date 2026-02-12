@@ -10,11 +10,12 @@ import {
 } from 'lucide-react';
 import { useAccentColor } from '../contexts/AccentColorContext';
 
-import { ipc, InstalledInstance, invoke, send, SaveInfo } from '@/lib/ipc';
+import { ipc, InstalledInstance, invoke, send, SaveInfo, InstanceValidationDetails } from '@/lib/ipc';
 import { InlineModBrowser } from '../components/InlineModBrowser';
 import { formatBytes } from '../utils/format';
 import { GameBranch } from '@/constants/enums';
 import { CreateInstanceModal } from '../components/modals/CreateInstanceModal';
+import { EditInstanceModal } from '../components/modals/EditInstanceModal';
 
 // IPC calls for instance operations - uses invoke to send to backend
 const ExportInstance = async (branch: string, version: number): Promise<string> => {
@@ -158,8 +159,8 @@ export interface InstalledVersionInfo {
   updatedAt?: string;
   iconPath?: string;
   customName?: string;
-  validationStatus?: string;
-  validationDetails?: { errorMessage?: string };
+  validationStatus?: 'Valid' | 'NotInstalled' | 'Corrupted' | 'Unknown';
+  validationDetails?: InstanceValidationDetails;
 }
 
 const pageVariants = {
@@ -173,6 +174,7 @@ type InstanceTab = 'content' | 'browse' | 'worlds' | 'logs';
 
 interface InstancesPageProps {
   onInstanceDeleted?: () => void;
+  onInstanceSelected?: () => void;
   isGameRunning?: boolean;
   runningBranch?: string;
   runningVersion?: number;
@@ -194,7 +196,8 @@ interface InstancesPageProps {
 }
 
 export const InstancesPage: React.FC<InstancesPageProps> = ({ 
-  onInstanceDeleted, 
+  onInstanceDeleted,
+  onInstanceSelected,
   isGameRunning = false,
   runningBranch,
   runningVersion,
@@ -225,6 +228,8 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
 
   // Selected instance for detail view
   const [selectedInstance, setSelectedInstance] = useState<InstalledVersionInfo | null>(null);
+  // Ref to avoid infinite loop in loadInstances useCallback
+  const selectedInstanceRef = useRef<InstalledVersionInfo | null>(null);
   // Tab state — controlled from parent (persists across page navigations) or local fallback
   const [localTab, setLocalTab] = useState<InstanceTab>(controlledTab ?? 'content');
   const activeTab = controlledTab ?? localTab;
@@ -241,6 +246,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
   const [modToDelete, setModToDelete] = useState<ModInfo | null>(null);
   const [isDeletingMod, setIsDeletingMod] = useState(false);
   const [editingInstanceName, setEditingInstanceName] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
   
   // Updates
@@ -318,24 +324,42 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
     prevTabRef.current = activeTab;
   }, [activeTab]);
 
+  // Keep selectedInstanceRef in sync with state
+  useEffect(() => {
+    selectedInstanceRef.current = selectedInstance;
+  }, [selectedInstance]);
+
   const tabs: InstanceTab[] = ['content', 'browse', 'worlds', 'logs'];
 
   const loadInstances = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await ipc.game.instances();
+      const [data, selected] = await Promise.all([
+        ipc.game.instances(),
+        ipc.instance.getSelected()
+      ]);
       const instanceList = (data || []).map(toVersionInfo);
       setInstances(instanceList);
       
-      // Auto-select first instance if none selected
-      if (instanceList.length > 0 && !selectedInstance) {
+      // Try to restore previously selected instance (use ref to avoid infinite loop)
+      const currentSelected = selectedInstanceRef.current;
+      if (selected && instanceList.length > 0) {
+        const found = instanceList.find(inst => inst.id === selected.id);
+        if (found) {
+          setSelectedInstance(found);
+        } else if (!currentSelected) {
+          // Fallback to first instance if selected not found
+          setSelectedInstance(instanceList[0]);
+        }
+      } else if (instanceList.length > 0 && !currentSelected) {
+        // Auto-select first instance if none selected
         setSelectedInstance(instanceList[0]);
       }
     } catch (err) {
       console.error('Failed to load instances:', err);
     }
     setIsLoading(false);
-  }, [selectedInstance]);
+  }, []);
 
   useEffect(() => {
     loadInstances();
@@ -604,14 +628,6 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
           bgColor: 'rgba(34, 197, 94, 0.1)',
           icon: <Check size={12} />
         };
-      case 'Incomplete':
-        return {
-          status: 'warning',
-          label: t('instances.status.incomplete'),
-          color: '#f59e0b',
-          bgColor: 'rgba(245, 158, 11, 0.1)',
-          icon: <Download size={12} />
-        };
       case 'NotInstalled':
         return {
           status: 'error',
@@ -657,10 +673,9 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
       );
     }
     
-    if (inst.isLatestInstance) {
-      return <RefreshCw size={size} className="text-white/60" />;
-    }
-    return <span className="font-bold" style={{ color: accentColor, fontSize: size * 0.8 }}>v{inst.version}</span>;
+    // Show version number for all instances
+    const versionLabel = inst.isLatestInstance ? '★' : `v${inst.version}`;
+    return <span className="font-bold" style={{ color: accentColor, fontSize: size * 0.8 }}>{versionLabel}</span>;
   };
 
   // Close instance menu on click outside
@@ -751,7 +766,9 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     setSelectedInstance(inst);
                     // Save selected instance to config
                     if (inst.id) {
-                      ipc.instance.select({ id: inst.id }).catch(console.error);
+                      ipc.instance.select({ id: inst.id }).then(() => {
+                        onInstanceSelected?.();
+                      }).catch(console.error);
                     }
                   }}
                   className={`w-full p-3 rounded-xl flex items-center gap-3 text-left transition-all duration-150 ${
@@ -774,7 +791,14 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                   
                   {/* Instance Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium truncate leading-tight">
+                    <p 
+                      className="text-white text-sm font-medium leading-tight overflow-hidden whitespace-nowrap"
+                      title={getInstanceDisplayName(inst)}
+                      style={{
+                        maskImage: 'linear-gradient(to right, black 85%, transparent 100%)',
+                        WebkitMaskImage: 'linear-gradient(to right, black 85%, transparent 100%)'
+                      }}
+                    >
                       {getInstanceDisplayName(inst)}
                     </p>
                     <div className="flex items-center gap-2 mt-0.5">
@@ -844,21 +868,28 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                       boxShadow: `0 1px 6px ${accentColor}40`,
                     }}
                   />
-                  {tabs.map((tab) => (
+                  {tabs.map((tab) => {
+                  const isTabDisabled = tab === 'browse' && selectedInstance.validationStatus !== 'Valid';
+                  return (
                   <button
                     key={tab}
                     ref={(el) => { tabRefs.current[tab] = el; }}
-                    onClick={() => setActiveTab(tab)}
+                    onClick={() => !isTabDisabled && setActiveTab(tab)}
+                    disabled={isTabDisabled}
                     className={`relative z-10 px-4 py-2 rounded-lg text-sm font-medium transition-colors duration-200 ${
                       activeTab === tab
                         ? 'text-white'
-                        : 'text-white/50 hover:text-white/70'
+                        : isTabDisabled
+                          ? 'text-white/25 cursor-not-allowed'
+                          : 'text-white/50 hover:text-white/70'
                     }`}
                     style={activeTab === tab ? { color: accentTextColor } : undefined}
+                    title={isTabDisabled ? t('instances.instanceNotInstalled') : undefined}
                   >
                     {t(`instances.tab.${tab}`)}
                   </button>
-                ))}
+                  );
+                })}
                 </div>
               </div>
 
@@ -949,7 +980,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                   );
                 })()}
 
-{/* Settings Menu */}
+                {/* Settings Menu */}
                 <div className="relative" ref={instanceMenuRef}>
                   <button
                     onClick={() => setShowInstanceMenu(!showInstanceMenu)}
@@ -962,14 +993,13 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     <div className="absolute right-0 top-full mt-2 w-48 bg-[#1c1c1e] border border-white/[0.08] rounded-xl shadow-xl z-50 overflow-hidden">
                       <button
                         onClick={() => {
-                          setEditNameValue(selectedInstance.customName || '');
-                          setEditingInstanceName(true);
+                          setShowEditModal(true);
                           setShowInstanceMenu(false);
                         }}
                         className="w-full px-4 py-2.5 text-sm text-left text-white/70 hover:text-white hover:bg-white/10 flex items-center gap-2"
                       >
                         <Edit2 size={14} />
-                        {t('instances.rename')}
+                        {t('common.edit')}
                       </button>
                       <button
                         onClick={() => {
@@ -1078,6 +1108,8 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     activeTab === 'content' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
                   }`}
                 >
+                  {selectedInstance.validationStatus === 'Valid' && (
+                    <>
                   {/* Content Header */}
                   <div className="p-4 border-b border-white/[0.06] flex items-center gap-3">
                     {/* Search */}
@@ -1137,10 +1169,18 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     <div className="w-20 text-center">{t('modManager.enabled')}</div>
                     <div className="w-20" />
                   </div>
+                    </>
+                  )}
 
                   {/* Mods List */}
                   <div className="flex-1 overflow-y-auto">
-                    {isLoadingMods ? (
+                    {selectedInstance.validationStatus !== 'Valid' ? (
+                      <div className="flex flex-col items-center justify-center h-full text-white/40">
+                        <Download size={48} className="mb-4 opacity-40" />
+                        <p className="text-lg font-medium text-white/60">{t('instances.instanceNotInstalled')}</p>
+                        <p className="text-sm mt-1">{t('instances.instanceNotInstalledHint')}</p>
+                      </div>
+                    ) : isLoadingMods ? (
                       <div className="flex items-center justify-center h-full">
                         <Loader2 size={32} className="animate-spin" style={{ color: accentColor }} />
                       </div>
@@ -1460,57 +1500,19 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
             </div>
             </div>
 
-            {/* Rename Modal (shown when editing instance name) */}
-            <AnimatePresence>
-              {editingInstanceName && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className={`fixed inset-0 z-[300] flex items-center justify-center bg-[#0a0a0a]/90`}
-                  onClick={(e) => e.target === e.currentTarget && setEditingInstanceName(false)}
-                >
-                  <motion.div
-                    initial={{ scale: 0.95, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0.95, opacity: 0 }}
-                    className={`p-6 max-w-sm mx-4 shadow-2xl glass-panel-static-solid`}
-                  >
-                    <h3 className="text-white font-bold text-lg mb-4">{t('instances.rename')}</h3>
-                    <input
-                      type="text"
-                      value={editNameValue}
-                      onChange={(e) => setEditNameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleRenameInstance(selectedInstance, editNameValue || null);
-                        } else if (e.key === 'Escape') {
-                          setEditingInstanceName(false);
-                        }
-                      }}
-                      className="w-full px-3 py-2 rounded-lg bg-[#2c2c2e] border border-white/10 text-white focus:outline-none focus:border-white/30 mb-4"
-                      placeholder={getInstanceDisplayName(selectedInstance)}
-                      autoFocus
-                    />
-                    <div className="flex gap-2 justify-end">
-                      <button
-                        onClick={() => setEditingInstanceName(false)}
-                        className="px-4 py-2 rounded-xl text-sm text-white/60 hover:text-white hover:bg-white/10 transition-all"
-                      >
-                        {t('common.cancel')}
-                      </button>
-                      <button
-                        onClick={() => handleRenameInstance(selectedInstance, editNameValue || null)}
-                        className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
-                        style={{ backgroundColor: accentColor, color: accentTextColor }}
-                      >
-                        {t('common.save')}
-                      </button>
-                    </div>
-                  </motion.div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* Edit Instance Modal */}
+            <EditInstanceModal
+              isOpen={showEditModal}
+              onClose={() => setShowEditModal(false)}
+              onSave={() => {
+                loadInstances();
+              }}
+              instanceId={selectedInstance.id}
+              instanceBranch={selectedInstance.branch}
+              instanceVersion={selectedInstance.version}
+              initialName={selectedInstance.customName || getInstanceDisplayName(selectedInstance)}
+              initialIconUrl={instanceIcons[`${selectedInstance.branch}-${selectedInstance.version}`]}
+            />
           </>
         ) : instances.length === 0 ? (
           /* No Instances Available - Prompt to Create */

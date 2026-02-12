@@ -1,8 +1,8 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using HyPrism.Models;
-using HyPrism.Services.Core;
-using HyPrism.Services.User.Auth;
+using HyPrism.Services.Core.Infrastructure;
+using HyPrism.Services.User;
 
 namespace HyPrism.Services.Game.Sources;
 

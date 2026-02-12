@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HyPrism.Models;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
 
 namespace HyPrism.Services.Game.Sources;
 

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
 
 namespace HyPrism.Services.Game.Butler;
 

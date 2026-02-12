@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { X, ChevronDown, Check, Image, Box, Loader2, GitBranch } from 'lucide-react';
+import { X, ChevronDown, Check, Image, Box, Loader2, GitBranch, Lock } from 'lucide-react';
 import { useAccentColor } from '../../contexts/AccentColorContext';
 
-import { ipc, invoke } from '@/lib/ipc';
+import { ipc, invoke, VersionInfo } from '@/lib/ipc';
 import { GameBranch } from '@/constants/enums';
 
 interface CreateInstanceModalProps {
@@ -25,13 +25,14 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
   const [selectedBranch, setSelectedBranch] = useState<string>(GameBranch.RELEASE);
   const [selectedVersion, setSelectedVersion] = useState<number>(0);
   const [customName, setCustomName] = useState<string>('');
+  const [isNameLocked, setIsNameLocked] = useState(false); // Track if user manually edited name
   const [iconFile, setIconFile] = useState<File | null>(null);
   const [iconPreview, setIconPreview] = useState<string | null>(null);
 
   // UI state
   const [isBranchOpen, setIsBranchOpen] = useState(false);
   const [isVersionOpen, setIsVersionOpen] = useState(false);
-  const [availableVersions, setAvailableVersions] = useState<number[]>([]);
+  const [availableVersions, setAvailableVersions] = useState<VersionInfo[]>([]);
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -44,17 +45,20 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
     const loadVersions = async () => {
       setIsLoadingVersions(true);
       try {
-        const versions = await ipc.game.versions({ branch: selectedBranch });
-        // Ensure version 0 (Latest) is always available
-        if (!versions.includes(0)) {
-          versions.unshift(0);
+        const response = await ipc.game.versionsWithSources({ branch: selectedBranch });
+        const versions = response.versions || [];
+        // Add "Latest" entry at the beginning if not already present
+        const hasLatest = versions.some(v => v.version === 0);
+        if (!hasLatest) {
+          const latestSource = response.officialSourceAvailable && response.hasOfficialAccount ? 'Official' : 'Mirror';
+          versions.unshift({ version: 0, source: latestSource as 'Official' | 'Mirror', isLatest: true });
         }
         setAvailableVersions(versions);
         // Default to "Latest" (version 0) when changing branches
         setSelectedVersion(0);
       } catch (err) {
         console.error('Failed to load versions:', err);
-        setAvailableVersions([0]);
+        setAvailableVersions([{ version: 0, source: 'Mirror', isLatest: true }]);
       }
       setIsLoadingVersions(false);
     };
@@ -64,12 +68,14 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
     }
   }, [selectedBranch, isOpen]);
 
-  // Generate default name when branch/version changes
+  // Generate default name when branch/version changes (only if not manually edited)
   useEffect(() => {
-    const branchLabel = selectedBranch === GameBranch.RELEASE ? 'Release' : 'Pre-Release';
-    const versionLabel = selectedVersion === 0 ? 'Latest' : `v${selectedVersion}`;
-    setCustomName(`${branchLabel} ${versionLabel}`);
-  }, [selectedBranch, selectedVersion]);
+    if (!isNameLocked) {
+      const branchLabel = selectedBranch === GameBranch.RELEASE ? 'Release' : 'Pre-Release';
+      const versionLabel = selectedVersion === 0 ? 'Latest' : `v${selectedVersion}`;
+      setCustomName(`${branchLabel} ${versionLabel}`);
+    }
+  }, [selectedBranch, selectedVersion, isNameLocked]);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -90,6 +96,7 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
     if (isOpen) {
       setSelectedBranch(GameBranch.RELEASE);
       setSelectedVersion(0);
+      setIsNameLocked(false);
       setIconFile(null);
       setIconPreview(null);
       setIsCreating(false);
@@ -192,7 +199,7 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
           className={`w-full max-w-md mx-4 ${
             'glass-panel-static-solid'
-          } shadow-2xl overflow-hidden`}
+          } shadow-2xl`}
         >
           {/* Header */}
           <div className="flex items-center justify-between p-5 border-b border-white/[0.06]">
@@ -219,18 +226,20 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
           {/* Content */}
           <div className="p-4 space-y-3">
             {/* Instance Name + Icon row */}
-            <div className="flex items-start gap-3">
+            <div className="flex items-end gap-3">
               {/* Icon Preview - compact */}
-              <div 
-                className="w-14 h-14 rounded-xl border-2 border-dashed flex-shrink-0 flex items-center justify-center overflow-hidden cursor-pointer hover:border-white/40 transition-colors"
-                style={{ borderColor: iconPreview ? accentColor : 'rgba(255,255,255,0.2)' }}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {iconPreview ? (
-                  <img src={iconPreview} alt="Instance icon" className="w-full h-full object-cover" />
-                ) : (
-                  <Image size={18} className="text-white/30" />
-                )}
+              <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                <div 
+                  className="w-14 h-10 rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden cursor-pointer hover:border-white/40 transition-colors"
+                  style={{ borderColor: iconPreview ? accentColor : 'rgba(255,255,255,0.2)' }}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {iconPreview ? (
+                    <img src={iconPreview} alt="Instance icon" className="w-full h-full object-cover" />
+                  ) : (
+                    <Image size={18} className="text-white/30" />
+                  )}
+                </div>
               </div>
               <input
                 ref={fileInputRef}
@@ -242,14 +251,22 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
               {/* Instance Name */}
               <div className="flex-1 space-y-1">
                 <label className="text-xs text-white/50">{t('instances.instanceName')}</label>
-                <input
-                  type="text"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  placeholder={t('instances.instanceNamePlaceholder')}
-                  className="w-full h-10 px-3 rounded-xl bg-[#2c2c2e] border border-white/[0.06] text-white text-sm focus:outline-none focus:border-white/20 transition-colors"
-                  maxLength={32}
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={customName}
+                    onChange={(e) => {
+                      setCustomName(e.target.value);
+                      setIsNameLocked(true);
+                    }}
+                    placeholder={t('instances.instanceNamePlaceholder')}
+                    className="w-full h-10 px-3 pr-9 rounded-xl bg-[#2c2c2e] border border-white/[0.06] text-white text-sm focus:outline-none focus:border-white/20 transition-colors"
+                    maxLength={32}
+                  />
+                  {isNameLocked && (
+                    <Lock size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30" />
+                  )}
+                </div>
               </div>
             </div>
 
@@ -334,23 +351,28 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
 
                   {isVersionOpen && !isLoadingVersions && (
                     <div className="absolute top-full left-0 right-0 mt-1 z-10 max-h-48 overflow-y-auto bg-[#2c2c2e] border border-white/[0.08] rounded-xl shadow-xl shadow-black/50">
-                      {availableVersions.map((version) => (
+                      {availableVersions.map((versionInfo) => (
                         <button
-                          key={version}
+                          key={versionInfo.version}
                           onClick={() => {
-                            setSelectedVersion(version);
+                            setSelectedVersion(versionInfo.version);
                             setIsVersionOpen(false);
                           }}
-                          className={`w-full px-3 py-2 flex items-center gap-2 text-sm ${
-                            selectedVersion === version
+                          className={`w-full px-3 py-2 flex items-center justify-between text-sm ${
+                            selectedVersion === versionInfo.version
                               ? 'text-white'
                               : 'text-white/70 hover:bg-white/10 hover:text-white'
                           }`}
-                          style={selectedVersion === version ? { backgroundColor: `${accentColor}20`, color: accentColor } : {}}
+                          style={selectedVersion === versionInfo.version ? { backgroundColor: `${accentColor}20`, color: accentColor } : {}}
                         >
-                          {selectedVersion === version && <Check size={12} style={{ color: accentColor }} strokeWidth={3} />}
-                          <span className={selectedVersion === version ? '' : 'ml-[18px]'}>
-                            {version === 0 ? t('main.latest') : `v${version}`}
+                          <div className="flex items-center gap-2">
+                            {selectedVersion === versionInfo.version && <Check size={12} style={{ color: accentColor }} strokeWidth={3} />}
+                            <span className={selectedVersion === versionInfo.version ? '' : 'ml-[18px]'}>
+                              {versionInfo.version === 0 ? t('main.latest') : `v${versionInfo.version}`}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-white/30 uppercase tracking-wider">
+                            {versionInfo.source === 'Official' ? 'Hytale' : t('common.mirror')}
                           </span>
                         </button>
                       ))}

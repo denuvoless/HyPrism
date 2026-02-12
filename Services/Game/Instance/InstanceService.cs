@@ -1,4 +1,4 @@
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
 using System.Runtime.InteropServices;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -1098,10 +1098,29 @@ public class InstanceService : IInstanceService
                         }
                     }
                     
-                    // Generate ID if not found
+                    // Generate ID if not found and persist it
                     if (string.IsNullOrEmpty(instanceId))
                     {
                         instanceId = Guid.NewGuid().ToString();
+                        // Persist the generated ID to meta.json
+                        try
+                        {
+                            var meta = new InstanceMeta
+                            {
+                                Id = instanceId,
+                                Name = customName ?? "",
+                                Branch = branch,
+                                Version = version,
+                                CreatedAt = DateTime.UtcNow
+                            };
+                            var json = JsonSerializer.Serialize(meta, JsonOptions);
+                            File.WriteAllText(metaPath, json);
+                            Logger.Debug("InstanceService", $"Generated and persisted ID for {branch}/{version}: {instanceId}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Warning("InstanceService", $"Failed to persist generated ID: {ex.Message}");
+                        }
                     }
 
                     // Perform deep validation
@@ -1181,7 +1200,8 @@ public class InstanceService : IInstanceService
             details.MissingComponents = missingComponents;
 
             // Determine overall status based on what's present
-            if (details.HasExecutable && details.HasAssets && details.HasLibraries)
+            // If we have the executable, consider it valid - we can't reliably verify file integrity
+            if (details.HasExecutable)
             {
                 return (InstanceValidationStatus.Valid, details);
             }
@@ -1190,17 +1210,11 @@ public class InstanceService : IInstanceService
                 // Nothing is there - not installed
                 return (InstanceValidationStatus.NotInstalled, details);
             }
-            else if (!details.HasExecutable)
+            else
             {
                 // Has some files but no executable - corrupted
                 details.ErrorMessage = "Game executable is missing or corrupted";
                 return (InstanceValidationStatus.Corrupted, details);
-            }
-            else
-            {
-                // Has executable but missing other components - incomplete
-                details.ErrorMessage = $"Missing: {string.Join(", ", missingComponents)}";
-                return (InstanceValidationStatus.Incomplete, details);
             }
         }
         catch (Exception ex)
@@ -1367,37 +1381,50 @@ public class InstanceService : IInstanceService
             return;
         }
 
-        var metadataPath = Path.Combine(instancePath, "metadata.json");
-        
         try
         {
-            var metadata = new Dictionary<string, string>();
-            
-            // Load existing metadata if it exists
-            if (File.Exists(metadataPath))
+            // Load or create meta.json
+            var meta = GetInstanceMeta(instancePath);
+            if (meta == null)
             {
-                var json = File.ReadAllText(metadataPath);
-                metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonOptions) ?? new Dictionary<string, string>();
-            }
-
-            // Update or remove custom name
-            if (string.IsNullOrWhiteSpace(customName))
-            {
-                metadata.Remove("customName");
+                // Create new meta if doesn't exist
+                var normalizedBranch = branch.ToLowerInvariant() switch
+                {
+                    "pre-release" or "prerelease" or "beta" => "pre-release",
+                    _ => "release"
+                };
+                
+                meta = new InstanceMeta
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    Name = string.IsNullOrWhiteSpace(customName) 
+                        ? (version == 0 ? $"{normalizedBranch} (Latest)" : $"{normalizedBranch} v{version}")
+                        : customName,
+                    Branch = normalizedBranch,
+                    Version = version,
+                    CreatedAt = DateTime.UtcNow,
+                    IsLatest = version == 0
+                };
             }
             else
             {
-                metadata["customName"] = customName;
+                // Update existing meta's Name field
+                meta.Name = string.IsNullOrWhiteSpace(customName) 
+                    ? (meta.IsLatest ? $"{meta.Branch} (Latest)" : $"{meta.Branch} v{meta.Version}")
+                    : customName;
             }
 
-            // Save metadata
-            var updatedJson = JsonSerializer.Serialize(metadata, JsonOptions);
-            File.WriteAllText(metadataPath, updatedJson);
-            Logger.Info("InstanceService", $"Updated custom name for {branch}/{version}: {customName ?? "(removed)"}");
+            // Save meta.json
+            SaveInstanceMeta(instancePath, meta);
+            
+            // Also update Config.Instances for quick lookup
+            SyncInstancesWithConfig();
+            
+            Logger.Info("InstanceService", $"Updated instance name for {branch}/{version}: {meta.Name}");
         }
         catch (Exception ex)
         {
-            Logger.Error("InstanceService", $"Failed to save custom name: {ex.Message}");
+            Logger.Error("InstanceService", $"Failed to save instance name: {ex.Message}");
         }
     }
 
@@ -1481,7 +1508,6 @@ public class InstanceService : IInstanceService
         var config = GetConfig();
         config.Instances ??= new List<InstanceInfo>();
         
-        var relativePath = isLatest ? $"{normalizedBranch}/latest" : $"{normalizedBranch}/{version}";
         var existingInfo = config.Instances.FirstOrDefault(i => i.Id == meta.Id);
         if (existingInfo == null)
         {
@@ -1490,8 +1516,7 @@ public class InstanceService : IInstanceService
                 Id = meta.Id,
                 Name = meta.Name,
                 Branch = meta.Branch,
-                Version = meta.Version,
-                Path = relativePath
+                Version = meta.Version
             });
             SaveConfig(config);
         }
@@ -1507,7 +1532,16 @@ public class InstanceService : IInstanceService
         if (string.IsNullOrEmpty(config.SelectedInstanceId))
             return null;
 
-        return FindInstanceById(config.SelectedInstanceId);
+        var info = FindInstanceById(config.SelectedInstanceId);
+        if (info == null)
+            return null;
+
+        // Check if the instance is actually installed (game files exist)
+        var instancePath = GetInstancePath(info.Branch, info.Version);
+        var (status, _) = ValidateGameIntegrity(instancePath);
+        info.IsInstalled = status == InstanceValidationStatus.Valid;
+
+        return info;
     }
 
     /// <inheritdoc/>
@@ -1557,7 +1591,6 @@ public class InstanceService : IInstanceService
                     existingIds.Add(meta.Id);
 
                     // Update or add to config
-                    var relativePath = Path.GetRelativePath(GetInstanceRoot(), instanceDir);
                     var existingInfo = config.Instances.FirstOrDefault(i => i.Id == meta.Id);
                     
                     if (existingInfo != null)
@@ -1566,7 +1599,6 @@ public class InstanceService : IInstanceService
                         existingInfo.Name = meta.Name;
                         existingInfo.Branch = meta.Branch;
                         existingInfo.Version = meta.Version;
-                        existingInfo.Path = relativePath;
                     }
                     else
                     {
@@ -1576,8 +1608,7 @@ public class InstanceService : IInstanceService
                             Id = meta.Id,
                             Name = meta.Name,
                             Branch = meta.Branch,
-                            Version = meta.Version,
-                            Path = relativePath
+                            Version = meta.Version
                         });
                     }
                 }

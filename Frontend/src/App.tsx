@@ -916,6 +916,8 @@ const App: React.FC = () => {
               onCancelDownload={handleCancelDownload}
               onNavigateToInstances={() => setCurrentPage('instances')}
               officialServerBlocked={officialServerBlocked}
+              isOfficialProfile={isOfficialProfile}
+              isOfficialServerMode={isOfficialServerMode}
             />
           )}
 
@@ -937,6 +939,7 @@ const App: React.FC = () => {
             <InstancesPage
               key="instances"
               onInstanceDeleted={handleInstanceDeleted}
+              onInstanceSelected={refreshInstances}
               isGameRunning={isGameRunning}
               runningBranch={runningBranch}
               runningVersion={runningVersion}

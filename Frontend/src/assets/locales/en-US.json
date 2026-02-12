@@ -8,6 +8,7 @@
     "browse": "Browse",
     "select": "Select",
     "save": "Save",
+    "edit": "Edit",
     "export": "Export",
     "import": "Import",
     "reset": "Reset",
@@ -306,6 +307,8 @@
     "addInstance": "Add Instance",
     "createInstance": "Create Instance",
     "createInstanceHint": "Download and set up a new game instance",
+    "editInstance": "Edit Instance",
+    "editInstanceHint": "Change the name or icon of this instance",
     "instanceName": "Instance Name",
     "instanceNamePlaceholder": "Enter a name for this instance",
     "selectIcon": "Select Icon",
@@ -342,7 +345,9 @@
     "saves": "Saves",
     "noSaves": "No saves found",
     "noSavesHint": "Play the game to create your first save",
-    "logsComingSoon": "Logs viewer coming soon"
+    "logsComingSoon": "Logs viewer coming soon",
+    "instanceNotInstalled": "Instance is not installed",
+    "instanceNotInstalledHint": "Download this instance to manage content"
   },
   "profiles": {
     "title": "Profiles",
@@ -450,7 +455,8 @@
       "using_cached_installer": "Using cached installer...",
       "download_complete": "Download complete!",
       "downloading_mirror": "Downloading from mirror... {0}%",
-      "downloading_official": "Downloading from Hytale... {0}%"
+      "downloading_official": "Downloading from Hytale... {0}%",
+      "dualauth_setup": "Setting up authentication agent..."
     }
   },
   "profileEditor": {

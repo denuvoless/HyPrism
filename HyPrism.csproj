@@ -56,12 +56,13 @@
   <ItemGroup>
     <PackageReference Include="ElectronNET.Core" Version="0.4.0" />
     <PackageReference Include="DiscordRichPresence" Version="1.143.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.2" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <PackageReference Include="Serilog" Version="4.3.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.5-beta1" />
+    <PackageReference Include="Serilog" Version="4.3.1" />
     <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="8.0.0-dev-02318" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>
 
   <!-- Localization files as embedded resources -->
@@ -75,30 +76,17 @@
   <!--  Runs automatically on `dotnet build` / `dotnet run`              -->
   <!-- ================================================================ -->
 
-  <Target Name="NpmInstall"
-          BeforeTargets="BuildFrontend"
-          Inputs="Frontend/package.json;Frontend/package-lock.json"
-          Outputs="Frontend/node_modules/.package-lock.json"
-          Condition="Exists('Frontend/package.json')">
+  <Target Name="NpmInstall" BeforeTargets="BuildFrontend" Inputs="Frontend/package.json;Frontend/package-lock.json" Outputs="Frontend/node_modules/.package-lock.json" Condition="Exists('Frontend/package.json')">
     <Message Importance="high" Text="→ npm ci (Frontend)" />
     <Exec Command="npm ci --prefer-offline" WorkingDirectory="Frontend" />
   </Target>
 
-  <Target Name="GenerateIpcTs"
-          BeforeTargets="BuildFrontend"
-          DependsOnTargets="NpmInstall"
-          Inputs="Services/Core/Ipc/**/*.cs"
-          Outputs="Frontend/src/lib/ipc.ts"
-          Condition="Exists('Scripts/generate-ipc.mjs')">
-    <Message Importance="high" Text="→ Generating ipc.ts from IpcRouter + Handlers" />
+  <Target Name="GenerateIpcTs" BeforeTargets="BuildFrontend" DependsOnTargets="NpmInstall" Inputs="Services/Core/IpcService.cs" Outputs="Frontend/src/lib/ipc.ts" Condition="Exists('Scripts/generate-ipc.mjs')">
+    <Message Importance="high" Text="→ Generating ipc.ts from IpcService.cs" />
     <Exec Command="node Scripts/generate-ipc.mjs" />
   </Target>
 
-  <Target Name="BuildFrontend"
-          BeforeTargets="Build"
-          Inputs="Frontend/src/**/*;Frontend/index.html;Frontend/vite.config.ts;Frontend/tsconfig.json;Frontend/tsconfig.app.json"
-          Outputs="wwwroot/index.html"
-          Condition="Exists('Frontend/package.json')">
+  <Target Name="BuildFrontend" BeforeTargets="Build" Inputs="Frontend/src/**/*;Frontend/index.html;Frontend/vite.config.ts;Frontend/tsconfig.json;Frontend/tsconfig.app.json" Outputs="wwwroot/index.html" Condition="Exists('Frontend/package.json')">
     <Message Importance="high" Text="→ Building Frontend (Vite)" />
     <Exec Command="npm run build" WorkingDirectory="Frontend" />
   </Target>
@@ -108,18 +96,14 @@
     <ItemGroup>
       <FrontendFiles Include="wwwroot/**/*" />
     </ItemGroup>
-    <Copy SourceFiles="@(FrontendFiles)"
-          DestinationFiles="@(FrontendFiles->'$(OutputPath)/wwwroot/%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(FrontendFiles)" DestinationFiles="@(FrontendFiles->'$(OutputPath)/wwwroot/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CopyFrontendDistPublish" AfterTargets="Publish" Condition="Exists('wwwroot/index.html')">
     <ItemGroup>
       <FrontendFilesPublish Include="wwwroot/**/*" />
     </ItemGroup>
-    <Copy SourceFiles="@(FrontendFilesPublish)"
-          DestinationFiles="@(FrontendFilesPublish->'$(PublishDir)/wwwroot/%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(FrontendFilesPublish)" DestinationFiles="@(FrontendFilesPublish->'$(PublishDir)/wwwroot/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

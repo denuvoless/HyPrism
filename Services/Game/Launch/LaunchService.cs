@@ -3,7 +3,7 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
 
 namespace HyPrism.Services.Game.Launch;
 

@@ -1,8 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using HyPrism.Models;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
 
 namespace HyPrism.Services.Game.Auth;
 
@@ -14,7 +13,7 @@ namespace HyPrism.Services.Game.Auth;
 /// Supports both the /game-session/child and /game-session endpoints
 /// for backwards compatibility with different auth server versions.
 /// </remarks>
-public class AuthService : IAuthService
+public class AuthService
 {
     private readonly HttpClient _httpClient;
     private readonly string _authServerUrl;
@@ -194,7 +193,19 @@ public class AuthService : IAuthService
     }
 }
 
-internal class GameSessionResponse
+public class GameSessionRequest
+{
+    [JsonPropertyName("uuid")]
+    public string UUID { get; set; } = "";
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("scopes")]
+    public string[] Scopes { get; set; } = Array.Empty<string>();
+}
+
+public class GameSessionResponse
 {
     // Primary token field (from /game-session/child endpoint)
     [JsonPropertyName("identityToken")]
@@ -230,4 +241,14 @@ internal class GameSessionResponse
 
     [JsonPropertyName("tokenType")]
     public string? TokenType { get; set; }
+}
+
+public class AuthTokenResult
+{
+    public bool Success { get; set; }
+    public string? Token { get; set; }
+    public string? SessionToken { get; set; }
+    public string? UUID { get; set; }
+    public string? Name { get; set; }
+    public string? Error { get; set; }
 }

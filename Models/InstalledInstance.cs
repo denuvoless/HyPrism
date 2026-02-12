@@ -8,9 +8,6 @@ public enum InstanceValidationStatus
     /// <summary>All required files are present and the instance is ready to launch.</summary>
     Valid,
     
-    /// <summary>Some required files are missing (incomplete download or corrupted).</summary>
-    Incomplete,
-    
     /// <summary>The instance directory exists but no game files are present.</summary>
     NotInstalled,
     

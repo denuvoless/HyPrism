@@ -38,8 +38,10 @@ interface DashboardPageProps {
   onUpdate: () => void;
   onCancelDownload: () => void;
   onNavigateToInstances: () => void;
-  // Official server blocked
+  // Official server state  
   officialServerBlocked: boolean;
+  isOfficialProfile: boolean;
+  isOfficialServerMode: boolean;
 }
 
 const pageVariants = {
@@ -73,6 +75,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
 
   // Check if selectors should be hidden (during download/launch or game running)
   const shouldHideInfo = props.isDownloading || props.isGameRunning;
+
+  // Compute display name with fallback (like InstancesPage)
+  const getInstanceDisplayName = () => {
+    if (!props.selectedInstance) return '';
+    const { name, branch, version } = props.selectedInstance;
+    if (name && name.trim()) return name;
+    // Fallback to branch + version
+    const branchLabel = branch === 'release' ? t('common.release') : t('common.preRelease');
+    return `${branchLabel} v${version}`;
+  };
 
   // Render the action section of the play button
   const renderActionButton = () => {
@@ -162,8 +174,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
       );
     }
 
-    // Has selected instance - play
+    // Has selected instance - play or download
     if (props.selectedInstance) {
+      // Not installed - show download button
+      if (!props.selectedInstance.isInstalled) {
+        return (
+          <button
+            onClick={props.onPlay}
+            className="h-full px-8 flex items-center gap-2 font-black text-base rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:brightness-110 active:scale-[0.98] transition-all"
+          >
+            <Download size={16} />
+            <span>{t('main.download')}</span>
+          </button>
+        );
+      }
+      // Installed - show play button
       return (
         <button
           onClick={props.onPlay}
@@ -281,6 +306,43 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
           className="flex flex-col items-center gap-3"
         >
           <div className="flex flex-col items-center select-none">
+            {/* Badge area - show either educational or official server blocked */}
+            <AnimatePresence mode="wait">
+              {props.officialServerBlocked && !props.isDownloading && !props.isGameRunning ? (
+                <motion.div
+                  key="blocked"
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2 }}
+                  className="mb-3"
+                >
+                  <div className="bg-orange-400/10 rounded-full px-4 py-1.5 border border-orange-400/20 flex items-center gap-1.5">
+                    <ShieldAlert size={12} className="text-orange-400/80 flex-shrink-0" />
+                    <span className="text-orange-400/80 text-[11px] whitespace-nowrap">
+                      {t('main.officialServerBlocked')}
+                    </span>
+                  </div>
+                </motion.div>
+              ) : !props.isOfficialProfile && !props.isOfficialServerMode ? (
+                <motion.div
+                  key="educational"
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2 }}
+                  className="mb-3"
+                >
+                  <button
+                    onClick={() => ipc.browser.open('https://hytale.com')}
+                    className="px-3 py-1.5 rounded-full text-[11px] text-white/60 hover:text-white border border-white/10 hover:border-white/20 backdrop-blur-sm transition-all cursor-pointer"
+                    style={{ background: `${accentColor}15` }}
+                  >
+                    {t('main.educational')} — <span className="font-semibold" style={{ color: accentColor }}>{t('main.buyIt')}</span>
+                  </button>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
             <h1 className="text-8xl tracking-tighter leading-tight font-black drop-shadow-xl" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
               <span className="text-white">Hy</span>
               <motion.span 
@@ -304,34 +366,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
           className="flex flex-col items-center"
         >
           {/* Button bar with relative positioning */}
-          <div className="relative mt-7">
-            {/* Educational label */}
-            <AnimatePresence>
-              {!shouldHideInfo && (
-                <motion.div
-                  initial={{ opacity: 0, y: 12, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 12, scale: 0.95 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="absolute bottom-full flex w-full justify-center"
-                >
-                  <div className={`bg-[#1c1c1e] rounded-t-lg px-4 py-1.5 border-x border-t border-white/[0.08]`}>
-                    <p className="text-white/40 text-[11px] whitespace-nowrap text-center">
-                      {t('main.educational')}{' '}
-                      <button
-                        onClick={() => ipc.browser.open('https://hytale.com')}
-                        className="font-semibold hover:underline cursor-pointer"
-                        style={{ color: accentColor }}
-                      >
-                        {t('main.buyIt')}
-                      </button>
-                    </p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+          <div className="relative mt-4">
             <div
-              className={`flex items-center h-14 rounded-2xl overflow-hidden glass-bar-dashboard-solid`}
+              className={`flex items-center h-14 gap-2`}
             >
               {/* Instance info label - show selected instance name */}
               <AnimatePresence mode="wait">
@@ -345,16 +382,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
                   >
                     <button
                       onClick={props.onNavigateToInstances}
-                      className="h-full px-4 flex items-center gap-2 text-white/60 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
+                      className="h-full px-4 flex items-center gap-2 text-white/70 hover:text-white hover:bg-white/10 active:scale-95 transition-all rounded-2xl bg-white/5 border border-white/10"
                     >
-                      <span className="text-sm font-medium whitespace-nowrap max-w-[150px] truncate">
-                        {props.selectedInstance.name}
-                      </span>
-                      <span className="text-xs text-white/40">
-                        v{props.selectedInstance.version}
+                      <span 
+                        className="text-sm font-medium whitespace-nowrap max-w-[150px]"
+                        style={{
+                          maskImage: 'linear-gradient(to right, black 80%, transparent 100%)',
+                          WebkitMaskImage: 'linear-gradient(to right, black 80%, transparent 100%)'
+                        }}
+                        title={getInstanceDisplayName()}
+                      >
+                        {getInstanceDisplayName()}
                       </span>
                     </button>
-                    <div className="w-px h-7 bg-white/10" />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -397,26 +437,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
                         }
                       </span>
                     </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Official server blocked notice — styled like educational label */}
-            <AnimatePresence>
-              {props.officialServerBlocked && !props.isDownloading && !props.isGameRunning && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="absolute top-full flex w-full justify-center mt-2"
-                >
-                  <div className={` bg-orange-400/10 rounded-lg px-4 py-1.5 border border-orange-400/20`}>
-                    <p className="text-orange-400/80 text-[11px] whitespace-nowrap text-center flex items-center gap-1.5">
-                      <ShieldAlert size={12} className="flex-shrink-0" />
-                      {t('main.officialServerBlocked')}
-                    </p>
                   </div>
                 </motion.div>
               )}

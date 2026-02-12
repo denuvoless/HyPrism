@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using HyPrism.Models;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
+using HyPrism.Services.Core.App;
 using HyPrism.Services.Game.Butler;
 using HyPrism.Services.Game.Download;
 using HyPrism.Services.Game.Instance;
@@ -490,7 +491,6 @@ public class GameSessionService : IGameSessionService
         {
             string partPath = pwrPath + ".part";
             bool downloaded = false;
-            bool urlExpired = false;
 
             // Try official URL first (skip if server is known to be down or no valid URL)
             if (!skipOfficial && hasOfficialUrl)
@@ -508,51 +508,11 @@ public class GameSessionService : IGameSessionService
                     Logger.Success("Download", "Downloaded from official successfully");
                 }
                 catch (OperationCanceledException) { throw; }
-                catch (DownloadUrlExpiredException ex)
-                {
-                    Logger.Warning("Download", $"Official URL expired (403): {ex.Message}");
-                    urlExpired = true;
-                    if (File.Exists(partPath)) try { File.Delete(partPath); } catch { }
-                }
                 catch (Exception ex)
                 {
                     Logger.Warning("Download", $"Official download failed: {ex.Message}");
                     // Clean up partial file before mirror attempt
                     if (File.Exists(partPath)) try { File.Delete(partPath); } catch { }
-                }
-                
-                // If URL expired, refresh cache and retry once before falling back to mirror
-                if (urlExpired && !downloaded)
-                {
-                    try
-                    {
-                        Logger.Info("Download", "Refreshing cache due to expired URL...");
-                        await _versionService.ForceRefreshCacheAsync(branch, ct);
-                        
-                        var freshEntry = await _versionService.RefreshAndGetVersionEntryAsync(branch, version, ct);
-                        var freshUrl = freshEntry?.PwrUrl;
-                        
-                        if (!string.IsNullOrEmpty(freshUrl) && freshUrl != downloadUrl)
-                        {
-                            Logger.Info("Download", $"Retrying with fresh URL: {freshUrl}");
-                            _progressService.ReportDownloadProgress("download", 5, "launch.detail.downloading_official", null, 0, 0);
-                            
-                            await _downloadService.DownloadFileAsync(freshUrl, partPath, (progress, dl, total) =>
-                            {
-                                int mappedProgress = 5 + (int)(progress * 0.60);
-                                _progressService.ReportDownloadProgress("download", mappedProgress, "launch.detail.downloading_official", [progress], dl, total);
-                            }, ct);
-                            downloaded = true;
-                            downloadUrl = freshUrl; // Update for later use
-                            Logger.Success("Download", "Downloaded with fresh URL successfully");
-                        }
-                    }
-                    catch (OperationCanceledException) { throw; }
-                    catch (Exception ex)
-                    {
-                        Logger.Warning("Download", $"Retry with fresh URL failed: {ex.Message}");
-                        if (File.Exists(partPath)) try { File.Delete(partPath); } catch { }
-                    }
                 }
             }
             else if (!skipOfficial)

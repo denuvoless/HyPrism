@@ -1,4 +1,5 @@
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
+using HyPrism.Services.Core.App;
 using HyPrism.Services.Game.Butler;
 using HyPrism.Services.Game.Instance;
 using HyPrism.Services.Game.Version;
@@ -232,7 +233,6 @@ public class PatchManager : IPatchManager
         CancellationToken ct)
     {
         bool downloaded = false;
-        bool urlExpired = false;
 
         // Try official URL first
         try
@@ -246,49 +246,10 @@ public class PatchManager : IPatchManager
             downloaded = true;
         }
         catch (OperationCanceledException) { throw; }
-        catch (DownloadUrlExpiredException ex)
-        {
-            Logger.Warning("Download", $"Official patch URL expired (403): {ex.Message}");
-            urlExpired = true;
-            if (File.Exists(destPath)) try { File.Delete(destPath); } catch { }
-        }
         catch (Exception ex)
         {
             Logger.Warning("Download", $"Official patch download failed: {ex.Message}");
             if (File.Exists(destPath)) try { File.Delete(destPath); } catch { }
-        }
-
-        // If URL expired, refresh cache and retry once
-        if (urlExpired && !downloaded)
-        {
-            try
-            {
-                Logger.Info("Download", "Refreshing cache due to expired URL...");
-                await _versionService.ForceRefreshCacheAsync(branch, ct);
-                
-                var freshUrl = await _versionService.RefreshAndGetDownloadUrlAsync(branch, patchVersion, ct);
-                if (!string.IsNullOrEmpty(freshUrl) && freshUrl != officialUrl)
-                {
-                    Logger.Info("Download", $"Retrying with fresh URL: {freshUrl}");
-                    _progressService.ReportDownloadProgress("update", baseProgress,
-                        $"Retrying patch {patchIndex + 1}/{totalPatches} with fresh URL...", null, 0, 0);
-
-                    await _downloadService.DownloadFileAsync(freshUrl, destPath, (progress, dl, total) =>
-                    {
-                        int mappedProgress = baseProgress + (int)(progress * 0.5 * progressPerPatch / 100);
-                        _progressService.ReportDownloadProgress("update", mappedProgress,
-                            $"Downloading patch {patchIndex + 1}/{totalPatches}... {progress}%", null, dl, total);
-                    }, ct);
-                    downloaded = true;
-                    Logger.Success("Download", $"Patch v{patchVersion} downloaded with fresh URL");
-                }
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                Logger.Warning("Download", $"Retry with fresh URL failed: {ex.Message}");
-                if (File.Exists(destPath)) try { File.Delete(destPath); } catch { }
-            }
         }
 
         // Fallback to mirror

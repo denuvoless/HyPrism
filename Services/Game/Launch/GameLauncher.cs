@@ -2,13 +2,13 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using HyPrism.Models;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
+using HyPrism.Services.Core.App;
+using HyPrism.Services.Core.Integration;
+using HyPrism.Services.Game.Asset;
 using HyPrism.Services.Game.Auth;
 using HyPrism.Services.Game.Instance;
-using HyPrism.Services.User.Auth;
-using HyPrism.Services.User.Identity;
-using HyPrism.Services.User.Profiles;
-using HyPrism.Services.User.Skin;
+using HyPrism.Services.User;
 
 namespace HyPrism.Services.Game.Launch;
 
@@ -35,6 +35,11 @@ public class GameLauncher : IGameLauncher
     private readonly HytaleAuthService _hytaleAuthService;
     
     private Config _config => _configService.Configuration;
+
+    /// <summary>
+    /// Stores the DualAuth agent path after download, used when building process start info.
+    /// </summary>
+    private string? _dualAuthAgentPath;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameLauncher"/> class.
@@ -268,18 +273,38 @@ public class GameLauncher : IGameLauncher
                 }
             });
 
-            Logger.Info("Game", $"Patching server JAR: sessions.hytale.com -> sessions.{baseDomain}");
-            _progressService.ReportDownloadProgress("patching", 65, "launch.detail.patching_server", null, 0, 0);
+            // Use DualAuth agent instead of server JAR patching
+            // DualAuth transforms bytecode at runtime, avoiding permanent JAR modifications
+            Logger.Info("Game", $"Setting up DualAuth agent for auth domain: {baseDomain}");
+            _progressService.ReportDownloadProgress("patching", 65, "launch.detail.dualauth_setup", null, 0, 0);
 
-            patcher.PatchServerJar(versionPath, (msg, progress) =>
+            try
             {
-                Logger.Info("Patcher", progress.HasValue ? $"{msg} ({progress}%)" : msg);
-                if (progress.HasValue)
+                var dualAuthResult = await DualAuthService.EnsureAgentAvailableAsync(versionPath, (msg, progress) =>
                 {
-                    int mapped = 65 + (int)(progress.Value * 0.25);
-                    _progressService.ReportDownloadProgress("patching", mapped, msg, null, 0, 0);
+                    Logger.Info("DualAuth", progress.HasValue ? $"{msg} ({progress}%)" : msg);
+                    if (progress.HasValue)
+                    {
+                        int mapped = 65 + (int)(progress.Value * 0.25);
+                        _progressService.ReportDownloadProgress("patching", mapped, msg, null, 0, 0);
+                    }
+                });
+
+                if (dualAuthResult.Success)
+                {
+                    _dualAuthAgentPath = dualAuthResult.AgentPath;
+                    Logger.Success("Game", $"DualAuth agent ready: {_dualAuthAgentPath}");
                 }
-            });
+                else
+                {
+                    Logger.Warning("Game", $"DualAuth agent setup failed: {dualAuthResult.Error}");
+                    Logger.Warning("Game", "Server authentication may not work correctly without DualAuth");
+                }
+            }
+            catch (Exception dualAuthEx)
+            {
+                Logger.Warning("Game", $"Error setting up DualAuth: {dualAuthEx.Message}");
+            }
 
             if (patchResult.Success && patchResult.PatchCount > 0 && RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
@@ -425,10 +450,27 @@ public class GameLauncher : IGameLauncher
         {
             var startInfo = BuildWindowsStartInfo(executable, workingDir, versionPath, userDataDir, javaPath, sessionUuid, identityToken, sessionToken);
             ApplyGpuEnvironment(startInfo);
+            ApplyDualAuthEnvironment(startInfo);
             return startInfo;
         }
 
         return BuildUnixStartInfo(executable, workingDir, versionPath, userDataDir, javaPath, sessionUuid, identityToken, sessionToken);
+    }
+
+    /// <summary>
+    /// Applies DualAuth environment variables for custom auth server authentication.
+    /// </summary>
+    private void ApplyDualAuthEnvironment(ProcessStartInfo startInfo)
+    {
+        if (string.IsNullOrEmpty(_dualAuthAgentPath) || IsOfficialServerMode())
+            return;
+
+        string baseDomain = _config.AuthDomain ?? "";
+        if (baseDomain.StartsWith("sessions."))
+            baseDomain = baseDomain["sessions.".Length..];
+
+        DualAuthService.ApplyToProcess(startInfo, _dualAuthAgentPath, baseDomain, trustOfficialIssuers: true);
+        Logger.Info("Game", $"DualAuth environment applied to process");
     }
 
     /// <summary>
@@ -550,13 +592,14 @@ public class GameLauncher : IGameLauncher
 # Set LD_LIBRARY_PATH to include Client directory for shared libraries
 CLIENT_DIR=""{clientDir}""
 
-{BuildGpuEnvLines()}exec env \
+{BuildGpuEnvLines()}{BuildDualAuthEnvLines()}exec env \
     HOME=""{homeDir}"" \
     USER=""{userName}"" \
     PATH=""/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin"" \
     SHELL=""/bin/zsh"" \
     TMPDIR=""{Path.GetTempPath().TrimEnd('/')}"" \
     LD_LIBRARY_PATH=""$CLIENT_DIR:$LD_LIBRARY_PATH"" \
+    $DUALAUTH_ENV \
     ""{executable}"" {argsString}
 ";
         File.WriteAllText(launchScript, scriptContent);
@@ -616,6 +659,31 @@ export __NV_PRIME_RENDER_OFFLOAD=0
         }
 
         return "";
+    }
+
+    /// <summary>
+    /// Builds DualAuth environment variable lines for the Unix launch script.
+    /// Returns a string with export lines to be placed before 'exec env'.
+    /// </summary>
+    private string BuildDualAuthEnvLines()
+    {
+        if (string.IsNullOrEmpty(_dualAuthAgentPath) || IsOfficialServerMode())
+            return "# No DualAuth (official server mode or agent unavailable)\nDUALAUTH_ENV=\"\"\n\n";
+
+        string baseDomain = _config.AuthDomain ?? "";
+        if (baseDomain.StartsWith("sessions."))
+            baseDomain = baseDomain["sessions.".Length..];
+
+        Logger.Info("Game", $"DualAuth env lines for Unix script: {baseDomain}");
+        
+        return $@"# DualAuth Agent Configuration
+export JAVA_TOOL_OPTIONS=""-javaagent:{_dualAuthAgentPath}""
+export HYTALE_AUTH_DOMAIN=""{baseDomain}""
+export HYTALE_TRUST_ALL_ISSUERS=""true""
+export HYTALE_TRUST_OFFICIAL=""true""
+DUALAUTH_ENV=""JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS HYTALE_AUTH_DOMAIN=$HYTALE_AUTH_DOMAIN HYTALE_TRUST_ALL_ISSUERS=$HYTALE_TRUST_ALL_ISSUERS HYTALE_TRUST_OFFICIAL=$HYTALE_TRUST_OFFICIAL""
+
+";
     }
 
     private async Task StartAndMonitorProcessAsync(ProcessStartInfo startInfo, string sessionUuid)

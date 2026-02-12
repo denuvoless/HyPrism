@@ -50,8 +50,6 @@ const GetInstalledVersionsDetailed = _stub<InstalledVersionInfo[]>('GetInstalled
 const ExportInstance = _stub('ExportInstance', '');
 const DeleteGame = _stub('DeleteGame', false);
 const ResetOnboarding = _stub('ResetOnboarding', undefined as void);
-const GetShowAlphaMods = _stub('GetShowAlphaMods', false);
-const SetShowAlphaMods = _stub<void>('SetShowAlphaMods', undefined as void);
 const ImportInstanceFromZip = _stub('ImportInstanceFromZip', true);
 const InstallOptimizationMods = _stub('InstallOptimizationMods', true);
 import { useAccentColor } from '../contexts/AccentColorContext';
@@ -126,7 +124,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const [instanceDir, setInstanceDir] = useState('');
     const [devModeEnabled, setDevModeEnabled] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-    const [showAlphaMods, setShowAlphaModsState] = useState(false);
     const [onlineMode, setOnlineMode] = useState(true);
     const [backgroundMode, setBackgroundModeState] = useState('slideshow');
     const [showAllBackgrounds, setShowAllBackgrounds] = useState(false);
@@ -179,9 +176,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 
                 const customDir = await GetCustomInstanceDir();
                 setInstanceDir(customDir || folderPath); // Show real path
-                
-                const showAlpha = await GetShowAlphaMods();
-                setShowAlphaModsState(showAlpha);
 
                 const online = (await ipc.settings.get()).onlineMode ?? true;
                 setOnlineMode(online);
@@ -823,35 +817,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                             </div>
                                         </div>
 
-                                        {/* Show Alpha Mods Toggle */}
-                                        <div 
-                                            className={`flex items-center justify-between p-4 rounded-2xl ${gc} cursor-pointer hover:border-white/[0.12] transition-all`}
-                                            onClick={async () => {
-                                                const newValue = !showAlphaMods;
-                                                setShowAlphaModsState(newValue);
-                                                await SetShowAlphaMods(newValue);
-                                            }}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-white/[0.06] flex items-center justify-center">
-                                                    <FlaskConical size={16} className="text-white/70" />
-                                                </div>
-                                                <div>
-                                                    <span className="text-white text-sm font-medium">{t('settings.generalSettings.showAlphaMods')}</span>
-                                                    <p className="text-xs text-white/40">{t('settings.generalSettings.showAlphaModsHint')}</p>
-                                                </div>
-                                            </div>
-                                            <div 
-                                                className="w-12 h-7 rounded-full flex items-center transition-all duration-200"
-                                                style={{ backgroundColor: showAlphaMods ? accentColor : 'rgba(255,255,255,0.15)' }}
-                                            >
-                                                <div 
-                                                    className={`w-5 h-5 rounded-full shadow-md transform transition-all duration-200 ${showAlphaMods ? 'translate-x-6' : 'translate-x-1'}`}
-                                                    style={{ backgroundColor: showAlphaMods ? accentTextColor : 'white' }}
-                                                />
-                                            </div>
-                                        </div>
-
                                     </div>
                                 </div>
                             )}
@@ -983,8 +948,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
                                                         authMode === 'default' 
                                                             ? 'border-white/20' 
-                                                            : 'border-white/[0.06] hover:border-white/[0.12]'
-                                                    } ${authMode !== 'default' ? ('glass-panel-static-solid') : ''}`}
+                                                            : 'border-white/[0.06] hover:border-white/[0.12] bg-[#1c1c1e]'
+                                                    }`}
                                                     style={authMode === 'default' ? { backgroundColor: `${accentColor}15`, borderColor: `${accentColor}50` } : undefined}
                                                     onClick={async () => {
                                                         setAuthModeState('default');
@@ -1010,8 +975,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-all ${
                                                         authMode === 'official' 
                                                             ? 'border-white/20' 
-                                                            : 'border-white/[0.06] hover:border-white/[0.12]'
-                                                    } ${authMode !== 'official' ? ('glass-panel-static-solid') : ''}`}
+                                                            : 'border-white/[0.06] hover:border-white/[0.12] bg-[#1c1c1e]'
+                                                    }`}
                                                     style={authMode === 'official' ? { backgroundColor: `${accentColor}15`, borderColor: `${accentColor}50` } : undefined}
                                                     onClick={async () => {
                                                         setAuthModeState('official');
@@ -1037,8 +1002,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                     className={`rounded-xl border transition-all ${
                                                         authMode === 'custom' 
                                                             ? 'border-white/20' 
-                                                            : 'border-white/[0.06] hover:border-white/[0.12]'
-                                                    } ${authMode !== 'custom' ? ('glass-panel-static-solid') : ''}`}
+                                                            : 'border-white/[0.06] hover:border-white/[0.12] bg-[#1c1c1e]'
+                                                    }`}
                                                     style={authMode === 'custom' ? { backgroundColor: `${accentColor}15`, borderColor: `${accentColor}50` } : undefined}
                                                 >
                                                     <div
@@ -1239,10 +1204,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 }}
                                                 className={`flex-1 h-12 px-4 rounded-xl ${gc} text-white text-sm focus:outline-none focus:border-white/30`}
                                             />
-                                            <div className="flex rounded-full overflow-hidden border border-white/10">
+                                            <div className={`flex rounded-full overflow-hidden ${gc}`}>
                                                 <button
                                                     onClick={handleResetInstanceDir}
-                                                    className={`h-12 px-4 ${gc} flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
+                                                    className={`h-12 px-4 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
                                                     title={t('settings.dataSettings.resetToDefault')}
                                                 >
                                                     <RotateCcw size={18} />
@@ -1251,7 +1216,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 <div className="w-px bg-white/10" />
                                                 <button
                                                     onClick={handleBrowseInstanceDir}
-                                                    className={`h-12 px-4 ${gc} flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
+                                                    className={`h-12 px-4 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
                                                     title={t('common.browse')}
                                                 >
                                                     <FolderOpen size={18} />
@@ -1260,7 +1225,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 <div className="w-px bg-white/10" />
                                                 <button
                                                     onClick={() => BrowserOpenURL(`file://${instanceDir}`)}
-                                                    className={`h-12 px-4 ${gc} flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
+                                                    className={`h-12 px-4 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
                                                     title={t('common.openFolder')}
                                                 >
                                                     <ExternalLink size={18} />
@@ -1285,10 +1250,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 }}
                                                 className={`flex-1 h-12 px-4 rounded-xl ${gc} text-white text-sm focus:outline-none focus:border-white/30`}
                                             />
-                                            <div className="flex rounded-full overflow-hidden border border-white/10">
+                                            <div className={`flex rounded-full overflow-hidden ${gc}`}>
                                                 <button
                                                     onClick={handleResetLauncherDataDir}
-                                                    className={`h-12 px-4 ${gc} flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
+                                                    className={`h-12 px-4 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
                                                     title={t('settings.dataSettings.resetToDefault')}
                                                 >
                                                     <RotateCcw size={18} />
@@ -1297,7 +1262,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 <div className="w-px bg-white/10" />
                                                 <button
                                                     onClick={handleBrowseLauncherDataDir}
-                                                    className={`h-12 px-4 ${gc} flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
+                                                    className={`h-12 px-4 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
                                                     title={t('common.browse')}
                                                 >
                                                     <FolderOpen size={18} />
@@ -1306,7 +1271,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                                 <div className="w-px bg-white/10" />
                                                 <button
                                                     onClick={() => BrowserOpenURL(`file://${launcherDataDir}`)}
-                                                    className={`h-12 px-4 ${gc} flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
+                                                    className={`h-12 px-4 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/5 transition-colors`}
                                                     title={t('common.openFolder')}
                                                 >
                                                     <ExternalLink size={18} />

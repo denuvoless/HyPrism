@@ -74,7 +74,7 @@ public class InstanceInfo
     public int Version { get; set; }
 
     /// <summary>
-    /// Relative path from instance root to this instance's folder.
+    /// Whether the game files are actually installed (valid client/server executables exist).
     /// </summary>
-    public string Path { get; set; } = "";
+    public bool IsInstalled { get; set; } = true;
 }

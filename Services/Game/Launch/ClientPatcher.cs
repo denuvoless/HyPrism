@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.IO.Compression;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
 
 namespace HyPrism.Services.Game.Launch;
 

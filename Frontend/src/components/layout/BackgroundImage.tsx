@@ -24,7 +24,7 @@ const backgroundMap = Object.fromEntries(backgroundImages.map(bg => [bg.name, bg
 // No separate fallback file needed since we have bg_* images
 
 // Configuration
-const TRANSITION_DURATION = 2000; // 2 seconds crossfade
+const TRANSITION_DURATION = 1000; // 1 second crossfade
 const IMAGE_DURATION = 15000; // 15 seconds per image
 
 interface BackgroundImageProps {
@@ -36,17 +36,41 @@ export const BackgroundImage: React.FC<BackgroundImageProps> = memo(({ mode = 's
     Math.floor(Math.random() * backgroundImages.length)
   );
   const [isVisible, setIsVisible] = useState(false);
+  const [displayedMode, setDisplayedMode] = useState(mode);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevModeRef = useRef(mode);
 
   // Determine mode type
-  const isStatic = mode !== 'slideshow';
-  const staticUrl = isStatic && backgroundMap[mode] ? backgroundMap[mode] : null;
+  const isStatic = displayedMode !== 'slideshow';
+  const staticUrl = isStatic && backgroundMap[displayedMode] ? backgroundMap[displayedMode] : null;
 
   // Initial fade in
   useEffect(() => {
     const timer = setTimeout(() => setIsVisible(true), 100);
     return () => clearTimeout(timer);
   }, []);
+
+  // Handle mode changes with smooth transition
+  useEffect(() => {
+    if (prevModeRef.current === mode) return;
+    
+    // Fade out current
+    setIsVisible(false);
+    
+    const timer = setTimeout(() => {
+      setDisplayedMode(mode);
+      // If switching to slideshow, randomize index
+      if (mode === 'slideshow') {
+        setCurrentIndex(Math.floor(Math.random() * backgroundImages.length));
+      }
+      // Fade in new
+      setTimeout(() => setIsVisible(true), 50);
+    }, TRANSITION_DURATION);
+    
+    prevModeRef.current = mode;
+    
+    return () => clearTimeout(timer);
+  }, [mode]);
 
   // Cycle through backgrounds (only in slideshow mode)
   useEffect(() => {

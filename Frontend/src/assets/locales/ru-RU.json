@@ -8,6 +8,7 @@
     "browse": "Обзор",
     "select": "Выбрать",
     "save": "Сохранить",
+    "edit": "Изменить",
     "export": "Экспорт",
     "import": "Импорт",
     "reset": "Сброс",
@@ -306,6 +307,8 @@
     "addInstance": "Добавить экземпляр",
     "createInstance": "Создать экземпляр",
     "createInstanceHint": "Скачайте и настройте новый экземпляр игры",
+    "editInstance": "Редактировать экземпляр",
+    "editInstanceHint": "Изменить имя или иконку этого экземпляра",
     "instanceName": "Имя экземпляра",
     "instanceNamePlaceholder": "Введите название экземпляра",
     "selectIcon": "Выбрать иконку",
@@ -342,7 +345,9 @@
     "saves": "Сохранения",
     "noSaves": "Сохранений не найдено",
     "noSavesHint": "Сыграйте в игру, чтобы создать первое сохранение",
-    "logsComingSoon": "Просмотр логов скоро появится"
+    "logsComingSoon": "Просмотр логов скоро появится",
+    "instanceNotInstalled": "Экземпляр не установлен",
+    "instanceNotInstalledHint": "Скачайте экземпляр для управления контентом"
   },
   "profiles": {
     "title": "Профили",
@@ -450,7 +455,8 @@
       "downloading_mirror": "Загрузка с зеркала... {0}%",
       "downloading_official": "Загрузка с Hytale... {0}%",
       "checking_versions": "Проверка доступных версий...",
-      "installing_butler": "Настройка механизма загрузки..."
+      "installing_butler": "Настройка механизма загрузки...",
+      "dualauth_setup": "Настройка агента аутентификации..."
     }
   },
   "profileEditor": {

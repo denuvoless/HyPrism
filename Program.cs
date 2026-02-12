@@ -1,7 +1,7 @@
 ﻿using ElectronNET;
 using ElectronNET.API;
 using ElectronNET.API.Entities;
-using HyPrism.Services.Core;
+using HyPrism.Services.Core.Infrastructure;
 using HyPrism.Services.Core.Ipc;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -111,8 +111,10 @@ class Program
 
         // Register IPC handlers BEFORE creating window to ensure they're ready
         // when the frontend starts making IPC calls during initialization
-        var ipcRouter = services.GetRequiredService<IpcRouter>();
-        ipcRouter.RegisterAll();
+        var ipcService = services.GetRequiredService<IpcService>();
+        ipcService.RegisterAll();
+
+        #pragma warning disable 
 
         var mainWindow = await Electron.WindowManager.CreateWindowAsync(
             new BrowserWindowOptions
@@ -130,7 +132,10 @@ class Program
             },
             $"file://{Path.Combine(wwwroot, "index.html")}"
         );
+        
+        #pragma warning restore
 
+        Electron.Menu.SetApplicationMenu([]);
         // Quit when all windows closed
         Electron.App.WindowAllClosed += () => Electron.App.Quit();
 
