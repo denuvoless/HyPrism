@@ -434,7 +434,8 @@ public class IpcService
                     id = selected.Id,
                     name = selected.Name,
                     branch = selected.Branch,
-                    version = selected.Version
+                    version = selected.Version,
+                    isInstalled = selected.IsInstalled
                 } : null);
             }
             catch (Exception ex)
@@ -451,11 +452,21 @@ public class IpcService
             {
                 instanceService.SyncInstancesWithConfig();
                 var config = _services.GetRequiredService<IConfigService>().Configuration;
-                var instances = config.Instances?.Select(i => (object)new {
-                    id = i.Id,
-                    name = i.Name,
-                    branch = i.Branch,
-                    version = i.Version
+                var instances = config.Instances?.Select(i => {
+                    // Check installation status for each instance
+                    var instancePath = instanceService.GetInstancePathById(i.Id);
+                    bool isInstalled = false;
+                    if (!string.IsNullOrEmpty(instancePath))
+                    {
+                        isInstalled = instanceService.IsClientPresent(instancePath);
+                    }
+                    return (object)new {
+                        id = i.Id,
+                        name = i.Name,
+                        branch = i.Branch,
+                        version = i.Version,
+                        isInstalled = isInstalled
+                    };
                 }).ToList() ?? new List<object>();
                 
                 Reply("hyprism:instance:list:reply", instances);
@@ -495,14 +506,23 @@ public class IpcService
             {
                 var json = ArgsToJson(args);
                 var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOpts);
-                var branch = data?["branch"].GetString() ?? "release";
-                var version = data?["version"].GetInt32() ?? 0;
+                var instanceId = data?["instanceId"].GetString();
                 
-                var path = instanceService.GetInstancePath(branch, version);
-                if (Directory.Exists(path))
+                if (string.IsNullOrEmpty(instanceId))
+                {
+                    Logger.Warning("IPC", "openFolder: instanceId is required");
+                    return;
+                }
+                
+                var path = instanceService.GetInstancePathById(instanceId);
+                if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
                 {
                     fileService.OpenFolder(path);
                     Logger.Info("IPC", $"Opened folder: {path}");
+                }
+                else
+                {
+                    Logger.Warning("IPC", $"Instance folder not found for id: {instanceId}");
                 }
             }
             catch (Exception ex)
@@ -518,10 +538,33 @@ public class IpcService
             {
                 var json = ArgsToJson(args);
                 var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOpts);
-                var branch = data?["branch"].GetString() ?? "release";
-                var version = data?["version"].GetInt32() ?? 0;
                 
-                var instancePath = instanceService.GetInstancePath(branch, version);
+                string? instancePath = null;
+                
+                // Try instanceId first (new method)
+                if (data?.TryGetValue("instanceId", out var idElement) == true)
+                {
+                    var instanceId = idElement.GetString();
+                    if (!string.IsNullOrEmpty(instanceId))
+                    {
+                        instancePath = instanceService.GetInstancePathById(instanceId);
+                    }
+                }
+                
+                // Fall back to branch/version (for ModManager compatibility)
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    var branch = data?["branch"].GetString() ?? "release";
+                    var version = data?["version"].GetInt32() ?? 0;
+                    instancePath = instanceService.GetInstancePath(branch, version);
+                }
+                
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", "openModsFolder: Could not find instance path");
+                    return;
+                }
+                
                 var modsPath = Path.Combine(instancePath, "Client", "mods");
                 
                 if (!Directory.Exists(modsPath))
@@ -742,11 +785,24 @@ public class IpcService
             {
                 var json = ArgsToJson(args);
                 var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOpts);
-                var branch = data?["branch"].GetString() ?? "release";
-                var version = data?["version"].GetInt32() ?? 0;
+                var instanceId = data?["instanceId"].GetString();
                 var iconBase64 = data?["iconBase64"].GetString();
                 
-                var instancePath = instanceService.GetInstancePath(branch, version);
+                if (string.IsNullOrEmpty(instanceId))
+                {
+                    Logger.Warning("IPC", "Set icon failed: no instanceId provided");
+                    Reply("hyprism:instance:setIcon:reply", false);
+                    return;
+                }
+                
+                var instancePath = instanceService.GetInstancePathById(instanceId);
+                if (string.IsNullOrEmpty(instancePath) || !Directory.Exists(instancePath))
+                {
+                    Logger.Warning("IPC", $"Set icon failed: instance not found by ID: {instanceId}");
+                    Reply("hyprism:instance:setIcon:reply", false);
+                    return;
+                }
+                
                 var targetIconPath = Path.Combine(instancePath, "logo.png");
                 
                 if (!string.IsNullOrEmpty(iconBase64))
@@ -771,7 +827,7 @@ public class IpcService
                     await image.SaveAsPngAsync(targetIconPath);
                     
                     Reply("hyprism:instance:setIcon:reply", true);
-                    Logger.Info("IPC", $"Set icon for {branch}/{version} (256x256)");
+                    Logger.Info("IPC", $"Set icon for instance {instanceId} (256x256)");
                 }
                 else
                 {
@@ -793,13 +849,19 @@ public class IpcService
             {
                 var json = ArgsToJson(args);
                 var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOpts);
-                var branch = data?["branch"].GetString() ?? "release";
-                var version = data?["version"].GetInt32() ?? 0;
+                var instanceId = data?["instanceId"].GetString();
                 var customName = data?["customName"].GetString();
                 
-                instanceService.SetInstanceCustomName(branch, version, customName);
+                if (string.IsNullOrEmpty(instanceId))
+                {
+                    Logger.Warning("IPC", "Instance rename failed: no instanceId provided");
+                    Reply("hyprism:instance:rename:reply", false);
+                    return;
+                }
+                
+                instanceService.SetInstanceCustomNameById(instanceId, customName);
                 Reply("hyprism:instance:rename:reply", true);
-                Logger.Info("IPC", $"Renamed instance {branch}/{version} to: {customName ?? "(default)"}");
+                Logger.Info("IPC", $"Renamed instance {instanceId} to: {customName ?? "(default)"}");
             }
             catch (Exception ex)
             {
@@ -1080,6 +1142,7 @@ public class IpcService
             case "onlineMode": s.SetOnlineMode(val.GetBoolean()); break;
             case "authDomain": s.SetAuthDomain(val.GetString() ?? ""); break;
             case "gpuPreference": s.SetGpuPreference(val.GetString() ?? "dedicated"); break;
+            case "hasCompletedOnboarding": s.SetHasCompletedOnboarding(val.GetBoolean()); break;
             default: Logger.Warning("IPC", $"Unknown setting key: {key}"); break;
         }
     }
@@ -1542,6 +1605,7 @@ public class IpcService
     // @ipc send hyprism:console:log
     // @ipc send hyprism:console:warn
     // @ipc send hyprism:console:error
+    // @ipc invoke hyprism:logs:get -> string[]
 
     private void RegisterConsoleHandlers()
     {
@@ -1553,6 +1617,35 @@ public class IpcService
 
         Electron.IpcMain.On("hyprism:console:error", (args) =>
             Logger.Error("Renderer", ArgsToString(args)));
+
+        // Get recent logs from in-memory buffer
+        Electron.IpcMain.On("hyprism:logs:get", (args) =>
+        {
+            try
+            {
+                int count = 100; // Default to max buffer size
+                if (args != null)
+                {
+                    try
+                    {
+                        var json = ArgsToJson(args);
+                        var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOpts);
+                        if (data != null && data.TryGetValue("count", out var countEl))
+                        {
+                            count = countEl.GetInt32();
+                        }
+                    }
+                    catch { /* use default */ }
+                }
+                var logs = Logger.GetRecentLogs(count);
+                Reply("hyprism:logs:get:reply", logs);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to get logs: {ex.Message}");
+                Reply("hyprism:logs:get:reply", new List<string>());
+            }
+        });
     }
 
     // #endregion

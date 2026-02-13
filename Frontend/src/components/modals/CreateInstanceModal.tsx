@@ -125,19 +125,18 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
       const resolvedVersion = selectedVersion === 0 ? await getLatestVersion(selectedBranch) : selectedVersion;
 
       // Create the instance (directory + metadata only, no download)
-      await ipc.instance.create({
+      const createResult = await ipc.instance.create({
         branch: selectedBranch,
         version: resolvedVersion,
         customName: customName?.trim() || undefined,
       });
 
       // Handle icon upload if provided
-      if (iconFile) {
+      if (iconFile && createResult?.id) {
         try {
           const base64 = await fileToBase64(iconFile);
           await invoke('hyprism:instance:setIcon', {
-            branch: selectedBranch,
-            version: resolvedVersion,
+            instanceId: createResult.id,
             iconBase64: base64
           });
         } catch (err) {
@@ -372,7 +371,7 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
                             </span>
                           </div>
                           <span className="text-[10px] text-white/30 uppercase tracking-wider">
-                            {versionInfo.source === 'Official' ? 'Hytale' : t('common.mirror')}
+                            {versionInfo.source === 'Official' ? 'Hytale' : 'Mirror'}
                           </span>
                         </button>
                       ))}

@@ -640,6 +640,131 @@ public class HytaleAuthService : IHytaleAuthService
             : "No session for current profile");
     }
 
+    /// <summary>
+    /// Gets a valid session from any official profile (not just the active one).
+    /// Used for fetching version info when the current profile may not be official.
+    /// </summary>
+    public async Task<HytaleAuthSession?> GetValidOfficialSessionAsync()
+    {
+        // First, try current session if available
+        if (CurrentSession != null)
+        {
+            var validSession = await GetValidSessionAsync();
+            if (validSession != null)
+            {
+                return validSession;
+            }
+        }
+
+        // If current profile doesn't have a valid session, search all official profiles
+        var config = _configService.Configuration;
+        if (config.Profiles == null || config.Profiles.Count == 0)
+        {
+            return null;
+        }
+
+        // Find official profiles
+        var officialProfiles = config.Profiles.Where(p => p.IsOfficial).ToList();
+        if (officialProfiles.Count == 0)
+        {
+            Logger.Debug("HytaleAuth", "No official profiles found");
+            return null;
+        }
+
+        // Try to load and validate session from each official profile
+        foreach (var profile in officialProfiles)
+        {
+            var safeName = SanitizeFileName(profile.Name);
+            var profileDir = Path.Combine(_appDir, "Profiles", safeName);
+            var sessionPath = Path.Combine(profileDir, "hytale_session.json");
+
+            if (!File.Exists(sessionPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                var json = File.ReadAllText(sessionPath);
+                var session = JsonSerializer.Deserialize<HytaleAuthSession>(json);
+                if (session == null || string.IsNullOrEmpty(session.RefreshToken))
+                {
+                    continue;
+                }
+
+                // Check if token is expired
+                if (session.ExpiresAt <= DateTime.UtcNow.AddMinutes(1))
+                {
+                    // Need to refresh this token
+                    Logger.Info("HytaleAuth", $"Refreshing token for official profile '{profile.Name}'...");
+                    var refreshed = await RefreshTokenForSessionAsync(session);
+                    if (!refreshed)
+                    {
+                        Logger.Warning("HytaleAuth", $"Failed to refresh token for profile '{profile.Name}'");
+                        continue;
+                    }
+
+                    // Save refreshed session back to file
+                    var updatedJson = JsonSerializer.Serialize(session, new JsonSerializerOptions { WriteIndented = true });
+                    File.WriteAllText(sessionPath, updatedJson);
+                }
+
+                Logger.Info("HytaleAuth", $"Using official profile '{profile.Name}' for API access");
+                return session;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("HytaleAuth", $"Failed to load session for profile '{profile.Name}': {ex.Message}");
+            }
+        }
+
+        Logger.Warning("HytaleAuth", "No valid official session found in any profile");
+        return null;
+    }
+
+    /// <summary>
+    /// Refreshes token for a specific session (not necessarily the current one).
+    /// </summary>
+    private async Task<bool> RefreshTokenForSessionAsync(HytaleAuthSession session)
+    {
+        if (string.IsNullOrEmpty(session.RefreshToken)) return false;
+
+        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = session.RefreshToken,
+            ["client_id"] = ClientId
+        });
+
+        try
+        {
+            var response = await _httpClient.PostAsync(TokenUrl, content);
+            var json = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                Logger.Error("HytaleAuth", $"Token refresh failed ({response.StatusCode}): {json}");
+                return false;
+            }
+
+            var tokenResp = JsonSerializer.Deserialize<TokenResponse>(json);
+            if (tokenResp == null) return false;
+
+            session.AccessToken = tokenResp.AccessToken;
+            if (!string.IsNullOrEmpty(tokenResp.RefreshToken))
+                session.RefreshToken = tokenResp.RefreshToken;
+            session.ExpiresAt = DateTime.UtcNow.AddSeconds(tokenResp.ExpiresIn);
+
+            Logger.Info("HytaleAuth", "Token refreshed successfully for session");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("HytaleAuth", $"Token refresh exception: {ex.Message}");
+            return false;
+        }
+    }
+
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();

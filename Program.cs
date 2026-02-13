@@ -3,6 +3,7 @@ using ElectronNET.API;
 using ElectronNET.API.Entities;
 using HyPrism.Services.Core.Infrastructure;
 using HyPrism.Services.Core.Ipc;
+using HyPrism.Services.Game.Instance;
 using Microsoft.Extensions.DependencyInjection;
 
 using Serilog;
@@ -113,6 +114,11 @@ class Program
         // when the frontend starts making IPC calls during initialization
         var ipcService = services.GetRequiredService<IpcService>();
         ipcService.RegisterAll();
+
+        // Run instance migrations
+        var instanceService = services.GetRequiredService<IInstanceService>();
+        instanceService.MigrateLegacyData();
+        instanceService.MigrateVersionFoldersToIdFolders();
 
         #pragma warning disable 
 

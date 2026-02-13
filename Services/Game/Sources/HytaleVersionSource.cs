@@ -56,7 +56,42 @@ public class HytaleVersionSource : IVersionSource
     public VersionSourceType Type => VersionSourceType.Official;
 
     /// <inheritdoc/>
-    public bool IsAvailable => _authService.CurrentSession != null;
+    /// <remarks>
+    /// Checks if ANY official profile has a valid session (not just the active one).
+    /// </remarks>
+    public bool IsAvailable => HasAnyOfficialProfile();
+
+    /// <summary>
+    /// Checks if there's any official profile with a session file.
+    /// </summary>
+    private bool HasAnyOfficialProfile()
+    {
+        // Quick check: if current session exists, we're available
+        if (_authService.CurrentSession != null)
+            return true;
+
+        // Check config for any official profiles
+        var config = _configService.Configuration;
+        if (config.Profiles == null || config.Profiles.Count == 0)
+            return false;
+
+        // Check if any profile is official and has session file
+        foreach (var profile in config.Profiles.Where(p => p.IsOfficial))
+        {
+            var safeName = SanitizeFileName(profile.Name);
+            var sessionPath = Path.Combine(_appDir, "Profiles", safeName, "hytale_session.json");
+            if (File.Exists(sessionPath))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(name.Where(c => !invalid.Contains(c)).ToArray());
+    }
 
     /// <inheritdoc/>
     public int Priority => 0; // Highest priority
@@ -309,6 +344,7 @@ public class HytaleVersionSource : IVersionSource
 
     /// <summary>
     /// Executes an API call with automatic token refresh on auth errors.
+    /// Uses GetValidOfficialSessionAsync to get session from ANY official profile.
     /// </summary>
     /// <typeparam name="T">The return type of the API call.</typeparam>
     /// <param name="apiCall">Function that takes access token and returns result.</param>
@@ -320,11 +356,11 @@ public class HytaleVersionSource : IVersionSource
     {
         for (int attempt = 0; attempt < MaxAuthRetries; attempt++)
         {
-            // Get valid session (this already checks expiry and refreshes proactively)
-            var session = await _authService.GetValidSessionAsync();
+            // Get valid session from ANY official profile (not just the active one)
+            var session = await _authService.GetValidOfficialSessionAsync();
             if (session == null)
             {
-                Logger.Debug("HytaleSource", "No valid Hytale session available");
+                Logger.Debug("HytaleSource", "No valid Hytale session available from any official profile");
                 return default;
             }
 
@@ -338,8 +374,7 @@ public class HytaleVersionSource : IVersionSource
                 {
                     Logger.Warning("HytaleSource", $"Auth error ({ex.Message}), forcing token refresh (attempt {attempt + 1}/{MaxAuthRetries})...");
                     
-                    // Force a token refresh by invalidating the current session's expiry
-                    // This will make GetValidSessionAsync trigger a refresh on next call
+                    // Force a token refresh on the current session
                     await _authService.ForceRefreshAsync();
                     
                     // Clear cache since old URLs may have expired signatures

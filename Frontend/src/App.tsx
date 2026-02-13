@@ -12,6 +12,7 @@ import { NewsPage } from './pages/NewsPage';
 import { ProfilesPage } from './pages/ProfilesPage';
 import { InstancesPage } from './pages/InstancesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { LogsPage } from './pages/LogsPage';
 // Controller detection removed - not using floating indicator
 
 // Lazy load heavy modals for better initial load performance
@@ -167,6 +168,8 @@ const App: React.FC = () => {
   // Download state
   const [progress, setProgress] = useState<number>(0);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [downloadingBranch, setDownloadingBranch] = useState<string | undefined>(undefined);
+  const [downloadingVersion, setDownloadingVersion] = useState<number | undefined>(undefined);
   const [downloadState, setDownloadState] = useState<'downloading' | 'extracting' | 'launching'>('downloading');
   const [isGameRunning, setIsGameRunning] = useState<boolean>(false);
   const [runningBranch, setRunningBranch] = useState<string | undefined>(undefined);
@@ -175,6 +178,13 @@ const App: React.FC = () => {
   const [total, setTotal] = useState<number>(0);
   const [launchState, setLaunchState] = useState<string>('');
   const [launchDetail, setLaunchDetail] = useState<string>('');
+
+  // Helper to clear all download state
+  const clearDownloadState = useCallback(() => {
+    setIsDownloading(false);
+    setDownloadingBranch(undefined);
+    setDownloadingVersion(undefined);
+  }, []);
 
   // Update state
   const [updateAsset, setUpdateAsset] = useState<any>(null);
@@ -474,7 +484,7 @@ const App: React.FC = () => {
       // Handle cancellation first
       if (data.state === 'cancelled') {
         console.log('Download cancelled event received');
-        setIsDownloading(false);
+        clearDownloadState();
         setProgress(0);
         setDownloaded(0);
         setTotal(0);
@@ -515,7 +525,7 @@ const App: React.FC = () => {
         // Game is launching - set running immediately for better UX
         console.log('[App] Launch/launching state received, setting isGameRunning=true');
         setIsGameRunning(true);
-        setIsDownloading(false);
+        clearDownloadState();
         setProgress(0);
         setLaunchState('');
         setLaunchDetail('');
@@ -543,7 +553,7 @@ const App: React.FC = () => {
           setRunningBranch(inst.branch);
           setRunningVersion(inst.version);
         }
-        setIsDownloading(false);
+        clearDownloadState();
         setProgress(0);
         setLaunchState('');
         setLaunchDetail('');
@@ -582,7 +592,7 @@ const App: React.FC = () => {
         setIsGameRunning(false);
         setRunningBranch(undefined);
         setRunningVersion(undefined);
-        setIsDownloading(false);
+        clearDownloadState();
         setProgress(0);
         setLaunchState('');
         setLaunchDetail('');
@@ -603,7 +613,7 @@ const App: React.FC = () => {
 
     const unsubError = EventsOn('error', (err: any) => {
       setError(err);
-      setIsDownloading(false);
+      clearDownloadState();
     });
 
     return () => {
@@ -670,6 +680,11 @@ const App: React.FC = () => {
 
   const doLaunch = async () => {
     setIsDownloading(true);
+    // Track which instance is downloading from the currently selected instance
+    if (selectedInstance) {
+      setDownloadingBranch(selectedInstance.branch);
+      setDownloadingVersion(selectedInstance.version);
+    }
     setDownloadState('downloading');
     try {
       LaunchGame();
@@ -678,7 +693,7 @@ const App: React.FC = () => {
       // - 'error' event sets isDownloading=false
     } catch (err) {
       console.error('Launch failed:', err);
-      setIsDownloading(false);
+      clearDownloadState();
     }
   };
 
@@ -686,6 +701,8 @@ const App: React.FC = () => {
   const handleLaunchFromInstances = (branch: string, version: number) => {
     if (isGameRunning || isDownloading) return;
     setIsDownloading(true);
+    setDownloadingBranch(branch);
+    setDownloadingVersion(version);
     setDownloadState('downloading');
     send('hyprism:game:launch', { branch, version });
   };
@@ -700,7 +717,7 @@ const App: React.FC = () => {
       await refreshInstances();
     } catch (err) {
       console.error('Update failed:', err);
-      setIsDownloading(false);
+      clearDownloadState();
     }
   };
 
@@ -717,7 +734,7 @@ const App: React.FC = () => {
       const result = await CancelDownload();
       console.log('Cancel download result:', result);
       // Reset state immediately on successful cancel call
-      setIsDownloading(false);
+      clearDownloadState();
       setProgress(0);
       setDownloaded(0);
       setTotal(0);
@@ -726,7 +743,7 @@ const App: React.FC = () => {
     } catch (err) {
       console.error('Cancel failed:', err);
       // Still try to reset UI state even if call fails
-      setIsDownloading(false);
+      clearDownloadState();
       setProgress(0);
       setDownloaded(0);
       setTotal(0);
@@ -947,6 +964,8 @@ const App: React.FC = () => {
               activeTab={instanceTab}
               onTabChange={setInstanceTab}
               isDownloading={isDownloading}
+              downloadingBranch={downloadingBranch}
+              downloadingVersion={downloadingVersion}
               downloadState={downloadState}
               progress={progress}
               downloaded={downloaded}
@@ -956,7 +975,12 @@ const App: React.FC = () => {
               canCancel={isDownloading && !isGameRunning}
               onCancelDownload={handleCancelDownload}
               onLaunchInstance={handleLaunchFromInstances}
+              officialServerBlocked={officialServerBlocked}
             />
+          )}
+
+          {currentPage === 'logs' && (
+            <LogsPage key="logs" />
           )}
 
           {currentPage === 'settings' && (

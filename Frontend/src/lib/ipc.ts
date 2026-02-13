@@ -334,7 +334,6 @@ const _profile = {
   duplicate: (data?: unknown) => invoke<Profile>('hyprism:profile:duplicate', data),
   openFolder: (data?: unknown) => send('hyprism:profile:openFolder', data),
   avatarForUuid: (data?: unknown) => invoke<string>('hyprism:profile:avatarForUuid', data),
-  setAvatar: (data?: unknown) => invoke<{ success: boolean }>('hyprism:profile:setAvatar', data),
 };
 
 const _auth = {
@@ -394,6 +393,10 @@ const _console = {
   error: (msg: string) => send('hyprism:console:error', msg),
 };
 
+const _logs = {
+  get: () => invoke<string[]>('hyprism:logs:get'),
+};
+
 const _file = {
   browseFolder: (data?: unknown) => invoke<string | null>('hyprism:file:browseFolder', data),
   browseModFiles: (data?: unknown) => invoke<string[]>('hyprism:file:browseModFiles', data),
@@ -417,6 +420,7 @@ export const ipc = {
   mods: _mods,
   system: _system,
   consoleCtl: _console,
+  logs: _logs,
   file: _file,
 };
 

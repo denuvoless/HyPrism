@@ -7,6 +7,7 @@ import { useAccentColor } from '../contexts/AccentColorContext';
 import { ipc, InstanceInfo } from '@/lib/ipc';
 import { DiscordIcon } from '../components/icons/DiscordIcon';
 import { formatBytes } from '../utils/format';
+import previewLogo from '../assets/images/preview_logo.png';
 
 interface DashboardPageProps {
   // Profile
@@ -343,18 +344,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
                 </motion.div>
               ) : null}
             </AnimatePresence>
-            <h1 className="text-8xl tracking-tighter leading-tight font-black drop-shadow-xl" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-              <span className="text-white">Hy</span>
-              <motion.span 
-                className="bg-clip-text text-transparent bg-[length:200%_auto]" 
-                style={{ 
-                  backgroundImage: `linear-gradient(90deg, ${accentColor}, #22d3ee, #e879f9, ${accentColor})`,
-                  filter: `drop-shadow(0 0 30px ${accentColor}66)`
-                }}
-                animate={{ backgroundPosition: ['0%', '200%'] }}
-                transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
-              >Prism</motion.span>
-            </h1>
+            <img 
+              src={previewLogo} 
+              alt="HyPrism" 
+              className="h-24 drop-shadow-xl select-none"
+              draggable={false}
+            />
           </div>
         </motion.div>
 
@@ -367,31 +362,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
         >
           {/* Button bar with relative positioning */}
           <div className="relative mt-7">
-            {/* Educational label */}
-            <AnimatePresence>
-              {!shouldHideInfo && (
-                <motion.div
-                  initial={{ opacity: 0, y: 12, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 12, scale: 0.95 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="absolute bottom-full flex w-full justify-center mb-3"
-                >
-                  <div className="bg-[#1a1a1e]/80 backdrop-blur-sm rounded-full px-5 py-1.5 border border-white/[0.06] shadow-lg">
-                    <p className="text-white/40 text-[11px] whitespace-nowrap text-center">
-                      {t('main.educational')}{' '}
-                      <button
-                        onClick={() => ipc.browser.open('https://hytale.com')}
-                        className="font-semibold hover:underline cursor-pointer"
-                        style={{ color: accentColor }}
-                      >
-                        {t('main.buyIt')}
-                      </button>
-                    </p>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
             <div
               className={`flex items-center h-14 gap-2`}
             >

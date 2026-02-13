@@ -216,11 +216,27 @@ public class NewsService : INewsService
                         }
                     }
                     
+                    // Build the correct URL format: hytale.com/news/YYYY/M/slug
+                    string newsUrl = "";
+                    if (!string.IsNullOrEmpty(slug) && !string.IsNullOrEmpty(publishedAt))
+                    {
+                        // Parse publishedAt to extract year and month
+                        if (DateTime.TryParse(publishedAt, out var pubDate))
+                        {
+                            newsUrl = $"https://hytale.com/news/{pubDate.Year}/{pubDate.Month}/{slug}";
+                        }
+                        else
+                        {
+                            // Fallback if date parsing fails
+                            newsUrl = $"https://hytale.com/news/{slug}";
+                        }
+                    }
+                    
                     news.Add(new NewsItemResponse
                     {
                         Title = title ?? "",
                         Excerpt = CleanNewsExcerpt(excerpt, title),
-                        Url = !string.IsNullOrEmpty(slug) ? $"https://hytale.com/news/{slug}" : "",
+                        Url = newsUrl,
                         Date = publishedAt ?? "",
                         Author = "Hytale Team",
                         ImageUrl = imageUrl,

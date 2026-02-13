@@ -36,8 +36,8 @@ const DeleteGame = async (branch: string, version: number): Promise<boolean> => 
   }
 };
 
-const OpenInstanceFolder = (branch: string, version: number): void => {
-  send('hyprism:instance:openFolder', { branch, version });
+const OpenInstanceFolder = (instanceId: string): void => {
+  send('hyprism:instance:openFolder', { instanceId });
 };
 
 const ImportInstanceFromZip = async (): Promise<boolean> => {
@@ -72,8 +72,8 @@ const UninstallInstanceMod = async (modId: string, branch: string, version: numb
   }
 };
 
-const OpenInstanceModsFolder = (branch: string, version: number): void => {
-  send('hyprism:instance:openModsFolder', { branch, version });
+const OpenInstanceModsFolder = (instanceId: string): void => {
+  send('hyprism:instance:openModsFolder', { instanceId });
 };
 
 const CheckInstanceModUpdates = async (branch: string, version: number): Promise<ModInfo[]> => {
@@ -170,7 +170,7 @@ const pageVariants = {
 };
 
 // Instance detail tabs
-type InstanceTab = 'content' | 'browse' | 'worlds' | 'logs';
+type InstanceTab = 'content' | 'browse' | 'worlds';
 
 interface InstancesPageProps {
   onInstanceDeleted?: () => void;
@@ -183,6 +183,8 @@ interface InstancesPageProps {
   onTabChange?: (tab: InstanceTab) => void;
   // Download progress
   isDownloading?: boolean;
+  downloadingBranch?: string;
+  downloadingVersion?: number;
   downloadState?: 'downloading' | 'extracting' | 'launching';
   progress?: number;
   downloaded?: number;
@@ -193,6 +195,8 @@ interface InstancesPageProps {
   onCancelDownload?: () => void;
   // Launch callback — routes through App.tsx so download state is tracked
   onLaunchInstance?: (branch: string, version: number) => void;
+  // Official server blocking
+  officialServerBlocked?: boolean;
 }
 
 export const InstancesPage: React.FC<InstancesPageProps> = ({ 
@@ -205,6 +209,8 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
   activeTab: controlledTab,
   onTabChange,
   isDownloading = false,
+  downloadingBranch,
+  downloadingVersion,
   downloadState: _downloadState = 'downloading',
   progress = 0,
   downloaded = 0,
@@ -214,6 +220,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
   canCancel = false,
   onCancelDownload,
   onLaunchInstance,
+  officialServerBlocked = false,
 }) => {
   const { t } = useTranslation();
   const { accentColor, accentTextColor } = useAccentColor();
@@ -329,7 +336,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
     selectedInstanceRef.current = selectedInstance;
   }, [selectedInstance]);
 
-  const tabs: InstanceTab[] = ['content', 'browse', 'worlds', 'logs'];
+  const tabs: InstanceTab[] = ['content', 'browse', 'worlds'];
 
   const loadInstances = useCallback(async () => {
     setIsLoading(true);
@@ -521,12 +528,12 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
   };
 
   const handleOpenFolder = (inst: InstalledVersionInfo) => {
-    OpenInstanceFolder(inst.branch, inst.version);
+    OpenInstanceFolder(inst.id);
   };
 
   const handleOpenModsFolder = () => {
     if (selectedInstance) {
-      OpenInstanceModsFolder(selectedInstance.branch, selectedInstance.version);
+      OpenInstanceModsFolder(selectedInstance.id);
     }
   };
 
@@ -543,13 +550,12 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
   const handleRenameInstance = async (inst: InstalledVersionInfo, customName: string | null) => {
     try {
       const result = await invoke<boolean>('hyprism:instance:rename', { 
-        branch: inst.branch, 
-        version: inst.version, 
+        instanceId: inst.id, 
         customName: customName || null 
       });
       if (result) {
         await loadInstances();
-        if (selectedInstance?.branch === inst.branch && selectedInstance?.version === inst.version) {
+        if (selectedInstance?.id === inst.id) {
           setSelectedInstance(prev => prev ? { ...prev, customName: customName || undefined } : null);
         }
         setEditingInstanceName(false);
@@ -898,6 +904,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                 {/* Full state-aware Play/Stop/Download button */}
                 {(() => {
                   const isThisRunning = isGameRunning && runningBranch === selectedInstance.branch && runningVersion === selectedInstance.version;
+                  const isThisDownloading = isDownloading && downloadingBranch === selectedInstance.branch && downloadingVersion === selectedInstance.version;
                   const isInstalled = selectedInstance.validationStatus === 'Valid';
 
                   // Game running on THIS instance → Stop
@@ -913,8 +920,8 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     );
                   }
 
-                  // Downloading
-                  if (isDownloading) {
+                  // Downloading THIS instance
+                  if (isThisDownloading) {
                     const stateKey = `launch.state.${launchState}`;
                     const stateLabel = t(stateKey) !== stateKey ? t(stateKey) : (launchState || t('launch.state.preparing'));
                     return (
@@ -954,12 +961,16 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     );
                   }
 
-                  // Not installed → Download
+                  // Not installed → Download (disabled if another download in progress)
                   if (!isInstalled) {
+                    const anotherDownloading = isDownloading && !isThisDownloading;
                     return (
                       <button
-                        onClick={() => handleLaunchInstance(selectedInstance)}
-                        className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all hover:brightness-110 active:scale-[0.98] shadow-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white"
+                        onClick={() => !anotherDownloading && handleLaunchInstance(selectedInstance)}
+                        disabled={anotherDownloading}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all shadow-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white ${
+                          anotherDownloading ? 'opacity-50 cursor-not-allowed' : 'hover:brightness-110 active:scale-[0.98]'
+                        }`}
                       >
                         <Download size={16} />
                         {t('main.download')}
@@ -967,7 +978,25 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     );
                   }
 
-                  // Installed → Play
+                  // Installed → Play (or blocked if unofficial profile on official servers)
+                  if (officialServerBlocked) {
+                    return (
+                      <div className="relative group">
+                        <button
+                          disabled
+                          className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 transition-all opacity-50 cursor-not-allowed"
+                          style={{ backgroundColor: '#555', color: accentTextColor }}
+                        >
+                          <Play size={16} fill="currentColor" />
+                          {t('main.play')}
+                        </button>
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-black/90 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-50">
+                          {t('main.officialServerBlocked')}
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <button
                       onClick={() => handleLaunchInstance(selectedInstance)}
@@ -1053,9 +1082,9 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
               </div>
             </div>
 
-            {/* Download Progress Counter */}
+            {/* Download Progress Counter - only show when selected instance is downloading */}
             <AnimatePresence>
-              {isDownloading && launchState !== 'complete' && (
+              {isDownloading && downloadingBranch === selectedInstance?.branch && downloadingVersion === selectedInstance?.version && launchState !== 'complete' && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -1433,70 +1462,6 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                     )}
                   </div>
                 </div>
-
-                {/* Logs tab */}
-                <div
-                  className={`absolute inset-0 flex flex-col p-4 overflow-y-auto ${
-                    activeTab === 'logs' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
-                  }`}
-                >
-                  {isDownloading ? (
-                    <div className="space-y-4">
-                      {/* Download source indicator */}
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${launchDetail.includes('mirror') ? 'bg-amber-400' : 'bg-green-400'} animate-pulse`} />
-                        <span className="text-sm font-medium text-white/80">
-                          {launchDetail.includes('mirror')
-                            ? t('instances.logs.downloadingMirror', 'Downloading from Mirror')
-                            : t('instances.logs.downloadingOfficial', 'Downloading from Official Server')}
-                        </span>
-                      </div>
-
-                      {/* Progress bar */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs text-white/50">
-                          <span>{launchState === 'download' ? t('instances.logs.downloading', 'Downloading...') : launchState === 'install' ? t('instances.logs.installing', 'Installing...') : t('instances.logs.preparing', 'Preparing...')}</span>
-                          <span>{Math.round(progress)}%</span>
-                        </div>
-                        <div className="w-full h-3 rounded-full bg-white/[0.06] overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-300"
-                            style={{ width: `${Math.min(progress, 100)}%`, backgroundColor: accentColor }}
-                          />
-                        </div>
-                        {total > 0 && (
-                          <div className="flex items-center justify-between text-xs text-white/40">
-                            <span>{(downloaded / 1024 / 1024).toFixed(1)} MB</span>
-                            <span>{(total / 1024 / 1024).toFixed(1)} MB</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Status detail */}
-                      {launchDetail && (
-                        <div className="mt-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.04]">
-                          <p className="text-xs text-white/40 font-mono">{launchDetail}</p>
-                        </div>
-                      )}
-
-                      {/* Cancel button */}
-                      {canCancel && (
-                        <button
-                          onClick={() => onCancelDownload?.()}
-                          className="mt-2 px-4 py-2 rounded-lg text-sm text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 transition-all"
-                        >
-                          {t('main.cancel')}
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-white/30">
-                      <FileText size={48} className="mb-4 opacity-50" />
-                      <p className="text-lg font-medium">{t('instances.logs.idle', 'No active download')}</p>
-                      <p className="text-sm text-white/20 mt-1">{t('instances.logs.idleHint', 'Download progress will appear here')}</p>
-                    </div>
-                  )}
-                </div>
             </div>
             </div>
 
@@ -1508,8 +1473,6 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                 loadInstances();
               }}
               instanceId={selectedInstance.id}
-              instanceBranch={selectedInstance.branch}
-              instanceVersion={selectedInstance.version}
               initialName={selectedInstance.customName || getInstanceDisplayName(selectedInstance)}
               initialIconUrl={instanceIcons[`${selectedInstance.branch}-${selectedInstance.version}`]}
             />

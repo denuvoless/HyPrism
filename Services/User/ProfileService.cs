@@ -36,9 +36,69 @@ public class ProfileService : IProfileService
         if (string.IsNullOrWhiteSpace(nick) || nick.Length > 16)
             return false;
         
-        _configService.Configuration.Nick = nick;
+        var config = _configService.Configuration;
+        var oldNick = config.Nick;
+        
+        // Update the active config Nick
+        config.Nick = nick;
+        
+        // Also update the active profile's Name so we don't create a new profile folder
+        if (config.Profiles != null && config.ActiveProfileIndex >= 0 && config.ActiveProfileIndex < config.Profiles.Count)
+        {
+            var activeProfile = config.Profiles[config.ActiveProfileIndex];
+            if (activeProfile != null && activeProfile.Name == oldNick)
+            {
+                activeProfile.Name = nick;
+                Logger.Info("Profile", $"Updated active profile name from '{oldNick}' to '{nick}'");
+                
+                // Rename the profile folder if it exists
+                RenameProfileFolder(oldNick, nick);
+            }
+        }
+        
         _configService.SaveConfig();
         return true;
+    }
+    
+    /// <summary>
+    /// Renames the profile folder from old name to new name.
+    /// </summary>
+    private void RenameProfileFolder(string oldName, string newName)
+    {
+        try
+        {
+            var profilesDir = Path.Combine(_appDataPath, "Profiles");
+            if (!Directory.Exists(profilesDir))
+                return;
+                
+            var oldSafeName = SanitizeFileName(oldName);
+            var newSafeName = SanitizeFileName(newName);
+            
+            if (oldSafeName == newSafeName)
+                return;
+                
+            var oldPath = Path.Combine(profilesDir, oldSafeName);
+            var newPath = Path.Combine(profilesDir, newSafeName);
+            
+            if (Directory.Exists(oldPath) && !Directory.Exists(newPath))
+            {
+                Directory.Move(oldPath, newPath);
+                Logger.Info("Profile", $"Renamed profile folder from '{oldSafeName}' to '{newSafeName}'");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Profile", $"Failed to rename profile folder: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Sanitizes a filename by removing invalid characters.
+    /// </summary>
+    private static string SanitizeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return string.Concat(name.Where(c => !invalid.Contains(c)));
     }
 
     /// <inheritdoc/>
@@ -50,7 +110,23 @@ public class ProfileService : IProfileService
         if (string.IsNullOrWhiteSpace(uuid))
             return false;
         
-        _configService.Configuration.UUID = uuid;
+        var config = _configService.Configuration;
+        var oldUuid = config.UUID;
+        
+        // Update the active config UUID
+        config.UUID = uuid;
+        
+        // Also update the active profile's UUID so we don't create a new profile
+        if (config.Profiles != null && config.ActiveProfileIndex >= 0 && config.ActiveProfileIndex < config.Profiles.Count)
+        {
+            var activeProfile = config.Profiles[config.ActiveProfileIndex];
+            if (activeProfile != null && activeProfile.UUID == oldUuid)
+            {
+                activeProfile.UUID = uuid;
+                Logger.Info("Profile", $"Updated active profile UUID from {oldUuid} to {uuid}");
+            }
+        }
+        
         _configService.SaveConfig();
         return true;
     }

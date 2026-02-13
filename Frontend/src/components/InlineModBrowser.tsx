@@ -276,17 +276,31 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
   const handleDownloadSelected = async () => {
     if (selectedMods.size === 0) return;
 
+    console.log('[ModBrowser] handleDownloadSelected called, selectedMods:', Array.from(selectedMods));
+
     const items: Array<{ id: string; name: string; fileId: string }> = [];
     for (const modId of selectedMods) {
+      console.log('[ModBrowser] Processing mod:', modId);
       const mod = searchResults.find(m => m.id === modId);
+      console.log('[ModBrowser] Found mod in searchResults:', mod?.name || 'NOT FOUND');
       let fileId = selectedVersions.get(modId);
+      console.log('[ModBrowser] Selected version fileId:', fileId || 'NOT SET');
       if (!fileId) {
+        console.log('[ModBrowser] Loading files for mod:', modId);
         const files = await loadModFiles(modId);
+        console.log('[ModBrowser] Loaded files:', files?.length || 0);
         fileId = files?.[0]?.id;
+        console.log('[ModBrowser] Using first file:', fileId);
       }
-      if (fileId && mod) items.push({ id: modId, name: mod.name, fileId });
+      if (fileId && mod) {
+        items.push({ id: modId, name: mod.name, fileId });
+        console.log('[ModBrowser] Added to items:', { id: modId, name: mod.name, fileId });
+      } else {
+        console.log('[ModBrowser] SKIPPED mod (missing fileId or mod):', { modId, hasFileId: !!fileId, hasMod: !!mod });
+      }
     }
 
+    console.log('[ModBrowser] Final items array:', items);
     if (items.length === 0) { setError(t('modManager.noDownloadableFiles')); return; }
 
     try { await runDownloadQueue(items); }

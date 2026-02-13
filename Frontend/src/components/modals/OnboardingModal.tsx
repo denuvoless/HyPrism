@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
     Check, 
@@ -14,7 +14,12 @@ import {
     ArrowRight,
     Image,
     Info,
-    Loader2
+    Loader2,
+    LogIn,
+    Monitor,
+    HardDrive,
+    Settings,
+    Cpu
 } from 'lucide-react';
 import { ipc } from '@/lib/ipc';
 
@@ -22,7 +27,6 @@ import { ipc } from '@/lib/ipc';
 const BrowserOpenURL = (url: string) => ipc.browser.open(url);
 
 // Settings / profile backed
-async function SetNick(name: string): Promise<void> { console.warn('[IPC] SetNick: no dedicated channel'); }
 async function GetLauncherFolderPath(): Promise<string> { console.warn('[IPC] GetLauncherFolderPath: stub'); return ''; }
 async function GetCustomInstanceDir(): Promise<string> { return (await ipc.settings.get()).dataDirectory ?? ''; }
 async function SetInstanceDirectory(_dir: string): Promise<void> { console.warn('[IPC] SetInstanceDirectory: no channel'); }
@@ -79,29 +83,36 @@ interface Contributor {
     contributions: number;
 }
 
+// GPU adapter interface
+interface GpuAdapter {
+    name: string;
+    vendor: string;
+    type: string;
+}
+
 // Cache key for localStorage
 const ONBOARDING_CACHE_KEY = 'hyprism_onboarding_state';
 
 interface OnboardingState {
-    phase: 'splash' | 'setup';
+    phase: 'splash' | 'auth' | 'setup';
     currentStep: string;
     username: string;
     backgroundMode: string;
     selectedLanguage: string;
+    isAuthenticated: boolean;
 }
 
 interface OnboardingModalProps {
     onComplete: () => void;
 }
 
-type OnboardingPhase = 'splash' | 'setup';
-type OnboardingStep = 'language' | 'profile' | 'visual' | 'location' | 'about';
+type OnboardingPhase = 'splash' | 'auth' | 'setup';
+type OnboardingStep = 'language' | 'profile' | 'hardware' | 'visual' | 'location' | 'about';
 
 export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) => {
     const { i18n, t } = useTranslation();
     const { accentColor, accentTextColor, setAccentColor } = useAccentColor();
   
-    
     // Initialize from cache or defaults
     const getCachedState = (): Partial<OnboardingState> => {
         try {
@@ -118,8 +129,15 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     // Phase and step state - restore from cache
     const [phase, setPhase] = useState<OnboardingPhase>(cachedState.phase || 'splash');
     const [currentStep, setCurrentStep] = useState<OnboardingStep>((cachedState.currentStep as OnboardingStep) || 'language');
-    const [splashAnimationComplete, setSplashAnimationComplete] = useState(cachedState.phase === 'setup');
+    const [splashAnimationComplete, setSplashAnimationComplete] = useState(cachedState.phase !== 'splash');
     const [isReady, setIsReady] = useState(false);
+    
+    // Auth state
+    const [isAuthenticated, setIsAuthenticated] = useState(cachedState.isAuthenticated || false);
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
+    const [authError, setAuthError] = useState<string | null>(null);
+    const [authErrorType, setAuthErrorType] = useState<'warning' | 'error'>('error');
+    const [authenticatedUsername, setAuthenticatedUsername] = useState<string | null>(null);
     
     // Form state - restore from cache
     const [username, setUsername] = useState(cachedState.username || '');
@@ -133,9 +151,43 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     const [backgroundMode, setBackgroundMode] = useState(cachedState.backgroundMode || 'slideshow');
     const [currentBackgroundIndex, setCurrentBackgroundIndex] = useState(0);
     
+    // GPU settings
+    const [gpuAdapters, setGpuAdapters] = useState<GpuAdapter[]>([]);
+    const [gpuPreference, setGpuPreference] = useState<string>('auto');
+    const [hasMultipleGpus, setHasMultipleGpus] = useState(false);
+    const [gpuAlreadyConfigured, setGpuAlreadyConfigured] = useState(false);
+    
+    // Profile state
+    const [hasExistingProfiles, setHasExistingProfiles] = useState(false);
+    
     // Contributors
     const [contributors, setContributors] = useState<Contributor[]>([]);
     const [isLoadingContributors, setIsLoadingContributors] = useState(false);
+    
+    // Dynamic steps based on auth status and GPU count
+    const steps = useMemo(() => {
+        const allSteps: { id: OnboardingStep; label: string; icon: React.ElementType }[] = [
+            { id: 'language', label: t('onboarding.language'), icon: Globe },
+        ];
+        
+        // Only show profile step if not authenticated and no existing profiles
+        if (!isAuthenticated && !hasExistingProfiles) {
+            allSteps.push({ id: 'profile', label: t('onboarding.profile'), icon: User });
+        }
+        
+        // Only show hardware step if multiple GPUs detected AND not already configured
+        if (hasMultipleGpus && !gpuAlreadyConfigured) {
+            allSteps.push({ id: 'hardware', label: t('onboarding.hardware'), icon: Cpu });
+        }
+        
+        allSteps.push(
+            { id: 'visual', label: t('onboarding.visual'), icon: Palette },
+            { id: 'location', label: t('onboarding.location'), icon: FolderOpen },
+            { id: 'about', label: t('onboarding.about'), icon: Info }
+        );
+        
+        return allSteps;
+    }, [isAuthenticated, hasExistingProfiles, hasMultipleGpus, gpuAlreadyConfigured, t]);
     
     // Save state to cache whenever it changes
     const saveToCache = useCallback(() => {
@@ -145,11 +197,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                 currentStep,
                 username,
                 backgroundMode,
-                selectedLanguage: i18n.language
+                selectedLanguage: i18n.language,
+                isAuthenticated
             };
             localStorage.setItem(ONBOARDING_CACHE_KEY, JSON.stringify(state));
         } catch {}
-    }, [phase, currentStep, username, backgroundMode, i18n.language]);
+    }, [phase, currentStep, username, backgroundMode, i18n.language, isAuthenticated]);
     
     useEffect(() => {
         saveToCache();
@@ -182,8 +235,32 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                     setUsername(randomName);
                 }
                 
-                if (cachedState.selectedLanguage && cachedState.selectedLanguage !== i18n.language) {
-                    console.log('[Onboarding] Cache has different language, but keeping backend language:', i18n.language);
+                // Load GPU adapters
+                try {
+                    const adapters = await ipc.system.gpuAdapters();
+                    setGpuAdapters(adapters || []);
+                    setHasMultipleGpus(adapters && adapters.length > 1);
+                    
+                    // Load current GPU preference
+                    const settings = await ipc.settings.get();
+                    const currentGpuPref = settings.gpuPreference ?? 'auto';
+                    setGpuPreference(currentGpuPref);
+                    // If already configured (not auto), skip hardware step
+                    setGpuAlreadyConfigured(currentGpuPref !== 'auto');
+                } catch (err) {
+                    console.error('Failed to load GPU info:', err);
+                }
+                
+                // Check for existing profiles
+                try {
+                    const profiles = await ipc.profile.list();
+                    const hasProfiles = profiles && profiles.length > 0;
+                    setHasExistingProfiles(hasProfiles);
+                    if (hasProfiles) {
+                        setIsAuthenticated(true); // Treat as authenticated if profiles exist
+                    }
+                } catch (err) {
+                    console.error('Failed to load profiles:', err);
                 }
                 
                 // Mark as ready after a small delay to ensure smooth animation
@@ -237,12 +314,14 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
         }
     }, [phase, splashAnimationComplete]);
     
-    const handleSkipSplash = () => {
-        setSplashAnimationComplete(true);
-    };
-    
-    const handleEnterSetup = () => {
-        setPhase('setup');
+    const handleEnterAuth = () => {
+        // Skip auth phase if user already has profiles
+        if (hasExistingProfiles) {
+            setPhase('setup');
+            setCurrentStep('language');
+        } else {
+            setPhase('auth');
+        }
     };
     
     const handleLanguageChange = (langCode: Language) => {
@@ -262,18 +341,18 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     };
     
     const handleNextStep = () => {
-        const stepOrder: OnboardingStep[] = ['language', 'profile', 'visual', 'location', 'about'];
-        const currentIndex = stepOrder.indexOf(currentStep);
-        if (currentIndex < stepOrder.length - 1) {
-            setCurrentStep(stepOrder[currentIndex + 1]);
+        const stepIds = steps.map(s => s.id);
+        const currentIndex = stepIds.indexOf(currentStep);
+        if (currentIndex < stepIds.length - 1) {
+            setCurrentStep(stepIds[currentIndex + 1]);
         }
     };
     
     const handlePrevStep = () => {
-        const stepOrder: OnboardingStep[] = ['language', 'profile', 'visual', 'location', 'about'];
-        const currentIndex = stepOrder.indexOf(currentStep);
+        const stepIds = steps.map(s => s.id);
+        const currentIndex = stepIds.indexOf(currentStep);
         if (currentIndex > 0) {
-            setCurrentStep(stepOrder[currentIndex - 1]);
+            setCurrentStep(stepIds[currentIndex - 1]);
         }
     };
     
@@ -296,12 +375,75 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
         } catch {}
     };
     
+    const handleGpuPreferenceChange = async (preference: string) => {
+        setGpuPreference(preference);
+        try {
+            await ipc.settings.update({ gpuPreference: preference });
+        } catch (err) {
+            console.error('Failed to update GPU preference:', err);
+        }
+    };
+    
+    // Auth handlers
+    const handleLogin = async () => {
+        setIsAuthenticating(true);
+        setAuthError(null);
+        setAuthErrorType('error');
+        
+        try {
+            const result = await ipc.auth.login();
+            if (result?.loggedIn && result.username && result.uuid) {
+                // Create official profile from Hytale account data
+                const profile = await ipc.profile.create({
+                    name: result.username,
+                    uuid: result.uuid,
+                    isOfficial: true,
+                });
+                if (profile && profile.id) {
+                    setIsAuthenticated(true);
+                    setAuthenticatedUsername(result.username);
+                    // Move to setup phase
+                    setPhase('setup');
+                    setCurrentStep('language');
+                } else {
+                    setAuthError(t('onboarding.auth.createFailed'));
+                    setAuthErrorType('error');
+                }
+            } else if (result?.errorType === 'no_profile') {
+                // Yellow warning — account works but has no game profiles
+                setAuthError(t('onboarding.auth.noHytaleProfile'));
+                setAuthErrorType('warning');
+            } else {
+                setAuthError(t('onboarding.auth.failed'));
+                setAuthErrorType('error');
+            }
+        } catch (err) {
+            console.error('[Onboarding] Auth failed:', err);
+            setAuthError(t('onboarding.auth.error'));
+            setAuthErrorType('error');
+        } finally {
+            setIsAuthenticating(false);
+        }
+    };
+    
+    const handleSkipAuth = () => {
+        setIsAuthenticated(false);
+        setPhase('setup');
+        setCurrentStep('language');
+    };
+    
     const handleComplete = async () => {
         setIsLoading(true);
         try {
-            // Save username
-            if (username.trim()) {
-                await SetNick(username.trim());
+            // Save username only if not authenticated (unofficial profile)
+            if (!isAuthenticated && username.trim()) {
+                // Create unofficial profile
+                const uuid = crypto.randomUUID();
+                await ipc.profile.create({
+                    name: username.trim(),
+                    uuid: uuid,
+                    isOfficial: false,
+                });
             }
             
             // Save instance directory if changed from default
@@ -329,9 +471,15 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
     const handleSkip = async () => {
         setIsLoading(true);
         try {
-            // Username is already auto-generated, so save it
-            if (username.trim()) {
-                await SetNick(username.trim());
+            // If not authenticated, create a default profile
+            if (!isAuthenticated) {
+                const randomName = username.trim() || `HyPrism${Math.floor(Math.random() * 9999)}`;
+                const uuid = crypto.randomUUID();
+                await ipc.profile.create({
+                    name: randomName,
+                    uuid: uuid,
+                    isOfficial: false,
+                });
             }
             
             // Mark onboarding as complete
@@ -359,14 +507,6 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
         if (name.length <= maxLength) return name;
         return name.substring(0, maxLength - 1) + '…';
     };
-    
-    const steps: { id: OnboardingStep; label: string; icon: React.ElementType }[] = [
-        { id: 'language', label: t('onboarding.language'), icon: Globe },
-        { id: 'profile', label: t('onboarding.profile'), icon: User },
-        { id: 'visual', label: t('onboarding.visual'), icon: Palette },
-        { id: 'location', label: t('onboarding.location'), icon: FolderOpen },
-        { id: 'about', label: t('onboarding.about'), icon: Info },
-    ];
     
     const currentStepIndex = steps.findIndex(s => s.id === currentStep);
     
@@ -452,21 +592,28 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                         v{launcherVersion}
                     </p>
                     
-                    {/* Enter button - appears after animation */}
-                    {splashAnimationComplete && (
+                    {/* Buttons - always present to prevent layout jump */}
+                    <div 
+                        className="mt-12 flex flex-col items-center gap-4"
+                        style={{ 
+                            opacity: splashAnimationComplete ? 1 : 0,
+                            transition: 'opacity 0.5s ease-out',
+                            pointerEvents: splashAnimationComplete ? 'auto' : 'none'
+                        }}
+                    >
+                        {/* Continue button */}
                         <button
-                            onClick={handleEnterSetup}
-                            className="mt-12 flex items-center gap-3 px-8 py-4 rounded-2xl font-semibold text-lg transition-all hover:scale-105 hover:shadow-lg"
+                            onClick={handleEnterAuth}
+                            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-semibold text-lg transition-all hover:scale-105 hover:shadow-lg"
                             style={{ 
                                 backgroundColor: accentColor, 
-                                color: accentTextColor,
-                                animation: 'fadeIn 0.5s ease-out forwards'
+                                color: accentTextColor
                             }}
                         >
-                            {t('onboarding.getStarted')}
+                            {t('common.continue')}
                             <ArrowRight size={22} />
                         </button>
-                    )}
+                    </div>
                 </div>
                 
                 {/* Skip button - visible during entire onboarding */}
@@ -499,8 +646,111 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
         );
     }
     
+    // Auth Phase
+    if (phase === 'auth') {
+        const bgImage = getCurrentBackground();
+        
+        return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden">
+                {/* Background with blur */}
+                <div 
+                    className="absolute inset-0 bg-cover bg-center transition-all duration-1000"
+                    style={{ 
+                        backgroundImage: bgImage ? `url(${bgImage})` : 'none',
+                        filter: 'blur(20px) brightness(0.3)',
+                        transform: 'scale(1.1)'
+                    }}
+                />
+                
+                {/* Dark overlay */}
+                <div className="absolute inset-0 bg-black/50" />
+                
+                {/* Modal */}
+                <div 
+                    className="relative z-10 w-full max-w-md mx-4 overflow-hidden shadow-2xl glass-panel-static-solid"
+                    style={{ animation: 'fadeIn 0.3s ease-out forwards' }}
+                >
+                    {/* Content */}
+                    <div className="p-8 flex flex-col items-center text-center">
+                        <img src={appIcon} alt="HyPrism" className="w-20 h-20 mb-6" />
+                        
+                        <h1 className="text-2xl font-bold text-white mb-2">
+                            {t('onboarding.auth.title')}
+                        </h1>
+                        <p className="text-sm text-white/60 mb-8 max-w-sm">
+                            {t('onboarding.auth.description')}
+                        </p>
+                        
+                        {/* Error message */}
+                        {authError && (
+                            <div 
+                                className={`w-full p-3 rounded-xl mb-6 text-sm ${
+                                    authErrorType === 'warning' 
+                                        ? 'bg-yellow-500/20 border border-yellow-500/30 text-yellow-200' 
+                                        : 'bg-red-500/20 border border-red-500/30 text-red-200'
+                                }`}
+                            >
+                                {authError}
+                            </div>
+                        )}
+                        
+                        {/* Buttons */}
+                        <div className="w-full space-y-3">
+                            <button
+                                onClick={handleLogin}
+                                disabled={isAuthenticating}
+                                className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                                style={{ 
+                                    backgroundColor: accentColor, 
+                                    color: accentTextColor
+                                }}
+                            >
+                                {isAuthenticating ? (
+                                    <Loader2 size={20} className="animate-spin" />
+                                ) : (
+                                    <LogIn size={20} />
+                                )}
+                                {isAuthenticating ? t('onboarding.auth.authenticating') : t('onboarding.auth.login')}
+                            </button>
+                            
+                            <button
+                                onClick={handleSkipAuth}
+                                disabled={isAuthenticating}
+                                className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium bg-white/5 text-white/60 hover:bg-white/10 hover:text-white transition-all disabled:opacity-50"
+                            >
+                                <SkipForward size={18} />
+                                {t('onboarding.auth.skip')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                {/* Skip entire onboarding button */}
+                <button
+                    onClick={handleSkip}
+                    disabled={isLoading || isAuthenticating}
+                    className="absolute bottom-8 right-8 z-10 flex items-center gap-2 font-semibold text-sm text-white/60 hover:text-white hover:scale-[1.02] active:scale-[0.98] transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <SkipForward size={16} />
+                    {t('onboarding.skip')}
+                </button>
+                
+                {/* CSS animations */}
+                <style>{`
+                    @keyframes fadeIn {
+                        from { opacity: 0; }
+                        to { opacity: 1; }
+                    }
+                `}</style>
+            </div>
+        );
+    }
+    
     // Setup Phase - Multi-step wizard
     const bgImage = getCurrentBackground();
+    
+    // Fixed height for content area to prevent jumping
+    const CONTENT_HEIGHT = 420;
     
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden">
@@ -518,7 +768,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
             <div className="absolute inset-0 bg-black/50" />
             
             {/* Modal */}
-            <div className={`relative z-10 w-full max-w-3xl mx-4 overflow-hidden shadow-2xl glass-panel-static-solid`}>
+            <div className="relative z-10 w-full max-w-3xl mx-4 overflow-hidden shadow-2xl glass-panel-static-solid">
                 {/* Header */}
                 <div className="p-6 border-b border-white/10 bg-gradient-to-r from-[#151515]/80 to-[#111111]/80">
                     <div className="flex items-center justify-between">
@@ -526,7 +776,12 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                             <img src={appIcon} alt="HyPrism" className="w-12 h-12 rounded-xl" />
                             <div>
                                 <h1 className="text-2xl font-bold text-white">{t('onboarding.welcome')}</h1>
-                                <p className="text-sm text-white/60">{t('onboarding.letsSetUp')}</p>
+                                <p className="text-sm text-white/60">
+                                    {isAuthenticated && authenticatedUsername 
+                                        ? t('onboarding.welcomeBack', { name: authenticatedUsername })
+                                        : t('onboarding.letsSetUp')
+                                    }
+                                </p>
                             </div>
                         </div>
                         <p className="text-xs text-white/40">v{launcherVersion}</p>
@@ -568,8 +823,11 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                     </div>
                 </div>
                 
-                {/* Content */}
-                <div className="p-6 min-h-[420px] max-h-[500px] overflow-y-auto">
+                {/* Content - Fixed height */}
+                <div 
+                    className="p-6 overflow-y-auto"
+                    style={{ height: CONTENT_HEIGHT }}
+                >
                     {/* Step 1: Language Selection */}
                     {currentStep === 'language' && (
                         <div className="space-y-6">
@@ -609,7 +867,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                         </div>
                     )}
                     
-                    {/* Step 2: Profile Setup */}
+                    {/* Step 2: Profile Setup (only if not authenticated) */}
                     {currentStep === 'profile' && (
                         <div className="space-y-6">
                             <div>
@@ -649,7 +907,78 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                         </div>
                     )}
                     
-                    {/* Step 3: Visual Settings */}
+                    {/* Step: Hardware (GPU Selection) - only if multiple GPUs */}
+                    {currentStep === 'hardware' && (
+                        <div className="space-y-6">
+                            <div>
+                                <h2 className="text-xl font-semibold text-white mb-2">{t('onboarding.hardwareSettings')}</h2>
+                                <p className="text-sm text-white/60">{t('onboarding.gpuHint')}</p>
+                            </div>
+                            
+                            {/* GPU Preference */}
+                            <div>
+                                <label className="text-sm text-white/60 mb-3 flex items-center gap-2">
+                                    <Cpu size={14} />
+                                    {t('onboarding.gpuPreference')}
+                                </label>
+                                <div className="space-y-2">
+                                    {(['auto', 'dedicated', 'integrated'] as const).map((option) => {
+                                        const icons: Record<string, React.ReactNode> = {
+                                            dedicated: <Monitor size={18} />,
+                                            integrated: <HardDrive size={18} />,
+                                            auto: <Settings size={18} />,
+                                        };
+                                        const isSelected = gpuPreference === option;
+                                        // Find GPU model name for this type
+                                        const matchingGpu = gpuAdapters.find(g => g.type === option);
+                                        const gpuModelName = option === 'auto'
+                                            ? (gpuAdapters.length > 0 ? gpuAdapters.map(g => g.name).join(' / ') : undefined)
+                                            : matchingGpu?.name;
+                                        return (
+                                            <button
+                                                key={option}
+                                                onClick={() => handleGpuPreferenceChange(option)}
+                                                className="w-full p-3 rounded-xl border transition-all text-left cursor-pointer"
+                                                style={{
+                                                    backgroundColor: isSelected ? `${accentColor}15` : '#151515',
+                                                    borderColor: isSelected ? `${accentColor}50` : 'rgba(255,255,255,0.08)'
+                                                }}
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <div
+                                                            className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                                                            style={{ backgroundColor: isSelected ? `${accentColor}25` : 'rgba(255,255,255,0.06)' }}
+                                                        >
+                                                            <span style={{ color: isSelected ? accentColor : 'rgba(255,255,255,0.5)' }}>{icons[option]}</span>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-white text-sm font-medium">{t(`onboarding.gpu_${option}`)}</div>
+                                                            {gpuModelName ? (
+                                                                <div className="text-[11px] text-white/40 mt-0.5">{gpuModelName}</div>
+                                                            ) : (
+                                                                <div className="text-[11px] text-white/30 mt-0.5">{t(`onboarding.gpu_${option}Hint`)}</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    {isSelected && (
+                                                        <div
+                                                            className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+                                                            style={{ backgroundColor: accentColor }}
+                                                        >
+                                                            <Check size={12} style={{ color: accentTextColor }} strokeWidth={3} />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Step: Visual Settings */}
                     {currentStep === 'visual' && (
                         <div className="space-y-6">
                             <div>
@@ -659,7 +988,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                             
                             {/* Accent Color - Circular */}
                             <div>
-                                <label className="block text-sm text-white/60 mb-3 flex items-center gap-2">
+                                <label className="text-sm text-white/60 mb-3 flex items-center gap-2">
                                     <Palette size={14} />
                                     {t('onboarding.accentColor')}
                                 </label>
@@ -691,7 +1020,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                             
                             {/* Background Chooser */}
                             <div>
-                                <label className="block text-sm text-white/60 mb-3 flex items-center gap-2">
+                                <label className="text-sm text-white/60 mb-3 flex items-center gap-2">
                                     <Image size={14} />
                                     {t('onboarding.background')}
                                 </label>
@@ -752,7 +1081,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                         </div>
                     )}
                     
-                    {/* Step 4: Instance Location */}
+                    {/* Step: Instance Location */}
                     {currentStep === 'location' && (
                         <div className="space-y-6">
                             <div>
@@ -789,7 +1118,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ onComplete }) 
                         </div>
                     )}
                     
-                    {/* Step 5: About */}
+                    {/* Step: About */}
                     {currentStep === 'about' && (
                         <div className="space-y-6">
                             <div>

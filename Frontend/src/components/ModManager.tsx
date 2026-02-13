@@ -4,7 +4,7 @@ import {
   X, Search, Download, Trash2, FolderOpen,
   Package, Loader2, AlertCircle,
   RefreshCw, Check, ChevronDown, ChevronLeft, ChevronRight, ArrowUpCircle, FileText,
-  Upload, FilePlus2
+  Upload, FilePlus2, ExternalLink
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ipc } from '@/lib/ipc';
@@ -1737,17 +1737,23 @@ export const ModManager: React.FC<ModManagerProps> = ({
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <button
-                      onClick={() => {
-                        const slug = 'slug' in selectedMod ? selectedMod.slug : undefined;
-                        if (slug) {
-                          BrowserOpenURL(`https://www.curseforge.com/hytale/mods/${slug}`);
-                        }
-                      }}
-                      className="text-lg font-bold text-white truncate hover:opacity-80 text-left block w-full"
-                    >
-                      {selectedMod.name}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          const slug = 'slug' in selectedMod ? selectedMod.slug : undefined;
+                          const cfId = 'curseForgeId' in selectedMod ? selectedMod.curseForgeId : 'id' in selectedMod ? (selectedMod as any).id : undefined;
+                          if (slug) {
+                            BrowserOpenURL(`https://www.curseforge.com/hytale/mods/${slug}`);
+                          } else if (cfId) {
+                            BrowserOpenURL(`https://www.curseforge.com/hytale/mods/${cfId}`);
+                          }
+                        }}
+                        className="text-lg font-bold text-white hover:opacity-80 text-left flex items-center gap-1.5 group max-w-full"
+                      >
+                        <span className="truncate min-w-0">{selectedMod.name}</span>
+                        <ExternalLink size={14} className="text-white/30 group-hover:text-white/60 transition-colors flex-shrink-0" />
+                      </button>
+                    </div>
                     <p className="text-white/50 text-sm truncate">
                       {'authors' in selectedMod ? selectedMod.authors?.[0]?.name : 'author' in selectedMod ? selectedMod.author : ''}
                     </p>

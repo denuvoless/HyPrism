@@ -47,4 +47,11 @@ public interface IHytaleAuthService
     /// Reloads session data when switching profiles.
     /// </summary>
     void ReloadSessionForCurrentProfile();
+
+    /// <summary>
+    /// Gets a valid session from any official profile (not just the active one).
+    /// Used for fetching version info when the current profile may not be official.
+    /// </summary>
+    /// <returns>Valid session from any official profile, or null if none available.</returns>
+    Task<HytaleAuthSession?> GetValidOfficialSessionAsync();
 }

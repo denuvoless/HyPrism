@@ -128,12 +128,19 @@ public interface IInstanceService
     List<InstalledInstance> GetInstalledInstances();
 
     /// <summary>
-    /// Sets or clears the custom name for an instance.
+    /// Sets or clears the custom name for an instance by branch and version.
     /// </summary>
     /// <param name="branch">The game branch (e.g., "release", "pre-release").</param>
     /// <param name="version">The version number.</param>
     /// <param name="customName">The custom name to set, or null to clear.</param>
     void SetInstanceCustomName(string branch, int version, string? customName);
+
+    /// <summary>
+    /// Sets or clears the custom name for an instance by ID.
+    /// </summary>
+    /// <param name="instanceId">The instance ID (GUID).</param>
+    /// <param name="customName">The custom name to set, or null to clear.</param>
+    void SetInstanceCustomNameById(string instanceId, string? customName);
 
     /// <summary>
     /// Gets the instance metadata from the meta.json file.
@@ -183,4 +190,33 @@ public interface IInstanceService
     /// <param name="instanceId">The instance ID.</param>
     /// <returns>The instance info, or null if not found.</returns>
     InstanceInfo? FindInstanceById(string instanceId);
+
+    /// <summary>
+    /// Gets the instance path by its unique ID.
+    /// </summary>
+    /// <param name="instanceId">The instance ID.</param>
+    /// <returns>The absolute path to the instance directory, or null if not found.</returns>
+    string? GetInstancePathById(string instanceId);
+
+    /// <summary>
+    /// Finds an instance by branch and version.
+    /// </summary>
+    /// <param name="branch">The game branch.</param>
+    /// <param name="version">The version number.</param>
+    /// <returns>The instance info, or null if not found.</returns>
+    InstanceInfo? FindInstanceByBranchAndVersion(string branch, int version);
+
+    /// <summary>
+    /// Migrates instance folders from version-based naming (e.g., release/5) to ID-based naming (e.g., release/{guid}).
+    /// Should be called during startup after MigrateLegacyData.
+    /// </summary>
+    void MigrateVersionFoldersToIdFolders();
+
+    /// <summary>
+    /// Creates a new instance directory with the given ID and returns the path.
+    /// </summary>
+    /// <param name="branch">The game branch.</param>
+    /// <param name="instanceId">The unique instance ID (will be folder name).</param>
+    /// <returns>The absolute path to the new instance directory.</returns>
+    string CreateInstanceDirectory(string branch, string instanceId);
 }

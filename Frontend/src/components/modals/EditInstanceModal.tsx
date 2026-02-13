@@ -12,8 +12,6 @@ interface EditInstanceModalProps {
   onSave?: () => void;
   // Instance data
   instanceId: string;
-  instanceBranch: string;
-  instanceVersion: number;
   initialName: string;
   initialIconUrl?: string;
 }
@@ -23,8 +21,6 @@ export const EditInstanceModal: React.FC<EditInstanceModalProps> = ({
   onClose,
   onSave,
   instanceId,
-  instanceBranch,
-  instanceVersion,
   initialName,
   initialIconUrl,
 }) => {
@@ -70,8 +66,7 @@ export const EditInstanceModal: React.FC<EditInstanceModalProps> = ({
       // Update name if changed
       if (customName !== initialName) {
         await invoke<boolean>('hyprism:instance:rename', {
-          branch: instanceBranch,
-          version: instanceVersion,
+          instanceId: instanceId,
           customName: customName?.trim() || null,
         });
       }
@@ -81,8 +76,7 @@ export const EditInstanceModal: React.FC<EditInstanceModalProps> = ({
         try {
           const base64 = await fileToBase64(iconFile);
           await invoke('hyprism:instance:setIcon', {
-            branch: instanceBranch,
-            version: instanceVersion,
+            instanceId: instanceId,
             iconBase64: base64
           });
         } catch (err) {

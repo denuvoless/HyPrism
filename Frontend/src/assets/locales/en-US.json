@@ -59,7 +59,31 @@
     "mods": "Mods",
     "profiles": "Profiles",
     "instances": "Instances",
+    "logs": "Logs",
     "settings": "Settings"
+  },
+  "logs": {
+    "title": "Logs",
+    "refresh": "Refresh",
+    "copy": "Copy all",
+    "copySelected": "Copy selected",
+    "export": "Export",
+    "clear": "Clear",
+    "searchPlaceholder": "Search logs...",
+    "loading": "Loading logs...",
+    "empty": "No logs yet",
+    "noResults": "No logs match your filters",
+    "showing": "Showing {{count}} of {{total}} entries",
+    "selected": "{{count}} selected",
+    "auto": "Auto",
+    "filter": {
+      "all": "All",
+      "info": "Info",
+      "success": "Success",
+      "warning": "Warning",
+      "error": "Error",
+      "debug": "Debug"
+    }
   },
   "main": {
     "play": "PLAY",
@@ -518,15 +542,6 @@
     "ok": "OK",
     "dismiss": "Dismiss"
   },
-  "logs": {
-    "title": "Game Logs",
-    "description": "View game output and errors",
-    "failedToLoad": "Failed to load logs: ",
-    "loading": "Loading logs...",
-    "noLogs": "No logs available yet. Run the game to generate logs.",
-    "autoRefresh": "Auto-refreshing every 3 seconds",
-    "download": "Download"
-  },
   "update": {
     "downloading": "Downloading...",
     "extracting": "Extracting...",
@@ -683,6 +698,7 @@
   "onboarding": {
     "language": "Language",
     "profile": "Profile",
+    "hardware": "Hardware",
     "visual": "Visual",
     "location": "Location",
     "about": "About",
@@ -690,6 +706,7 @@
     "getStarted": "Get Started",
     "skip": "Skip",
     "welcome": "Welcome to HyPrism",
+    "welcomeBack": "Welcome back, {{name}}!",
     "letsSetUp": "Let's set up your launcher",
     "chooseLanguage": "Choose your language",
     "selectLanguageHint": "Select your preferred language for the launcher interface",
@@ -699,6 +716,15 @@
     "enterUsername": "Enter your username",
     "generateUsername": "Generate random username",
     "usernameHint": "1-16 characters",
+    "hardwareSettings": "Hardware Settings",
+    "gpuPreference": "GPU Preference",
+    "gpuHint": "Choose which graphics card to use when launching the game",
+    "gpu_auto": "Automatic",
+    "gpu_autoHint": "Let the system decide",
+    "gpu_dedicated": "Dedicated GPU",
+    "gpu_dedicatedHint": "Use dedicated graphics card",
+    "gpu_integrated": "Integrated GPU",
+    "gpu_integratedHint": "Use integrated graphics",
     "customizeAppearance": "Customize appearance",
     "chooseAccentAndBg": "Choose your accent color and background",
     "accentColor": "Accent Color",
@@ -717,7 +743,18 @@
     "maintainerRole": "Maintainer & Developer",
     "authServerCreator": "Auth Server Creator",
     "disclaimer": "HyPrism is an unofficial launcher for Hytale. This project is not affiliated with Hypixel Studios.",
-    "enterLauncher": "Enter Launcher"
+    "enterLauncher": "Enter Launcher",
+    "auth": {
+      "title": "Authentication",
+      "description": "Log in with your Hytale account. If you haven't purchased the game yet, click Skip.",
+      "login": "Log in with Hytale",
+      "skip": "Skip",
+      "authenticating": "Authenticating...",
+      "failed": "Authentication failed. Please try again.",
+      "error": "An error occurred during authentication.",
+      "noHytaleProfile": "Your account doesn't have access to Hytale yet. You can purchase the game on the official website.",
+      "createFailed": "Failed to create profile from Hytale account."
+    }
   },
   "languageSelector": {
     "changeLanguage": "Change Language",

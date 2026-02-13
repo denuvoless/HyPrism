@@ -249,8 +249,8 @@ public class ModService : IModService
             
             onProgress?.Invoke("downloading", cfFile.FileName ?? "mod file");
             
-            // Download the file
-            var modsPath = Path.Combine(instancePath, "Client", "mods");
+            // Download the file to UserData/Mods folder (correct Hytale mod location)
+            var modsPath = Path.Combine(instancePath, "UserData", "Mods");
             Directory.CreateDirectory(modsPath);
             
             var filePath = Path.Combine(modsPath, cfFile.FileName ?? $"mod_{cfFile.Id}.jar");
@@ -267,11 +267,15 @@ public class ModService : IModService
             
             onProgress?.Invoke("installing", cfFile.FileName ?? "mod file");
             
+            // Get the actual numeric mod ID from the file response
+            var numericModId = cfFile.ModId > 0 ? cfFile.ModId.ToString() : slugOrId;
+            
             // Also get mod info for the manifest
             CurseForgeMod? modInfo = null;
             try
             {
-                var modEndpoint = $"/v1/mods/{slugOrId}";
+                // Use numeric ID for mod info request
+                var modEndpoint = $"/v1/mods/{numericModId}";
                 using var modRequest = CreateCurseForgeRequest(HttpMethod.Get, modEndpoint);
                 using var modResponse = await _httpClient.SendAsync(modRequest);
                 if (modResponse.IsSuccessStatusCode)
@@ -286,12 +290,12 @@ public class ModService : IModService
             // Add to manifest
             var mods = GetInstanceInstalledMods(instancePath);
             
-            // Remove existing entry for this mod if any
-            mods.RemoveAll(m => m.CurseForgeId == slugOrId || m.Id == $"cf-{slugOrId}");
+            // Remove existing entry for this mod if any (check both numeric ID and old slug-based ID)
+            mods.RemoveAll(m => m.CurseForgeId == numericModId || m.CurseForgeId == slugOrId || m.Id == $"cf-{numericModId}" || m.Id == $"cf-{slugOrId}");
             
             var installedMod = new InstalledMod
             {
-                Id = $"cf-{slugOrId}",
+                Id = $"cf-{numericModId}",
                 Name = modInfo?.Name ?? cfFile.DisplayName ?? cfFile.FileName ?? "Unknown Mod",
                 Slug = modInfo?.Slug ?? "",
                 Version = ExtractVersion(cfFile.DisplayName, cfFile.FileName),
@@ -301,7 +305,7 @@ public class ModService : IModService
                 Author = modInfo?.Authors?.FirstOrDefault()?.Name ?? "",
                 Description = modInfo?.Summary ?? "",
                 IconUrl = modInfo?.Logo?.ThumbnailUrl ?? "",
-                CurseForgeId = slugOrId,
+                CurseForgeId = numericModId,  // Always save numeric ID
                 FileDate = cfFile.FileDate ?? "",
                 ReleaseType = cfFile.ReleaseType,
                 Screenshots = modInfo?.Screenshots?.Select(s => new CurseForgeScreenshot
@@ -317,7 +321,7 @@ public class ModService : IModService
             await SaveInstanceModsAsync(instancePath, mods);
             
             onProgress?.Invoke("complete", cfFile.FileName ?? "mod file");
-            Logger.Success("ModService", $"Installed mod {installedMod.Name} to {instancePath}");
+            Logger.Success("ModService", $"Installed mod {installedMod.Name} (ID: {numericModId}) to {instancePath}");
             
             return true;
         }
