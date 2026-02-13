@@ -58,7 +58,7 @@ import { DiscordIcon } from './icons/DiscordIcon';
 import { Language } from '../constants/enums';
 import { LANGUAGE_CONFIG } from '../constants/languages';
 import { ACCENT_COLORS } from '../constants/colors';
-import appIcon from '../assets/images/appicon.png';
+import appIcon from '../assets/images/logo.png';
 
 // Import background images for previews
 const backgroundModulesJpg = import.meta.glob('../assets/backgrounds/bg_*.jpg', { query: '?url', import: 'default', eager: true });

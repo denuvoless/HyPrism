@@ -103,7 +103,7 @@ const WrapperLaunch = stub('WrapperLaunch', true);
 const SetLauncherBranch = stub<void>('SetLauncherBranch', undefined as void);
 const CheckRosettaStatus = stub<{ NeedsInstall: boolean; Message: string; Command: string; TutorialUrl?: string } | null>('CheckRosettaStatus', null);
 const _GetDiscordLink = stub('GetDiscordLink', 'https://discord.gg/hyprism');
-import appIcon from './assets/images/appicon.png';
+import appIcon from './assets/images/logo.png';
 
 // Modal loading fallback - minimal spinner
 const ModalFallback = () => (

@@ -41,7 +41,7 @@ import { useAccentColor } from '../../contexts/AccentColorContext';
 import { Language } from '../../constants/enums';
 import { LANGUAGE_CONFIG } from '../../constants/languages';
 import { ACCENT_COLORS } from '../../constants/colors';
-import appIcon from '../../assets/images/appicon.png';
+import appIcon from '../../assets/images/logo.png';
 
 // Background images (matching SettingsModal) - using the correct path
 const backgroundModulesJpg = import.meta.glob('../../assets/backgrounds/bg_*.jpg', { query: '?url', import: 'default', eager: true });
