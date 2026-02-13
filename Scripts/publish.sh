@@ -268,7 +268,8 @@ do_publish() {
 
     cd "$PROJECT_ROOT"
     local exit_code=0
-    dotnet publish -c Release "/p:RuntimeIdentifier=$rid" || exit_code=$?
+    # Use -p: instead of /p: for cross-platform compatibility (MSYS/Git Bash on Windows converts /p: to a path)
+    dotnet publish -c Release -p:RuntimeIdentifier="$rid" || exit_code=$?
 
     if [[ $exit_code -ne 0 ]]; then
         log_error "Build failed for $label ($rid) — exit code $exit_code"
