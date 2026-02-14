@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=HyPrism
 Comment=A modern launcher for Hytale
-Exec=HyPrism
+Exec=hyprism-launcher-wrapper.sh
 Icon=dev.hyprism.HyPrism
 Terminal=false
 Type=Application
