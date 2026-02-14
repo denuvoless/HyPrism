@@ -70,8 +70,11 @@ dotnet build
 # Продакшен-публикация
 dotnet publish -c Release -r linux-x64
 
-# Flatpak (см. packaging/flatpak/bundle/)
-flatpak-builder build packaging/flatpak/bundle/dev.hyprism.HyPrism.json
+# Flatpak
+- Манифест сборки (источник): `Packaging/linux/flatpak/com.hyprismteam.hyprism.json`
+- Метаданные Flatpak (desktop, metainfo, иконка, wrapper) теперь находятся в `Packaging/linux/flatpak/` — редактируйте их там.
+
+flatpak-builder build Packaging/linux/flatpak/com.hyprismteam.hyprism.json
 ```
 
 Релизный CI (`.github/workflows/release.yml`) публикует Linux-артефакты только для `linux-x64`. Релизные сборки Linux `arm64` не поддерживаются.
