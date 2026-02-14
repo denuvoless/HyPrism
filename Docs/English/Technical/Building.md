@@ -86,6 +86,16 @@ dotnet publish -c Release -r osx-arm64
 
 See `Packaging/macos/Info.plist` for macOS-specific metadata.
 
+At startup, HyPrism resolves `icon.png` from multiple packaged locations before calling `Electron.Dock.SetIcon()`. If the icon is missing, startup continues and the dock-icon call is skipped (no main-process crash).
+
+Frontend favicon for packaged `file://` runs is served from `Frontend/public/icon.png` and referenced as `./icon.png` in `Frontend/index.html`.
+
+For macOS publish (`Scripts/publish.sh`), `Build/icon.icns` is regenerated from `Frontend/public/icon.png` before building DMG artifacts.
+
+Electron Builder icon paths are resolved relative to `directories.buildResources` (`Build/`), so icon fields should use `icon.png`, `icon.ico`, and `icon.icns` (not `Build/...`).
+
+`Scripts/publish.sh` now writes an absolute `directories.buildResources` path to `Build/` in its generated Electron Builder config so packaged icons resolve consistently in local and CI builds.
+
 ### Windows
 
 ```bash

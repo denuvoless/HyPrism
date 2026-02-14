@@ -10,16 +10,16 @@
     "target": ["tar.xz"],
     "executableArgs": ["--no-sandbox"],
     "category": "Game",
-    "icon": "Build/icon.png",
+    "icon": "icon.png",
     "maintainer": "HyPrism Team <eivordoudo2021@gmail.com>"
   },
   "win": {
     "target": ["zip"],
-    "icon": "Build/icon.ico"
+    "icon": "icon.ico"
   },
   "mac": {
     "target": ["dmg"],
     "category": "public.app-category.games",
-    "icon": "Build/icon.icns"
+    "icon": "icon.icns"
   }
 }

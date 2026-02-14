@@ -189,6 +189,55 @@ get_rid() {
     esac
 }
 
+# ─── Sync mac icon assets from Frontend/public/icon.png ─────────────────────
+prepare_macos_icon() {
+    local source_png="$PROJECT_ROOT/Frontend/public/icon.png"
+    local fallback_png="$PROJECT_ROOT/Build/icon.png"
+    local target_png="$PROJECT_ROOT/Build/icon.png"
+    local target_icns="$PROJECT_ROOT/Build/icon.icns"
+
+    local icon_source=""
+    if [[ -f "$source_png" ]]; then
+        icon_source="$source_png"
+    elif [[ -f "$fallback_png" ]]; then
+        icon_source="$fallback_png"
+    else
+        log_warn "No source icon found (expected Frontend/public/icon.png or Build/icon.png)"
+        return 0
+    fi
+
+    cp "$icon_source" "$target_png"
+
+    if ! command -v iconutil >/dev/null 2>&1 || ! command -v sips >/dev/null 2>&1; then
+        log_warn "iconutil/sips not available; keeping existing Build/icon.icns"
+        return 0
+    fi
+
+    local iconset_dir="$PROJECT_ROOT/Build/icon.iconset"
+    rm -rf "$iconset_dir"
+    mkdir -p "$iconset_dir"
+
+    # Generate Apple iconset sizes
+    sips -z 16 16     "$target_png" --out "$iconset_dir/icon_16x16.png" >/dev/null 2>&1
+    sips -z 32 32     "$target_png" --out "$iconset_dir/icon_16x16@2x.png" >/dev/null 2>&1
+    sips -z 32 32     "$target_png" --out "$iconset_dir/icon_32x32.png" >/dev/null 2>&1
+    sips -z 64 64     "$target_png" --out "$iconset_dir/icon_32x32@2x.png" >/dev/null 2>&1
+    sips -z 128 128   "$target_png" --out "$iconset_dir/icon_128x128.png" >/dev/null 2>&1
+    sips -z 256 256   "$target_png" --out "$iconset_dir/icon_128x128@2x.png" >/dev/null 2>&1
+    sips -z 256 256   "$target_png" --out "$iconset_dir/icon_256x256.png" >/dev/null 2>&1
+    sips -z 512 512   "$target_png" --out "$iconset_dir/icon_256x256@2x.png" >/dev/null 2>&1
+    sips -z 512 512   "$target_png" --out "$iconset_dir/icon_512x512.png" >/dev/null 2>&1
+    sips -z 1024 1024 "$target_png" --out "$iconset_dir/icon_512x512@2x.png" >/dev/null 2>&1
+
+    if iconutil -c icns "$iconset_dir" -o "$target_icns" >/dev/null 2>&1; then
+        log_ok "Prepared mac icon: Build/icon.icns (from $(basename "$icon_source"))"
+    else
+        log_warn "Failed to regenerate Build/icon.icns; keeping previous file"
+    fi
+
+    rm -rf "$iconset_dir"
+}
+
 # ─── Write temporary electron-builder config ──────────────────────────────────
 write_config() {
     local platform="$1"
@@ -202,7 +251,7 @@ write_config() {
     "target": TARGETS_PLACEHOLDER,
     "executableArgs": ["--no-sandbox"],
     "category": "Game",
-    "icon": "Build/icon.png",
+        "icon": "icon.png",
     "maintainer": "HyPrism Team"
   }
 INNER
@@ -212,7 +261,7 @@ INNER
             platform_block=$(cat <<'INNER'
   "win": {
     "target": TARGETS_PLACEHOLDER,
-    "icon": "Build/icon.ico"
+        "icon": "icon.ico"
   }
 INNER
 )
@@ -222,7 +271,7 @@ INNER
   "mac": {
     "target": TARGETS_PLACEHOLDER,
     "category": "public.app-category.games",
-    "icon": "Build/icon.icns"
+        "icon": "icon.icns"
   }
 INNER
 )
@@ -250,6 +299,10 @@ FLATPAK
   "\$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/refs/heads/master/packages/app-builder-lib/scheme.json",
   "compression": "store",
   "artifactName": "\${productName}-\${os}-\${arch}-\${version}.\${ext}",
+    "directories": {
+        "buildResources": "$PROJECT_ROOT/Build",
+        "output": "dist"
+    },
 $platform_block$flatpak_block
 }
 EOF
@@ -329,6 +382,11 @@ build_platform() {
     fi
 
     log_section "$label"
+
+    if [[ "$platform" == "mac" ]]; then
+        prepare_macos_icon
+    fi
+
     write_config "$platform" "$targets_json"
 
     local arches
