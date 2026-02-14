@@ -269,14 +269,9 @@ public class GameLauncher : IGameLauncher
 
             var patcher = new ClientPatcher(baseDomain);
 
-            // Patch both client binary AND server JAR.
-            // Client binary: replaces hytale.com domain references in the native binary.
-            // Server JAR: replaces sessions.hytale.com in class files so the embedded
-            //   server validates tokens against the custom auth server (e.g. sanasol.ws).
-            // JAVA_TOOL_OPTIONS / DualAuth cannot be used for the server because
-            // HytaleClient sanitises the child-process environment, so the env var
-            // never reaches the server's JVM.
-            var patchResult = patcher.EnsureAllPatched(versionPath, (msg, progress) =>
+            // Patch only client binary.
+            // Server authentication is handled by DualAuth agent at runtime.
+            var patchResult = patcher.EnsureClientPatched(versionPath, (msg, progress) =>
             {
                 Logger.Info("Patcher", progress.HasValue ? $"{msg} ({progress}%)" : msg);
                 if (progress.HasValue)
@@ -286,7 +281,7 @@ public class GameLauncher : IGameLauncher
                 }
             });
 
-            // DualAuth agent is still set up as a fallback / for future use.
+            // DualAuth agent handles server-side auth flow.
             Logger.Info("Game", $"Setting up DualAuth agent for auth domain: {baseDomain}");
             _progressService.ReportDownloadProgress("patching", 65, "launch.detail.dualauth_setup", null, 0, 0);
 

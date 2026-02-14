@@ -360,10 +360,10 @@
       "unknown": "Невідомо"
     },
     "tab": {
-      "content": "Mods",
+      "content": "Встановлені моди",
       "worlds": "Світи",
       "logs": "Журнали",
-      "browse": "Browse Mods"
+      "browse": "Огляд модів"
     },
     "saves": "Збереження",
     "noSaves": "Збережень не знайдено",

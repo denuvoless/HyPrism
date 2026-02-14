@@ -77,7 +77,8 @@ public interface IProfileManagementService
     bool OpenCurrentProfileFolder();
 
     /// <summary>
-    /// Initializes the symbolic link for the current profile's mods folder.
+    /// Initializes compatibility handling for profile mods storage.
+    /// Ensures instance-local <c>UserData/Mods</c> exists and migrates legacy profile links when detected.
     /// </summary>
     void InitializeProfileModsSymlink();
 

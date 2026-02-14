@@ -11,6 +11,9 @@ All services are registered as singletons in `Bootstrapper.cs` and injected via 
 - **Annotations:** Contains `@type` and `@ipc` doc comments used by code generator
 - **Domains:** config, game, news, profile, settings, i18n, window, browser, mods, console
 - **Instance saves handlers:** supports listing saves, opening save folders, and deleting save folders via IPC (`hyprism:instance:saves`, `hyprism:instance:openSaveFolder`, `hyprism:instance:deleteSave`)
+- **Folder picker timeout:** `hyprism:file:browseFolder` uses extended timeout (300s) to allow manual directory selection without frontend timeout.
+- **Mods target resolution:** mod IPC handlers resolve the target from installed instance metadata (including latest) and avoid implicit `branch/latest` placeholder fallback.
+- **Mods exact targeting:** mod IPC accepts optional `instanceId`; when provided, it has priority over branch/version to prevent collisions between multiple instances with the same version.
 
 ### ConfigService
 - **File:** `Services/Core/ConfigService.cs`
@@ -52,7 +55,8 @@ All services are registered as singletons in `Bootstrapper.cs` and injected via 
 - **Purpose:** Manages game lifecycle — download, install, patch, launch
 - **States:** preparing → download → install → patching → launching → running → stopped
 - **Auth launch behavior:** In authenticated mode, launch identity/name is derived from token claims when available to avoid server-side username mismatch shutdowns.
-- **Custom auth mode:** Non-official profiles can launch in online authenticated mode with client + server patching for custom session domains.
+- **Custom auth mode:** Non-official profiles can launch in online authenticated mode with client binary patching + DualAuth runtime agent for custom session domains.
+- **Server JAR policy:** The launcher no longer rewrites `Server/HytaleServer.jar` during custom-auth launches.
 - **Stop control:** Game stop is available through IPC (`hyprism:game:stop`) and can be triggered from Dashboard and Instances actions.
 
 ### ClientPatcher ⚠️
@@ -69,3 +73,4 @@ All services are registered as singletons in `Bootstrapper.cs` and injected via 
 ### ProfileService
 - **Purpose:** Player profile CRUD operations
 - **Features:** Multiple profiles, avatar management, profile switching
+- **Mods storage policy:** profile switching does not redirect `UserData/Mods` to `Profiles/.../Mods`; mods remain instance-local.

@@ -213,8 +213,8 @@ public class ProfileManagementService : IProfileManagementService
             config.Nick = profile.Name;
             config.ActiveProfileIndex = index;
             
-            // Switch mods symlink to the new profile's mods folder
-            SwitchProfileModsSymlink(profile);
+            // Ensure mods stay in the active instance folder (no profile symlink/junction)
+            EnsureInstanceModsDirectory(profile);
             
             _configService.SaveConfig();
             
@@ -645,56 +645,20 @@ public class ProfileManagementService : IProfileManagementService
             if (config.ActiveProfileIndex < 0 || config.Profiles == null || 
                 config.ActiveProfileIndex >= config.Profiles.Count)
             {
-                Logger.Info("Mods", "No active profile, skipping symlink initialization");
+                Logger.Info("Mods", "No active profile, ensuring instance mods directory without profile linking");
+                EnsureInstanceModsDirectory(null);
                 return;
             }
             
             var profile = config.Profiles[config.ActiveProfileIndex];
-            
-            // Check if the game instance folder exists
-            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
-            var branch = UtilityService.NormalizeVersionType(config.VersionType);
-            #pragma warning restore CS0618
-            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
-            var userDataPath = Path.Combine(versionPath, "UserData");
-            var gameModsPath = Path.Combine(userDataPath, "Mods");
-            
-            // Check if symlink already exists and points to correct profile
-            if (Directory.Exists(gameModsPath))
-            {
-                var dirInfo = new DirectoryInfo(gameModsPath);
-                bool isSymlink = dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint);
-                
-                if (isSymlink)
-                {
-                    // Symlink exists, verify it points to correct profile
-                    var profileModsPath = GetProfileModsFolder(profile);
-                    
-                    // Get symlink target
-                    string? targetPath = null;
-                    try
-                    {
-                        targetPath = dirInfo.ResolveLinkTarget(true)?.FullName;
-                    }
-                    catch { /* Ignore errors getting target */ }
-                    
-                    if (targetPath != null && Path.GetFullPath(targetPath) == Path.GetFullPath(profileModsPath))
-                    {
-                        Logger.Info("Mods", $"Mods symlink already points to active profile: {profile.Name}");
-                        return;
-                    }
-                    
-                    // Wrong target, recreate
-                    Logger.Info("Mods", "Mods symlink points to wrong profile, updating...");
-                }
-            }
-            
-            // Create/update symlink
-            SwitchProfileModsSymlink(profile);
+
+            // Backward compatibility: if old builds created profile symlink/junction,
+            // migrate it back into the real instance UserData/Mods directory.
+            EnsureInstanceModsDirectory(profile);
         }
         catch (Exception ex)
         {
-            Logger.Warning("Mods", $"Failed to initialize profile mods symlink: {ex.Message}");
+            Logger.Warning("Mods", $"Failed to initialize instance mods directory: {ex.Message}");
         }
     }
 
@@ -722,124 +686,104 @@ public class ProfileManagementService : IProfileManagementService
     }
     
     /// <summary>
-    /// Switches the mods symlink to point to the new profile's mods folder.
-    /// On Windows, creates a directory junction. On Unix, creates a symlink.
+    /// Ensures the active instance has a real UserData/Mods directory.
+    /// If a legacy profile symlink/junction is detected, migrates files back.
     /// </summary>
-    private void SwitchProfileModsSymlink(Profile profile)
+    private void EnsureInstanceModsDirectory(Profile? profile)
     {
         try
         {
             var config = _configService.Configuration;
-            // Get the game's UserData/Mods path
-            #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
-            var branch = UtilityService.NormalizeVersionType(config.VersionType);
-            #pragma warning restore CS0618
-            var versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+
+            string? versionPath = null;
+            var selected = _instanceService.GetSelectedInstance();
+            if (selected != null)
+            {
+                versionPath = _instanceService.GetInstancePathById(selected.Id)
+                              ?? _instanceService.FindExistingInstancePath(selected.Branch, selected.Version);
+            }
+
+            if (string.IsNullOrWhiteSpace(versionPath))
+            {
+                #pragma warning disable CS0618 // Backward compatibility: VersionType kept for migration
+                var branch = UtilityService.NormalizeVersionType(config.VersionType);
+                #pragma warning restore CS0618
+                versionPath = _instanceService.ResolveInstancePath(branch, 0, true);
+            }
+
             var userDataPath = Path.Combine(versionPath, "UserData");
             var gameModsPath = Path.Combine(userDataPath, "Mods");
-            
-            // Get the profile's mods folder
-            var profileModsPath = GetProfileModsFolder(profile);
-            
-            // If the game mods path exists and is not a symlink, migrate existing mods
-            if (Directory.Exists(gameModsPath))
-            {
-                var dirInfo = new DirectoryInfo(gameModsPath);
-                bool isSymlink = dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint);
-                
-                if (!isSymlink)
-                {
-                    // Real directory - migrate mods to profile folder then delete
-                    Logger.Info("Mods", "Migrating existing mods to profile folder...");
-                    
-                    foreach (var file in Directory.GetFiles(gameModsPath))
-                    {
-                        var destFile = Path.Combine(profileModsPath, Path.GetFileName(file));
-                        if (!File.Exists(destFile))
-                        {
-                            File.Copy(file, destFile);
-                        }
-                    }
-                    
-                    // Also copy manifest.json if it exists
-                    var manifestPath = Path.Combine(gameModsPath, "manifest.json");
-                    var destManifest = Path.Combine(profileModsPath, "manifest.json");
-                    if (File.Exists(manifestPath) && !File.Exists(destManifest))
-                    {
-                        File.Copy(manifestPath, destManifest);
-                    }
-                    
-                    // Delete the original directory
-                    Directory.Delete(gameModsPath, true);
-                    Logger.Success("Mods", $"Migrated mods from game folder to profile: {profile.Name}");
-                }
-                else
-                {
-                    // It's already a symlink - just delete it
-                    Directory.Delete(gameModsPath, false);
-                }
-            }
-            
-            // Create the symlink/junction
+
             Directory.CreateDirectory(userDataPath);
-            
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+
+            if (!Directory.Exists(gameModsPath))
             {
-                // On Windows, create a directory junction (works without admin rights)
-                var processInfo = new ProcessStartInfo
+                Directory.CreateDirectory(gameModsPath);
+                return;
+            }
+
+            // Detect legacy symlink/junction created by older builds
+            var dirInfo = new DirectoryInfo(gameModsPath);
+            bool isSymlink = dirInfo.Attributes.HasFlag(FileAttributes.ReparsePoint);
+            if (!isSymlink)
+            {
+                return;
+            }
+
+            string? targetPath = null;
+            try
+            {
+                targetPath = dirInfo.ResolveLinkTarget(true)?.FullName;
+            }
+            catch
+            {
+                // ResolveLinkTarget may fail for some junctions; continue best-effort
+            }
+
+            var migrationSources = new List<string>();
+            if (!string.IsNullOrWhiteSpace(targetPath) && Directory.Exists(targetPath))
+            {
+                migrationSources.Add(targetPath);
+            }
+
+            if (profile != null)
+            {
+                var profileModsPath = GetProfileModsFolder(profile);
+                if (Directory.Exists(profileModsPath) &&
+                    !migrationSources.Any(p => string.Equals(Path.GetFullPath(p), Path.GetFullPath(profileModsPath), StringComparison.OrdinalIgnoreCase)))
                 {
-                    FileName = "cmd.exe",
-                    Arguments = $"/c mklink /J \"{gameModsPath}\" \"{profileModsPath}\"",
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                
-                using var process = Process.Start(processInfo);
-                process?.WaitForExit(5000);
-                
-                if (process?.ExitCode != 0)
-                {
-                    Logger.Warning("Mods", "Failed to create junction, falling back to directory copy");
-                    // Fallback: just create the directory
-                    Directory.CreateDirectory(gameModsPath);
-                }
-                else
-                {
-                    Logger.Success("Mods", $"Created junction: {gameModsPath} -> {profileModsPath}");
+                    migrationSources.Add(profileModsPath);
                 }
             }
-            else
+
+            Logger.Info("Mods", "Legacy profile mods link detected, migrating back to instance UserData/Mods");
+
+            try
             {
-                // On Unix (macOS/Linux), create a symbolic link
-                var processInfo = new ProcessStartInfo
+                Directory.Delete(gameModsPath, false);
+            }
+            catch
+            {
+                Directory.Delete(gameModsPath, true);
+            }
+
+            Directory.CreateDirectory(gameModsPath);
+
+            foreach (var source in migrationSources)
+            if (Directory.Exists(source))
+            {
+                foreach (var file in Directory.GetFiles(source))
                 {
-                    FileName = "ln",
-                    Arguments = $"-s \"{profileModsPath}\" \"{gameModsPath}\"",
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-                
-                using var process = Process.Start(processInfo);
-                process?.WaitForExit(5000);
-                
-                if (process?.ExitCode != 0)
-                {
-                    Logger.Warning("Mods", "Failed to create symlink, falling back to directory copy");
-                    Directory.CreateDirectory(gameModsPath);
-                }
-                else
-                {
-                    Logger.Success("Mods", $"Created symlink: {gameModsPath} -> {profileModsPath}");
+                    var destFile = Path.Combine(gameModsPath, Path.GetFileName(file));
+                    File.Copy(file, destFile, true);
                 }
             }
+
+            Logger.Success("Mods", $"Using instance-local mods directory: {gameModsPath}");
         }
         catch (Exception ex)
         {
-            Logger.Warning("Mods", $"Failed to switch profile mods symlink: {ex.Message}");
+            Logger.Warning("Mods", $"Failed to ensure instance mods directory: {ex.Message}");
         }
     }
     

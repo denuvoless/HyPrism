@@ -84,3 +84,4 @@ HyPrism/
 - **`Frontend/src/assets/`** contains all frontend static resources (images, locales, backgrounds)
 - **`wwwroot/`** is generated during build — do not edit manually
 - **Instance folders** are stored as `{branch}/{guid}` (e.g., `release/abc123-...`)
+- **Placeholder folders** (for example `latest/` without client binaries) are ignored during instance discovery and are not turned into real instances automatically

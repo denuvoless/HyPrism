@@ -52,6 +52,7 @@ type DownloadJob = {
 };
 
 interface InlineModBrowserProps {
+  currentInstanceId?: string;
   currentBranch: string;
   currentVersion: number;
   installedModIds?: Set<string>;
@@ -63,6 +64,7 @@ interface InlineModBrowserProps {
 // ------- Component -------
 
 export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
+  currentInstanceId,
   currentBranch,
   currentVersion,
   installedModIds,
@@ -299,7 +301,7 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         setDownloadJobs(prev => prev.map(j => j.id === item.id ? { ...j, status: 'running', attempts: attempt } : j));
         try {
-          const ok = await ipc.mods.install({ modId: item.id, fileId: item.fileId, branch: currentBranch, version: currentVersion });
+          const ok = await ipc.mods.install({ modId: item.id, fileId: item.fileId, branch: currentBranch, version: currentVersion, instanceId: currentInstanceId });
           if (!ok) throw new Error(t('modManager.backendRefused'));
           setDownloadJobs(prev => prev.map(j => j.id === item.id ? { ...j, status: 'success' } : j));
           break;
@@ -383,11 +385,11 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
         setImportProgress(t('modManager.installingMod').replace('{{name}}', file.name));
         const electronFile = file as unknown as { path?: string };
         if (electronFile.path) {
-          const ok = await ipc.mods.installLocal({ sourcePath: electronFile.path, branch: currentBranch, version: currentVersion });
+          const ok = await ipc.mods.installLocal({ sourcePath: electronFile.path, branch: currentBranch, version: currentVersion, instanceId: currentInstanceId });
           if (ok) successCount++;
         } else {
           const base64 = await readFileAsBase64(file);
-          const ok = await ipc.mods.installBase64({ fileName: file.name, base64Content: base64, branch: currentBranch, version: currentVersion });
+          const ok = await ipc.mods.installBase64({ fileName: file.name, base64Content: base64, branch: currentBranch, version: currentVersion, instanceId: currentInstanceId });
           if (ok) successCount++;
         }
       }

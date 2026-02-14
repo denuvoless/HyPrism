@@ -79,10 +79,11 @@ Instances/
 - **Switch** — Select which instance to launch
 - **Delete** — Remove an instance (confirmation required)
 - **View details** — See version, patch status, installed mods
-- **Dashboard switcher** — Use the icon button left of Play to open a dropdown with instance names + icons, plus a quick **Create Instance** action
+- **Dashboard instance shortcut** — Click the icon placeholder left of Play to open the Instances page focused on the current selected instance
+- **Switcher layout behavior** — Instance switcher and main action button are centered together as a single control group
 - **Dashboard icon fallback** — If a custom icon cannot be loaded, the switcher now falls back to the version badge instead of showing an empty icon slot
 - **Centered play action** — The main Play button stays centered on the dashboard even when the instance switcher is visible
-- **Per-instance icon fidelity** — Dashboard custom icons are validated against the target instance path to avoid showing another instance's icon
+- **Per-instance icon fidelity** — Dashboard icon mapping is keyed per unique instance identity to prevent one custom icon from being shown on other entries
 - **Full icon tiles** — Custom instance icons fill their switcher tiles for clearer visual identity
 - **Startup icon detection** — Dashboard retries selected-instance icon loading during startup so custom icons appear without manually switching instances
 - **Tighter dashboard spacing** — The Play row is positioned closer to the disclaimer badge
@@ -139,6 +140,7 @@ In both **Installed Mods** and **Browse Mods** tabs, HyPrism supports faster mul
 
 - In the instance list, **Right Click** opens the same instance actions menu as the 3-dots button (Edit, Open Folder, Open Mods Folder, Export, Delete).
 - In the **Worlds** tab, world cards now expose hover actions for **Open Folder** and **Delete**.
+- Instance content tabs now use localized labels for **Installed Mods** and **Browse Mods** across all supported UI languages.
 
 ## CurseForge Mod Page Shortcut
 
@@ -149,6 +151,8 @@ In both **Installed Mods** and **Browse Mods** tabs, HyPrism supports faster mul
 - The launcher logs are available directly inside the **Settings** sidebar as a dedicated **Logs** tab.
 - The Logs tab fills the settings content area and keeps its scroll region aligned to the panel border.
 - Logs are no longer shown as a separate main navigation page.
+- In embedded Settings mode, the Logs header matches other settings sections (text header, no icon).
+- The logs output panel uses a slightly lighter background for improved readability.
 
 ## macOS Menu Bar
 
@@ -157,14 +161,18 @@ In both **Installed Mods** and **Browse Mods** tabs, HyPrism supports faster mul
 ## Default Mods Folder
 
 - The default managed mods directory is under instance user data:
-	- `HyPrism/Instances/<branch>/v<version>/UserData/Mods`
+	- `HyPrism/Instances/<branch>/<instance-guid>/UserData/Mods`
 - This replaces legacy `Client/mods` for default mod storage and operations.
+- Profile switching does not re-route this folder to `Profiles/.../Mods`; it stays inside the selected instance.
 
 ## Custom Auth Launch Behavior
 
 For non-official profiles using custom auth domains, HyPrism launches in **online authenticated mode**.
 
-- Client and server binaries are patched for custom auth domains (for example `sanasol.ws`).
+- Only the client binary is patched for custom auth domains.
+- Server auth handling uses the DualAuth runtime agent (no `Server/HytaleServer.jar` rewrite).
+- The auth domain is used as entered (for example `auth.example.com`); HyPrism no longer forces `sessions.` prefix.
+- For compatibility, if direct host fails, HyPrism also tries `sessions.<your-domain>` automatically.
 - Launch identity prefers auth-server profile name fields to reduce owner-name/token mismatch issues.
 - Dashboard and Instances views both expose game stop controls while the game is running.
 

@@ -16,38 +16,51 @@ namespace HyPrism.Services.Game.Auth;
 public class AuthService
 {
     private readonly HttpClient _httpClient;
-    private readonly string _authServerUrl;
+    private readonly string[] _authServerUrls;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AuthService"/> class.
-    /// Normalizes the auth domain to include the sessions subdomain if needed.
+    /// Normalizes auth domain and builds fallback candidates.
     /// </summary>
     /// <param name="httpClient">The HTTP client for making auth requests.</param>
-    /// <param name="authDomain">The auth server domain (e.g., "sanasol.ws" or "sessions.sanasol.ws").</param>
+    /// <param name="authDomain">The auth server domain (e.g., "auth.example.com" or "sessions.sanasol.ws").</param>
     public AuthService(HttpClient httpClient, string authDomain)
     {
         _httpClient = httpClient;
+        _authServerUrls = BuildAuthServerCandidates(authDomain);
+        Logger.Info("Auth", $"Auth server candidates: {string.Join(", ", _authServerUrls)}");
+    }
 
-        // Normalize auth domain to sessions subdomain
-        if (!authDomain.StartsWith("http://") && !authDomain.StartsWith("https://"))
+    private static string[] BuildAuthServerCandidates(string authDomain)
+    {
+        var value = (authDomain ?? string.Empty).Trim().TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(value))
         {
-            // If it's just a domain like "sessions.sanasol.ws" or "sanasol.ws"
-            if (authDomain.StartsWith("sessions."))
-            {
-                _authServerUrl = $"https://{authDomain}";
-            }
-            else
-            {
-                // Add sessions subdomain if not present
-                _authServerUrl = $"https://sessions.{authDomain}";
-            }
-        }
-        else
-        {
-            _authServerUrl = authDomain;
+            return ["https://sessions.sanasol.ws"];
         }
 
-        Logger.Info("Auth", $"Auth server URL: {_authServerUrl}");
+        var candidates = new List<string>();
+        var hasScheme = value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+
+        var primary = hasScheme ? value : $"https://{value}";
+        candidates.Add(primary.TrimEnd('/'));
+
+        // Compatibility fallback: if user entered non-sessions host, also try sessions.<host>
+        if (Uri.TryCreate(primary, UriKind.Absolute, out var primaryUri)
+            && !primaryUri.Host.StartsWith("sessions.", StringComparison.OrdinalIgnoreCase))
+        {
+            var fallbackBuilder = new UriBuilder(primaryUri)
+            {
+                Host = $"sessions.{primaryUri.Host}"
+            };
+            candidates.Add(fallbackBuilder.Uri.ToString().TrimEnd('/'));
+        }
+
+        return candidates
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     /// <summary>
@@ -74,92 +87,81 @@ public class AuthService
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             });
 
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            string[] endpoints = ["/game-session/child", "/game-session"];
+            string? lastError = null;
 
-            // POST to /game-session/child endpoint
-            var response = await _httpClient.PostAsync($"{_authServerUrl}/game-session/child", content);
-
-            if (!response.IsSuccessStatusCode)
+            foreach (var authServerUrl in _authServerUrls)
             {
-                var errorBody = await response.Content.ReadAsStringAsync();
-                Logger.Warning("Auth", $"Auth server returned {response.StatusCode}: {errorBody}");
+                Logger.Info("Auth", $"Trying auth server: {authServerUrl}");
 
-                // Try alternate endpoint
-                Logger.Info("Auth", "Trying /game-session endpoint...");
-                response = await _httpClient.PostAsync($"{_authServerUrl}/game-session", content);
-
-                if (!response.IsSuccessStatusCode)
+                foreach (var endpoint in endpoints)
                 {
-                    errorBody = await response.Content.ReadAsStringAsync();
-                    Logger.Error("Auth", $"Auth failed: {response.StatusCode} - {errorBody}");
-                    return new AuthTokenResult
+                    var requestUrl = $"{authServerUrl}{endpoint}";
+                    try
                     {
-                        Success = false,
-                        Error = $"Auth server returned {response.StatusCode}"
-                    };
+                        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                        var response = await _httpClient.PostAsync(requestUrl, content);
+                        var responseBody = await response.Content.ReadAsStringAsync();
+
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            lastError = $"Auth server returned {response.StatusCode}";
+                            Logger.Warning("Auth", $"{requestUrl} -> {response.StatusCode}: {responseBody}");
+                            continue;
+                        }
+
+                        Logger.Info("Auth", $"Auth response received from {requestUrl} ({responseBody.Length} chars)");
+
+                        var result = JsonSerializer.Deserialize<GameSessionResponse>(responseBody, new JsonSerializerOptions
+                        {
+                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                            PropertyNameCaseInsensitive = true
+                        });
+
+                        if (result == null)
+                        {
+                            lastError = "Failed to parse auth response";
+                            Logger.Warning("Auth", $"{requestUrl} -> failed to parse response");
+                            continue;
+                        }
+
+                        string? token = result.IdentityToken ?? result.Token ?? result.AccessToken ?? result.JwtToken ?? result.SessionToken ?? result.SessionTokenAlt;
+                        if (string.IsNullOrEmpty(token) && responseBody.StartsWith("eyJ"))
+                        {
+                            token = responseBody.Trim().Trim('"');
+                        }
+
+                        if (string.IsNullOrEmpty(token))
+                        {
+                            lastError = "No token in response";
+                            Logger.Warning("Auth", $"{requestUrl} -> no token in response");
+                            continue;
+                        }
+
+                        Logger.Success("Auth", "Game session token obtained successfully");
+                        return new AuthTokenResult
+                        {
+                            Success = true,
+                            Token = token,
+                            SessionToken = result.SessionToken ?? result.SessionTokenAlt ?? token,
+                            UUID = result.UUID ?? uuid,
+                            Name = result.Name ?? result.Username ?? result.Profile?.Username ?? result.Profile?.Name ?? playerName
+                        };
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        lastError = $"Network error: {ex.Message}";
+                        Logger.Warning("Auth", $"Network error for {requestUrl}: {ex.Message}");
+                        break;
+                    }
                 }
             }
 
-            var responseBody = await response.Content.ReadAsStringAsync();
-            Logger.Info("Auth", $"Auth response received ({responseBody.Length} chars)");
-
-            // Parse the response - it should contain a JWT token
-            var result = JsonSerializer.Deserialize<GameSessionResponse>(responseBody, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                PropertyNameCaseInsensitive = true
-            });
-
-            if (result == null)
-            {
-                return new AuthTokenResult
-                {
-                    Success = false,
-                    Error = "Failed to parse auth response"
-                };
-            }
-
-            // The token could be in various fields depending on API version
-            // /game-session/child returns 'identityToken' as primary field
-            string? token = result.IdentityToken ?? result.Token ?? result.AccessToken ?? result.JwtToken ?? result.SessionToken ?? result.SessionTokenAlt;
-
-            if (string.IsNullOrEmpty(token))
-            {
-                // Maybe the entire response is the token
-                if (responseBody.StartsWith("eyJ"))
-                {
-                    token = responseBody.Trim().Trim('"');
-                }
-            }
-
-            if (string.IsNullOrEmpty(token))
-            {
-                Logger.Warning("Auth", $"No token found in response: {responseBody}");
-                return new AuthTokenResult
-                {
-                    Success = false,
-                    Error = "No token in response"
-                };
-            }
-
-            Logger.Success("Auth", "Game session token obtained successfully");
-
-            return new AuthTokenResult
-            {
-                Success = true,
-                Token = token,
-                SessionToken = result.SessionToken ?? result.SessionTokenAlt ?? token, // Use session token if available, otherwise reuse identity token
-                UUID = result.UUID ?? uuid,
-                Name = result.Name ?? result.Username ?? result.Profile?.Username ?? result.Profile?.Name ?? playerName
-            };
-        }
-        catch (HttpRequestException ex)
-        {
-            Logger.Error("Auth", $"Network error: {ex.Message}");
+            Logger.Error("Auth", $"Auth failed on all endpoints: {lastError ?? "unknown error"}");
             return new AuthTokenResult
             {
                 Success = false,
-                Error = $"Network error: {ex.Message}"
+                Error = lastError ?? "Auth failed on all endpoints"
             };
         }
         catch (Exception ex)
@@ -178,18 +180,24 @@ public class AuthService
     /// </summary>
     public async Task<bool> ValidateTokenAsync(string token)
     {
-        try
+        foreach (var authServerUrl in _authServerUrls)
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_authServerUrl}/validate");
-            request.Headers.Add("Authorization", $"Bearer {token}");
+            try
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, $"{authServerUrl}/validate");
+                request.Headers.Add("Authorization", $"Bearer {token}");
 
-            var response = await _httpClient.SendAsync(request);
-            return response.IsSuccessStatusCode;
+                var response = await _httpClient.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                    return true;
+            }
+            catch
+            {
+                // Try next candidate
+            }
         }
-        catch
-        {
-            return false;
-        }
+
+        return false;
     }
 }
 

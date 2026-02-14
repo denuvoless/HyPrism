@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileText, RefreshCw, Copy, Check, Download, Search } from 'lucide-react';
+import { RefreshCw, Copy, Check, Download, Search } from 'lucide-react';
 import { useAccentColor } from '../contexts/AccentColorContext';
 import { invoke } from '@/lib/ipc';
 
@@ -213,15 +213,21 @@ export const LogsPage: React.FC<LogsPageProps> = ({ embedded = false }) => {
     border: '1px solid rgba(255,255,255,0.08)',
   };
 
+  const logsBlockStyle: React.CSSProperties = {
+    background: 'rgba(44, 44, 46, 0.92)',
+    border: '1px solid rgba(255,255,255,0.08)',
+  };
+
   return (
-    <div className={`h-full flex flex-col ${embedded ? 'px-6 pt-5 pb-5' : 'px-8 pt-6 pb-28'}`}>
+    <div className={`h-full flex flex-col ${embedded ? 'p-0' : 'px-8 pt-6 pb-28'}`}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+      <div className={`${embedded ? 'flex items-center justify-between p-4 border-b border-white/[0.06]' : 'flex items-center justify-between mb-4'} flex-shrink-0`}>
         <div className="flex items-center gap-3">
-          <FileText size={22} className="text-white/80" />
-          <h1 className="text-xl font-semibold text-white/90">
-            {t('logs.title')}
-          </h1>
+          {embedded ? (
+            <h3 className="text-white font-medium">{t('logs.title')}</h3>
+          ) : (
+            <h1 className="text-xl font-semibold text-white/90">{t('logs.title')}</h1>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -272,7 +278,7 @@ export const LogsPage: React.FC<LogsPageProps> = ({ embedded = false }) => {
       </div>
 
       {/* Filters and Search */}
-      <div className="flex items-center gap-4 mb-4 flex-shrink-0">
+      <div className={`flex items-center gap-4 flex-shrink-0 ${embedded ? 'px-6 pt-4 mb-4' : 'mb-4'}`}>
         {/* Search */}
         <div className="relative flex-1 max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
@@ -305,7 +311,7 @@ export const LogsPage: React.FC<LogsPageProps> = ({ embedded = false }) => {
       </div>
 
       {/* Log count and selection info */}
-      <div className="text-xs text-white/40 mb-2 flex items-center gap-2">
+      <div className={`text-xs text-white/40 mb-2 flex items-center gap-2 ${embedded ? 'px-6' : ''}`}>
         <span>
           {t('logs.showing', {
             count: filteredLogs.length,
@@ -320,7 +326,7 @@ export const LogsPage: React.FC<LogsPageProps> = ({ embedded = false }) => {
       </div>
 
       {/* Logs container */}
-      <div className="flex-1 rounded-xl overflow-hidden" style={panelStyle}>
+      <div className={`flex-1 rounded-xl overflow-hidden ${embedded ? 'mx-6 mb-5' : ''}`} style={logsBlockStyle}>
       <div
         ref={scrollRef}
         onScroll={handleScroll}

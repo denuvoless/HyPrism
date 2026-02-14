@@ -736,19 +736,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDashboardInstanceSelect = async (inst: InstanceInfo) => {
-    if (selectedInstanceRef.current?.id === inst.id) {
-      return;
-    }
-    try {
-      await ipc.instance.select({ id: inst.id });
-      setSelectedInstance(inst);
-      selectedInstanceRef.current = inst;
-    } catch (e) {
-      console.error('[App] Failed to select instance from dashboard:', e);
-    }
-  };
-
   const handlePlay = async () => {
     // Prevent launching if game is already running or download is in progress
     if (isGameRunning) {
@@ -1045,7 +1032,6 @@ const App: React.FC = () => {
               onUpdate={handleGameUpdate}
               onCancelDownload={handleCancelDownload}
               onNavigateToInstances={() => setCurrentPage('instances')}
-              onInstanceSelect={handleDashboardInstanceSelect}
               officialServerBlocked={officialServerBlocked}
               isOfficialProfile={isOfficialProfile}
               isOfficialServerMode={isOfficialServerMode}

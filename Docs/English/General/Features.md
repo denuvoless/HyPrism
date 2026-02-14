@@ -2,7 +2,7 @@
 
 ## Instance Management
 
-- **Version-based instance folders** — Installations are organized by branch/version (for example `Instances/release/v8/`) while retaining internal IDs in metadata
+- **GUID-based instance folders** — Installations are stored under branch + instance ID (for example `Instances/release/<instance-guid>/`)
 - **Multi-instance support** — Run different game versions, mod configurations, or test setups simultaneously
 - **Instance metadata** — Track installation state, version, patch status, and mod list per instance
 - **Instance deletion** — Clean removal of game files with confirmation
