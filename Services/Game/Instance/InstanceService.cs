@@ -1188,6 +1188,14 @@ public class InstanceService : IInstanceService
                     // Generate ID if not found and persist it
                     if (string.IsNullOrEmpty(instanceId))
                     {
+                        // Do not materialize placeholder folders (e.g. accidental latest/UserData only)
+                        // as real instances unless game files are actually installed.
+                        if (!IsClientPresent(folder))
+                        {
+                            Logger.Debug("InstanceService", $"Skipping non-installed placeholder folder: {folder}");
+                            continue;
+                        }
+
                         instanceId = Guid.NewGuid().ToString();
                         // Persist the generated ID to meta.json
                         try
@@ -1598,8 +1606,8 @@ public class InstanceService : IInstanceService
         }
         else
         {
-            // Create folder with version-based name (e.g. v8)
-            instancePath = CreateInstanceDirectory(normalizedBranch, instanceId, version);
+            // Create folder with ID as name (new structure)
+            instancePath = CreateInstanceDirectory(normalizedBranch, instanceId);
         }
 
         // Check if meta already exists at path (edge case)
@@ -1707,7 +1715,7 @@ public class InstanceService : IInstanceService
     {
         var config = GetConfig();
         config.Instances ??= new List<InstanceInfo>();
-        var existingIds = new HashSet<string>();
+        var discoveredById = new Dictionary<string, InstanceInfo>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var root in GetInstanceRootsIncludingLegacy())
         {
@@ -1721,35 +1729,34 @@ public class InstanceService : IInstanceService
                     var meta = GetInstanceMeta(instanceDir);
                     if (meta == null) continue;
 
-                    existingIds.Add(meta.Id);
+                    if (string.IsNullOrWhiteSpace(meta.Id))
+                    {
+                        meta.Id = Guid.NewGuid().ToString();
+                        SaveInstanceMeta(instanceDir, meta);
+                        Logger.Warning("InstanceService", $"Recovered empty instance ID at {instanceDir}: generated {meta.Id}");
+                    }
 
-                    // Update or add to config
-                    var existingInfo = config.Instances.FirstOrDefault(i => i.Id == meta.Id);
-                    
-                    if (existingInfo != null)
+                    if (discoveredById.ContainsKey(meta.Id))
                     {
-                        // Update existing entry
-                        existingInfo.Name = meta.Name;
-                        existingInfo.Branch = meta.Branch;
-                        existingInfo.Version = meta.Version;
+                        Logger.Warning("InstanceService", $"Duplicate instance ID detected during sync: {meta.Id}. Keeping first entry and skipping {instanceDir}");
+                        continue;
                     }
-                    else
+
+                    discoveredById[meta.Id] = new InstanceInfo
                     {
-                        // Add new entry
-                        config.Instances.Add(new InstanceInfo
-                        {
-                            Id = meta.Id,
-                            Name = meta.Name,
-                            Branch = meta.Branch,
-                            Version = meta.Version
-                        });
-                    }
+                        Id = meta.Id,
+                        Name = meta.Name,
+                        Branch = meta.Branch,
+                        Version = meta.Version
+                    };
                 }
             }
         }
 
-        // Remove entries for instances that no longer exist
-        config.Instances.RemoveAll(i => !existingIds.Contains(i.Id));
+        config.Instances = discoveredById.Values
+            .OrderBy(i => i.Branch)
+            .ThenByDescending(i => i.Version)
+            .ToList();
         
         SaveConfig(config);
         Logger.Debug("InstanceService", $"Synced {config.Instances.Count} instances with config");
@@ -1869,20 +1876,10 @@ public class InstanceService : IInstanceService
     }
 
     /// <inheritdoc/>
-    public string CreateInstanceDirectory(string branch, string instanceId, int version = 0)
+    public string CreateInstanceDirectory(string branch, string instanceId)
     {
         var normalizedBranch = NormalizeVersionType(branch);
-        // Use version-based folder name: v{version}
-        var folderName = version > 0 ? $"v{version}" : instanceId;
-        var basePath = Path.Combine(GetInstanceRoot(), normalizedBranch, folderName);
-        var path = basePath;
-        // Handle collisions by appending a suffix
-        int suffix = 2;
-        while (Directory.Exists(path))
-        {
-            path = $"{basePath}-{suffix}";
-            suffix++;
-        }
+        var path = Path.Combine(GetInstanceRoot(), normalizedBranch, instanceId);
         Directory.CreateDirectory(path);
         return path;
     }
@@ -1892,7 +1889,7 @@ public class InstanceService : IInstanceService
     {
         try
         {
-            Logger.Info("Migrate", "Starting GUID-to-version folder migration...");
+            Logger.Info("Migrate", "Starting version-to-ID folder migration...");
             var root = GetInstanceRoot();
             if (!Directory.Exists(root))
             {
@@ -1905,6 +1902,7 @@ public class InstanceService : IInstanceService
             foreach (var branchDir in Directory.GetDirectories(root))
             {
                 var branchName = Path.GetFileName(branchDir);
+                // Skip non-branch folders
                 if (!branchName.Equals("release", StringComparison.OrdinalIgnoreCase) &&
                     !branchName.Equals("pre-release", StringComparison.OrdinalIgnoreCase))
                 {
@@ -1914,44 +1912,110 @@ public class InstanceService : IInstanceService
                 foreach (var instanceDir in Directory.GetDirectories(branchDir))
                 {
                     var folderName = Path.GetFileName(instanceDir);
-                    
-                    // Skip if NOT a GUID folder (already has a friendly name like v8, latest, etc.)
-                    if (!Guid.TryParse(folderName, out _))
+
+                    // Skip if folder is already named as GUID (new structure)
+                    if (Guid.TryParse(folderName, out _))
                     {
                         continue;
                     }
 
-                    // This is a GUID-named folder — rename to version-based or "latest"
-                    var meta = GetInstanceMeta(instanceDir);
-                    string newFolderName;
+                    // Handle "latest" folder - also needs to be renamed to ID
+                    if (folderName.Equals("latest", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var latestMeta = GetInstanceMeta(instanceDir);
+                        string latestId;
 
-                    if (meta != null && meta.IsLatest)
-                    {
-                        newFolderName = "latest";
+                        if (latestMeta != null && !string.IsNullOrEmpty(latestMeta.Id))
+                        {
+                            latestId = latestMeta.Id;
+                            // Ensure IsLatest is set correctly
+                            if (!latestMeta.IsLatest)
+                            {
+                                latestMeta.IsLatest = true;
+                                latestMeta.Version = 0;
+                                if (string.IsNullOrEmpty(latestMeta.Name))
+                                    latestMeta.Name = $"{branchName} (Latest)";
+                                SaveInstanceMeta(instanceDir, latestMeta);
+                            }
+                        }
+                        else
+                        {
+                            // Create meta for latest
+                            latestId = Guid.NewGuid().ToString();
+                            var newLatestMeta = new InstanceMeta
+                            {
+                                Id = latestId,
+                                Name = $"{branchName} (Latest)",
+                                Branch = branchName,
+                                Version = 0,
+                                CreatedAt = DateTime.UtcNow,
+                                IsLatest = true
+                            };
+                            SaveInstanceMeta(instanceDir, newLatestMeta);
+                            Logger.Info("Migrate", $"Created meta.json for latest instance in {branchName}");
+                        }
+
+                        // Rename folder from "latest" to ID
+                        var newLatestPath = Path.Combine(branchDir, latestId);
+                        if (!Directory.Exists(newLatestPath))
+                        {
+                            try
+                            {
+                                Directory.Move(instanceDir, newLatestPath);
+                                Logger.Success("Migrate", $"Migrated {branchName}/latest -> {branchName}/{latestId}");
+                                migratedCount++;
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Error("Migrate", $"Failed to rename latest folder: {ex.Message}");
+                            }
+                        }
+                        continue;
                     }
-                    else if (meta != null && meta.Version > 0)
+
+                    // Check if this is a version-named folder (numeric)
+                    if (!int.TryParse(folderName, out var version))
                     {
-                        newFolderName = $"v{meta.Version}";
+                        // Not a version number, skip
+                        continue;
+                    }
+
+                    // This is a version-named folder, need to migrate
+                    var meta = GetInstanceMeta(instanceDir);
+                    string instanceId;
+
+                    if (meta != null && !string.IsNullOrEmpty(meta.Id))
+                    {
+                        instanceId = meta.Id;
                     }
                     else
                     {
-                        // Can't determine version, leave as-is
-                        continue;
+                        // Create new meta with ID
+                        instanceId = Guid.NewGuid().ToString();
+                        meta = new InstanceMeta
+                        {
+                            Id = instanceId,
+                            Name = $"{branchName} v{version}",
+                            Branch = branchName,
+                            Version = version,
+                            CreatedAt = DateTime.UtcNow,
+                            IsLatest = false
+                        };
+                        SaveInstanceMeta(instanceDir, meta);
                     }
 
-                    var newPath = Path.Combine(branchDir, newFolderName);
-                    // Handle collisions
-                    int suffix = 2;
-                    while (Directory.Exists(newPath))
+                    // Rename folder from version to ID
+                    var newPath = Path.Combine(branchDir, instanceId);
+                    if (Directory.Exists(newPath))
                     {
-                        newPath = Path.Combine(branchDir, $"{newFolderName}-{suffix}");
-                        suffix++;
+                        Logger.Warning("Migrate", $"Target folder already exists: {newPath}, skipping {instanceDir}");
+                        continue;
                     }
 
                     try
                     {
                         Directory.Move(instanceDir, newPath);
-                        Logger.Success("Migrate", $"Migrated {branchName}/{folderName} -> {branchName}/{Path.GetFileName(newPath)}");
+                        Logger.Success("Migrate", $"Migrated {branchName}/{version} -> {branchName}/{instanceId}");
                         migratedCount++;
                     }
                     catch (Exception ex)
@@ -1963,17 +2027,18 @@ public class InstanceService : IInstanceService
 
             if (migratedCount > 0)
             {
-                Logger.Success("Migrate", $"Migrated {migratedCount} GUID folder(s) to version-based naming");
+                Logger.Success("Migrate", $"Migrated {migratedCount} instance folder(s) to ID-based naming");
+                // Sync config with new folder structure
                 SyncInstancesWithConfig();
             }
             else
             {
-                Logger.Info("Migrate", "No GUID-named folders found to migrate");
+                Logger.Info("Migrate", "No version-named folders found to migrate");
             }
         }
         catch (Exception ex)
         {
-            Logger.Error("Migrate", $"Failed to migrate GUID folders to version names: {ex.Message}");
+            Logger.Error("Migrate", $"Failed to migrate version folders to ID folders: {ex.Message}");
         }
     }
 

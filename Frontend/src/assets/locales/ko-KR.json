@@ -360,10 +360,10 @@
       "unknown": "알 수 없음"
     },
     "tab": {
-      "content": "Mods",
+      "content": "설치된 모드",
       "worlds": "월드",
       "logs": "로그",
-      "browse": "Browse Mods"
+      "browse": "모드 둘러보기"
     },
     "saves": "세이브",
     "noSaves": "세이브를 찾을 수 없습니다",

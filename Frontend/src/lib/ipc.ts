@@ -402,7 +402,7 @@ const _logs = {
 };
 
 const _file = {
-  browseFolder: (data?: unknown) => invoke<string | null>('hyprism:file:browseFolder', data),
+  browseFolder: (data?: unknown) => invoke<string | null>('hyprism:file:browseFolder', data, 300000),
   browseModFiles: (data?: unknown) => invoke<string[]>('hyprism:file:browseModFiles', data),
 };
 

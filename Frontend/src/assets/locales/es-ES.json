@@ -360,10 +360,10 @@
       "unknown": "Desconocido"
     },
     "tab": {
-      "content": "Mods",
+      "content": "Mods instalados",
       "worlds": "Mundos",
       "logs": "Registros",
-      "browse": "Browse Mods"
+      "browse": "Explorar mods"
     },
     "saves": "Partidas",
     "noSaves": "No se encontraron partidas",

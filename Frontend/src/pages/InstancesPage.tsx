@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { 
   HardDrive, FolderOpen, Trash2, Upload, RefreshCw, 
   Clock, Box, Loader2, AlertTriangle, Check, Plus,
-  Search, Package, MoreVertical, ToggleLeft, ToggleRight,
-  ChevronRight, FileText, Image, Map, Globe, Play, X, Edit2,
+  Search, Package, MoreVertical,
+  ChevronRight, Image, Map, Globe, Play, X, Edit2,
   Download, AlertCircle
 } from 'lucide-react';
 import { useAccentColor } from '../contexts/AccentColorContext';
@@ -54,18 +54,18 @@ const GetCustomInstanceDir = async (): Promise<string> => {
 };
 
 // Mod-related IPC calls
-const GetInstanceInstalledMods = async (branch: string, version: number): Promise<ModInfo[]> => {
+const GetInstanceInstalledMods = async (branch: string, version: number, instanceId?: string): Promise<ModInfo[]> => {
   try {
-    return await invoke<ModInfo[]>('hyprism:mods:installed', { branch, version });
+    return await invoke<ModInfo[]>('hyprism:mods:installed', { branch, version, instanceId });
   } catch (e) {
     console.warn('[IPC] GetInstanceInstalledMods:', e);
     return [];
   }
 };
 
-const UninstallInstanceMod = async (modId: string, branch: string, version: number): Promise<boolean> => {
+const UninstallInstanceMod = async (modId: string, branch: string, version: number, instanceId?: string): Promise<boolean> => {
   try {
-    return await invoke<boolean>('hyprism:mods:uninstall', { modId, branch, version });
+    return await invoke<boolean>('hyprism:mods:uninstall', { modId, branch, version, instanceId });
   } catch (e) {
     console.warn('[IPC] UninstallInstanceMod:', e);
     return false;
@@ -76,9 +76,9 @@ const OpenInstanceModsFolder = (instanceId: string): void => {
   send('hyprism:instance:openModsFolder', { instanceId });
 };
 
-const CheckInstanceModUpdates = async (branch: string, version: number): Promise<ModInfo[]> => {
+const CheckInstanceModUpdates = async (branch: string, version: number, instanceId?: string): Promise<ModInfo[]> => {
   try {
-    return await invoke<ModInfo[]>('hyprism:mods:checkUpdates', { branch, version });
+    return await invoke<ModInfo[]>('hyprism:mods:checkUpdates', { branch, version, instanceId });
   } catch (e) {
     console.warn('[IPC] CheckInstanceModUpdates:', e);
     return [];
@@ -395,7 +395,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
     
     setIsLoadingMods(true);
     try {
-      const mods = await GetInstanceInstalledMods(currentInstance.branch, currentInstance.version);
+      const mods = await GetInstanceInstalledMods(currentInstance.branch, currentInstance.version, currentInstance.id);
       const normalized = normalizeInstalledMods(mods || []);
       setInstalledMods(normalized);
       setIsLoadingMods(false);
@@ -403,7 +403,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
       // Check updates in background to keep the list snappy
       void (async () => {
         try {
-          const updates = await CheckInstanceModUpdates(currentInstance.branch, currentInstance.version);
+          const updates = await CheckInstanceModUpdates(currentInstance.branch, currentInstance.version, currentInstance.id);
           const normalizedUpdates = normalizeInstalledMods(updates || []);
           // Apply only if still on same instance
           if (selectedInstanceRef.current?.id === currentInstance.id) {
@@ -543,7 +543,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
   }, []);
 
   const getTabLabel = useCallback((tab: InstanceTab) => {
-    if (tab === 'content') return 'Installed Mods';
+    if (tab === 'content') return t('instances.tab.content');
     return t(`instances.tab.${tab}`);
   }, [t]);
 
@@ -665,7 +665,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
     if (!selectedInstance) return;
     setIsDeletingMod(true);
     try {
-      await UninstallInstanceMod(mod.id, selectedInstance.branch, selectedInstance.version);
+      await UninstallInstanceMod(mod.id, selectedInstance.branch, selectedInstance.version, selectedInstance.id);
       setModToDelete(null);
       await loadInstalledMods();
       setMessage({ type: 'success', text: t('modManager.modDeleted') });
@@ -681,7 +681,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
     setIsDeletingMod(true);
     try {
       for (const modId of selectedMods) {
-        await UninstallInstanceMod(modId, selectedInstance.branch, selectedInstance.version);
+        await UninstallInstanceMod(modId, selectedInstance.branch, selectedInstance.version, selectedInstance.id);
       }
       setSelectedMods(new Set());
       await loadInstalledMods();
@@ -1476,12 +1476,14 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                               {/* Toggle */}
                               <div className="w-20 flex items-center justify-center">
                                 <button
-                                  className="text-white/60 hover:text-white transition-colors"
+                                  className="w-11 h-6 rounded-full p-0.5 transition-colors"
+                                  style={{ backgroundColor: mod.enabled ? accentColor : 'rgba(255,255,255,0.18)' }}
                                   onClick={async () => {
                                     if (!selectedInstance) return;
                                     try {
                                       const ok = await ipc.mods.toggle({
                                         modId: mod.id,
+                                        instanceId: selectedInstance.id,
                                         branch: selectedInstance.branch,
                                         version: selectedInstance.version,
                                       });
@@ -1495,11 +1497,12 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                                     }
                                   }}
                                 >
-                                  {mod.enabled ? (
-                                    <ToggleRight size={24} style={{ color: accentColor }} />
-                                  ) : (
-                                    <ToggleLeft size={24} className="text-white/30" />
-                                  )}
+                                  <motion.div
+                                    className="w-5 h-5 rounded-full shadow-md"
+                                    style={{ backgroundColor: mod.enabled ? accentTextColor : 'white' }}
+                                    animate={{ x: mod.enabled ? 20 : 0 }}
+                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                  />
                                 </button>
                               </div>
 
@@ -1536,6 +1539,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                 >
                   {selectedInstance && (
                     <InlineModBrowser
+                      currentInstanceId={selectedInstance.id}
                       currentBranch={selectedInstance.branch}
                       currentVersion={selectedInstance.version}
                       installedModIds={new Set(installedMods.map(m => m.curseForgeId ? `cf-${m.curseForgeId}` : m.id))}

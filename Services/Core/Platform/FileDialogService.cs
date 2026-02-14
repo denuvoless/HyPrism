@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using HyPrism.Services.Core.Infrastructure;
 
 namespace HyPrism.Services.Core.Platform;
@@ -23,12 +24,15 @@ public class FileDialogService : IFileDialogService
                 if (!string.IsNullOrEmpty(initialPath) && Directory.Exists(initialPath))
                     script += $@"$dialog.SelectedPath = '{initialPath.Replace("'", "''")}'; ";
                 script += @"if ($dialog.ShowDialog() -eq 'OK') { $dialog.SelectedPath }";
+
+                var encodedScript = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
                 
                 var psi = new ProcessStartInfo
                 {
                     FileName = "powershell",
-                    Arguments = $"-NoProfile -Command \"{script}\"",
+                    Arguments = $"-NoProfile -NonInteractive -STA -ExecutionPolicy Bypass -EncodedCommand {encodedScript}",
                     RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
@@ -37,7 +41,14 @@ public class FileDialogService : IFileDialogService
                 if (process == null) return null;
                 
                 var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
+
+                if (process.ExitCode != 0)
+                {
+                    Logger.Warning("Files", $"Windows folder picker failed with code {process.ExitCode}: {error}");
+                    return null;
+                }
                 
                 return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
             }

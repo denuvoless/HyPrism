@@ -707,7 +707,7 @@ public class IpcService
                     ? Guid.NewGuid().ToString() 
                     : existingId;
                 
-                var targetPath = instanceService.CreateInstanceDirectory(branch, newInstanceId, version);
+                var targetPath = instanceService.CreateInstanceDirectory(branch, newInstanceId);
                 
                 // Update meta.json with new ID if it was changed
                 if (File.Exists(metaPath) && (idAlreadyExists || string.IsNullOrEmpty(existingId)))
@@ -1384,13 +1384,47 @@ public class IpcService
         var instanceService = _services.GetRequiredService<IInstanceService>();
         var config = _services.GetRequiredService<IConfigService>();
 
+        string? ResolveModInstancePath(string branch, int version, string? instanceId = null)
+        {
+            if (!string.IsNullOrWhiteSpace(instanceId))
+            {
+                var byId = instanceService.GetInstancePathById(instanceId);
+                if (!string.IsNullOrWhiteSpace(byId))
+                    return byId;
+            }
+
+            var existing = instanceService.FindExistingInstancePath(branch, version);
+            if (!string.IsNullOrEmpty(existing))
+                return existing;
+
+            var selected = instanceService.GetSelectedInstance();
+            if (selected != null)
+            {
+                var byId = instanceService.GetInstancePathById(selected.Id);
+                if (!string.IsNullOrEmpty(byId))
+                    return byId;
+
+                var selectedExisting = instanceService.FindExistingInstancePath(selected.Branch, selected.Version);
+                if (!string.IsNullOrEmpty(selectedExisting))
+                    return selectedExisting;
+            }
+
+            return null;
+        }
+
         Electron.IpcMain.On("hyprism:mods:list", (_) =>
         {
             try
             {
                 var branch = config.Configuration.LauncherBranch ?? "release";
-                Reply("hyprism:mods:list:reply", modService.GetInstanceInstalledMods(
-                    instanceService.GetLatestInstancePath(branch)));
+                var instancePath = ResolveModInstancePath(branch, 0);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Reply("hyprism:mods:list:reply", new List<object>());
+                    return;
+                }
+
+                Reply("hyprism:mods:list:reply", modService.GetInstanceInstalledMods(instancePath));
             }
             catch (Exception ex)
             {
@@ -1438,9 +1472,17 @@ public class IpcService
             {
                 var json = ArgsToJson(args);
                 using var doc = JsonDocument.Parse(json);
-                var branch = doc.RootElement.GetProperty("branch").GetString() ?? "release";
-                var version = doc.RootElement.GetProperty("version").GetInt32();
-                var instancePath = instanceService.GetInstancePath(branch, version);
+                var root = doc.RootElement;
+                var branch = root.GetProperty("branch").GetString() ?? "release";
+                var version = root.GetProperty("version").GetInt32();
+                var instanceId = root.TryGetProperty("instanceId", out var iid) ? iid.GetString() : null;
+                var instancePath = ResolveModInstancePath(branch, version, instanceId);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", $"Mods installed skipped: no target instance found for {branch}/{version}");
+                    Reply("hyprism:mods:installed:reply", new List<object>());
+                    return;
+                }
                 
                 var mods = modService.GetInstanceInstalledMods(instancePath);
                 Reply("hyprism:mods:installed:reply", mods);
@@ -1459,10 +1501,18 @@ public class IpcService
             {
                 var json = ArgsToJson(args);
                 using var doc = JsonDocument.Parse(json);
-                var modId = doc.RootElement.GetProperty("modId").GetString() ?? "";
-                var branch = doc.RootElement.GetProperty("branch").GetString() ?? "release";
-                var version = doc.RootElement.GetProperty("version").GetInt32();
-                var instancePath = instanceService.GetInstancePath(branch, version);
+                var root = doc.RootElement;
+                var modId = root.GetProperty("modId").GetString() ?? "";
+                var branch = root.GetProperty("branch").GetString() ?? "release";
+                var version = root.GetProperty("version").GetInt32();
+                var instanceId = root.TryGetProperty("instanceId", out var iid) ? iid.GetString() : null;
+                var instancePath = ResolveModInstancePath(branch, version, instanceId);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", $"Mods uninstall skipped: no target instance found for {branch}/{version}");
+                    Reply("hyprism:mods:uninstall:reply", false);
+                    return;
+                }
                 
                 // Get current mods, remove the one with matching ID, save back
                 var mods = modService.GetInstanceInstalledMods(instancePath);
@@ -1504,9 +1554,17 @@ public class IpcService
             {
                 var json = ArgsToJson(args);
                 using var doc = JsonDocument.Parse(json);
-                var branch = doc.RootElement.GetProperty("branch").GetString() ?? "release";
-                var version = doc.RootElement.GetProperty("version").GetInt32();
-                var instancePath = instanceService.GetInstancePath(branch, version);
+                var root = doc.RootElement;
+                var branch = root.GetProperty("branch").GetString() ?? "release";
+                var version = root.GetProperty("version").GetInt32();
+                var instanceId = root.TryGetProperty("instanceId", out var iid) ? iid.GetString() : null;
+                var instancePath = ResolveModInstancePath(branch, version, instanceId);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", $"Mods check updates skipped: no target instance found for {branch}/{version}");
+                    Reply("hyprism:mods:checkUpdates:reply", new List<object>());
+                    return;
+                }
                 
                 var updates = await modService.CheckInstanceModUpdatesAsync(instancePath);
                 Reply("hyprism:mods:checkUpdates:reply", updates);
@@ -1530,12 +1588,15 @@ public class IpcService
                 var fileId = root.GetProperty("fileId").GetString() ?? "";
                 var branch = root.TryGetProperty("branch", out var b) ? b.GetString() ?? "release" : "release";
                 var version = root.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
-                
-                string instancePath;
-                if (version > 0)
-                    instancePath = instanceService.GetInstancePath(branch, version);
-                else
-                    instancePath = instanceService.GetLatestInstancePath(branch);
+                var instanceId = root.TryGetProperty("instanceId", out var iid) ? iid.GetString() : null;
+
+                var instancePath = ResolveModInstancePath(branch, version, instanceId);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", "Mods install failed: no target instance selected");
+                    Reply("hyprism:mods:install:reply", false);
+                    return;
+                }
                 
                 var success = await modService.InstallModFileToInstanceAsync(modId, fileId, instancePath);
                 Reply("hyprism:mods:install:reply", success);
@@ -1595,12 +1656,15 @@ public class IpcService
                 var sourcePath = root.GetProperty("sourcePath").GetString() ?? "";
                 var branch = root.TryGetProperty("branch", out var b) ? b.GetString() ?? "release" : "release";
                 var version = root.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
-                
-                string instancePath;
-                if (version > 0)
-                    instancePath = instanceService.GetInstancePath(branch, version);
-                else
-                    instancePath = instanceService.GetLatestInstancePath(branch);
+                var instanceId = root.TryGetProperty("instanceId", out var iid) ? iid.GetString() : null;
+
+                var instancePath = ResolveModInstancePath(branch, version, instanceId);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", "Mods install local failed: no target instance selected");
+                    Reply("hyprism:mods:installLocal:reply", false);
+                    return;
+                }
                 
                 var success = await modService.InstallLocalModFile(sourcePath, instancePath);
                 Reply("hyprism:mods:installLocal:reply", success);
@@ -1624,12 +1688,15 @@ public class IpcService
                 var base64Content = root.GetProperty("base64Content").GetString() ?? "";
                 var branch = root.TryGetProperty("branch", out var b) ? b.GetString() ?? "release" : "release";
                 var version = root.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
-                
-                string instancePath;
-                if (version > 0)
-                    instancePath = instanceService.GetInstancePath(branch, version);
-                else
-                    instancePath = instanceService.GetLatestInstancePath(branch);
+                var instanceId = root.TryGetProperty("instanceId", out var iid) ? iid.GetString() : null;
+
+                var instancePath = ResolveModInstancePath(branch, version, instanceId);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", "Mods install base64 failed: no target instance selected");
+                    Reply("hyprism:mods:installBase64:reply", false);
+                    return;
+                }
                 
                 var success = await modService.InstallModFromBase64(fileName, base64Content, instancePath);
                 Reply("hyprism:mods:installBase64:reply", success);
@@ -1651,12 +1718,14 @@ public class IpcService
                 var root = doc.RootElement;
                 var branch = root.TryGetProperty("branch", out var b) ? b.GetString() ?? "release" : "release";
                 var version = root.TryGetProperty("version", out var v) ? v.GetInt32() : 0;
-                
-                string instancePath;
-                if (version > 0)
-                    instancePath = instanceService.GetInstancePath(branch, version);
-                else
-                    instancePath = instanceService.GetLatestInstancePath(branch);
+                var instanceId = root.TryGetProperty("instanceId", out var iid) ? iid.GetString() : null;
+
+                var instancePath = ResolveModInstancePath(branch, version, instanceId);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", "Open mods folder skipped: no target instance selected");
+                    return;
+                }
                 
                 var modsPath = Path.Combine(instancePath, "UserData", "Mods");
                 Directory.CreateDirectory(modsPath);
@@ -1679,7 +1748,14 @@ public class IpcService
                 var modId = root.GetProperty("modId").GetString() ?? "";
                 var branch = root.GetProperty("branch").GetString() ?? "release";
                 var version = root.GetProperty("version").GetInt32();
-                var instancePath = instanceService.GetInstancePath(branch, version);
+                var instanceId = root.TryGetProperty("instanceId", out var iid) ? iid.GetString() : null;
+                var instancePath = ResolveModInstancePath(branch, version, instanceId);
+                if (string.IsNullOrEmpty(instancePath))
+                {
+                    Logger.Warning("IPC", $"Mods toggle skipped: no target instance found for {branch}/{version}");
+                    Reply("hyprism:mods:toggle:reply", false);
+                    return;
+                }
                 
                 var mods = modService.GetInstanceInstalledMods(instancePath);
                 var mod = mods.FirstOrDefault(m => m.Id == modId || m.Name == modId);
@@ -1872,7 +1948,7 @@ public class IpcService
     // #endregion
 
     // #region File Dialog
-    // @ipc invoke hyprism:file:browseFolder -> string | null
+    // @ipc invoke hyprism:file:browseFolder -> string | null 300000
     // @ipc invoke hyprism:file:browseModFiles -> string[]
     // @ipc invoke hyprism:mods:exportToFolder -> string
     // @ipc invoke hyprism:mods:importList -> number

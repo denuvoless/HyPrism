@@ -360,10 +360,10 @@
       "unknown": "Unbekannt"
     },
     "tab": {
-      "content": "Mods",
+      "content": "Installierte Mods",
       "worlds": "Welten",
       "logs": "Logs",
-      "browse": "Browse Mods"
+      "browse": "Mods durchsuchen"
     },
     "saves": "Speicherstände",
     "noSaves": "Keine Speicherstände gefunden",

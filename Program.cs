@@ -4,6 +4,7 @@ using ElectronNET.API.Entities;
 using HyPrism.Services.Core.Infrastructure;
 using HyPrism.Services.Core.Ipc;
 using HyPrism.Services.Game.Instance;
+using HyPrism.Services.User;
 using Microsoft.Extensions.DependencyInjection;
 
 using Serilog;
@@ -136,6 +137,11 @@ class Program
         var instanceService = services.GetRequiredService<IInstanceService>();
         instanceService.MigrateLegacyData();
         instanceService.MigrateVersionFoldersToIdFolders();
+
+        // Repair legacy profile mods symlink/junction if present and ensure
+        // mods are stored in instance-local UserData/Mods.
+        var profileManagementService = services.GetRequiredService<IProfileManagementService>();
+        profileManagementService.InitializeProfileModsSymlink();
 
         // Resolve icon path for the window
         // On Windows/Linux, BrowserWindowOptions.Icon sets the window icon.
