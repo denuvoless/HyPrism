@@ -2,16 +2,20 @@
 
   *A multiplatform Hytale launcher with mod manager and more!*
 
-  [![Downloads](https://img.shields.io/github/downloads/yyyumeniku/HyPrism/total?style=for-the-badge&logo=github&label=Downloads&color=207e5c)](https://github.com/yyyumeniku/HyPrism/releases)
-  [![Website](https://img.shields.io/badge/Website-hyprism-207e5c?style=for-the-badge&logo=google-chrome&logoColor=white)](https://yyyumeniku.github.io/hyprism-site/)
-  [![Discord](https://img.shields.io/discord/1334547926839365733?style=for-the-badge&logo=discord&label=Discord&color=5865F2)](https://discord.gg/ekZqTtynjp)
-  [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/yyyumeniku)
+  [![Downloads](https://img.shields.io/github/downloads/yyyumeniku/HyPrism/total?style=flat&logo=github&label=Downloads&color=2d3748&logoWidth=20)](https://github.com/yyyumeniku/HyPrism/releases)
+  [![Build](https://img.shields.io/github/actions/workflow/status/yyyumeniku/HyPrism/build.yml?branch=main&style=flat&label=Build&logo=github&logoWidth=20)](https://github.com/yyyumeniku/HyPrism/actions/workflows/build.yml)
+  [![Website](https://img.shields.io/badge/Website-hyprism-207e5c?style=flat&logo=google-chrome&logoColor=white&logoWidth=20)](https://yyyumeniku.github.io/hyprism-site/)
+  [![GitLab](https://img.shields.io/badge/GitLab-yyyumeniku-FC6D26?style=flat&logo=gitlab&logoColor=white&logoWidth=20)](https://gitlab.com/yyyumeniku/HyPrism)
+  [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white&logoWidth=20)](https://discord.com/invite/ekZqTtynjp)
+  [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black&logoWidth=20)](https://buymeacoffee.com/yyyumeniku)
 
 > Disclaimer: HyPrism has no any connection to [PrismLauncher](https://github.com/PrismLauncher/PrismLauncher). HyPrism is an application that is being developed **INDEPENDENTLY** of the PrismLauncher project or its team. Thank you for your understanding
 
 ## Installation
 
 Downloads are available in [Releases](https://github.com/yyyumeniku/HyPrism/releases).
+
+> We are also here! https://gitlab.com/yyyumeniku/HyPrism
 
 ## Build Instructions
 
