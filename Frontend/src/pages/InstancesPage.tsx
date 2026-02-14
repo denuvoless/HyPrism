@@ -203,7 +203,7 @@ interface InstancesPageProps {
   canCancel?: boolean;
   onCancelDownload?: () => void;
   // Launch callback — routes through App.tsx so download state is tracked
-  onLaunchInstance?: (branch: string, version: number) => void;
+  onLaunchInstance?: (branch: string, version: number, instanceId?: string) => void;
   // Official server blocking
   officialServerBlocked?: boolean;
 }
@@ -639,7 +639,7 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
     if (isLikelyRunningThis) {
       onStopGame?.();
     } else {
-      onLaunchInstance?.(inst.branch, inst.version);
+      onLaunchInstance?.(inst.branch, inst.version, inst.id);
     }
   };
 

@@ -43,14 +43,6 @@ public class SkinService : ISkinService
         _instanceService = instanceService;
     }
 
-    // Helper for Profiles Path
-    private string GetProfilesFolder()
-    {
-        var path = Path.Combine(_appDir, "Profiles");
-        Directory.CreateDirectory(path);
-        return path;
-    }
-
     #region Skin Protection
 
     /// <inheritdoc/>
@@ -459,9 +451,7 @@ public class SkinService : ISkinService
                 return;
             }
             
-            var profilesDir = GetProfilesFolder();
-            var safeName = UtilityService.SanitizeFileName(profile.Name);
-            var profileDir = Path.Combine(profilesDir, safeName);
+            var profileDir = UtilityService.GetProfileFolderPath(_appDir, profile);
             Directory.CreateDirectory(profileDir);
             
             // Get game UserData path
@@ -517,9 +507,7 @@ public class SkinService : ISkinService
         try
         {
             var config = _configService.Configuration;
-            var profilesDir = GetProfilesFolder();
-            var safeName = UtilityService.SanitizeFileName(profile.Name);
-            var profileDir = Path.Combine(profilesDir, safeName);
+            var profileDir = UtilityService.GetProfileFolderPath(_appDir, profile);
             
             if (!Directory.Exists(profileDir))
             {
