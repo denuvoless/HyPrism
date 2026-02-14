@@ -58,6 +58,9 @@ All services are registered as singletons in `Bootstrapper.cs` and injected via 
 - **Custom auth mode:** Non-official profiles can launch in online authenticated mode with client binary patching + DualAuth runtime agent for custom session domains.
 - **Server JAR policy:** The launcher no longer rewrites `Server/HytaleServer.jar` during custom-auth launches.
 - **Stop control:** Game stop is available through IPC (`hyprism:game:stop`) and can be triggered from Dashboard and Instances actions.
+- **Official 403 recovery:** If official CDN download returns HTTP 403 (expired signed `verify` token), the service force-refreshes version cache and retries official download once before mirror fallback.
+- **Selected instance launch sync:** selecting an instance updates both `SelectedInstanceId` and legacy launch fields (`VersionType`/`SelectedVersion`), and Dashboard launch sends explicit branch/version to avoid stale-target launches.
+- **Launch path priority:** if `SelectedInstanceId` is set, `GameSessionService` resolves launch/install path by instance ID first (no fallback to another installed instance with same branch/version).
 
 ### ClientPatcher ⚠️
 - **File:** `Services/Game/ClientPatcher.cs`
@@ -74,3 +77,6 @@ All services are registered as singletons in `Bootstrapper.cs` and injected via 
 - **Purpose:** Player profile CRUD operations
 - **Features:** Multiple profiles, avatar management, profile switching
 - **Mods storage policy:** profile switching does not redirect `UserData/Mods` to `Profiles/.../Mods`; mods remain instance-local.
+- **Profile folder format:** profile folders are stored under `Profiles/{profileId}` (GUID).
+- **Legacy migration:** launcher attempts to migrate legacy name-based profile folders in `Profiles/` to ID-based layout at startup (best-effort, non-destructive merge when both folders exist).
+- **Official profile auth routing:** switching to an official profile automatically sets auth domain to `sessionserver.hytale.com`.

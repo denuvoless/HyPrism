@@ -1689,9 +1689,26 @@ public class InstanceService : IInstanceService
     public void SetSelectedInstance(string instanceId)
     {
         var config = GetConfig();
+        config.Instances ??= new List<InstanceInfo>();
+
+        var selected = FindInstanceById(instanceId);
+        if (selected == null)
+        {
+            Logger.Warning("InstanceService", $"SetSelectedInstance ignored: instance not found ({instanceId})");
+            return;
+        }
+
         config.SelectedInstanceId = instanceId;
+
+        // Keep legacy launch config in sync with selected instance so launch paths
+        // that still read VersionType/SelectedVersion target the same instance.
+        #pragma warning disable CS0618 // Backward compatibility: VersionType and SelectedVersion kept for migration
+        config.VersionType = NormalizeVersionType(selected.Branch);
+        config.SelectedVersion = selected.Version;
+        #pragma warning restore CS0618
+
         SaveConfig(config);
-        Logger.Info("InstanceService", $"Selected instance: {instanceId}");
+        Logger.Info("InstanceService", $"Selected instance: {instanceId} ({selected.Branch} v{selected.Version})");
     }
 
     /// <inheritdoc/>

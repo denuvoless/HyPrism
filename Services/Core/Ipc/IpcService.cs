@@ -246,6 +246,25 @@ public class IpcService
                             configService.Configuration.SelectedVersion = versionEl.GetInt32();
                             #pragma warning restore CS0618
                         }
+
+                        if (data.TryGetValue("instanceId", out var instanceIdEl))
+                        {
+                            var instanceId = instanceIdEl.GetString();
+                            if (!string.IsNullOrWhiteSpace(instanceId))
+                            {
+                                instanceService.SetSelectedInstance(instanceId);
+
+                                // Ensure launch config follows selected instance exactly.
+                                var selected = instanceService.FindInstanceById(instanceId);
+                                if (selected != null)
+                                {
+                                    #pragma warning disable CS0618 // Backward compatibility: VersionType/SelectedVersion kept for migration
+                                    configService.Configuration.VersionType = selected.Branch;
+                                    configService.Configuration.SelectedVersion = selected.Version;
+                                    #pragma warning restore CS0618
+                                }
+                            }
+                        }
                     }
                 }
                 catch { /* ignore parsing errors, use current config */ }
