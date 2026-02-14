@@ -85,6 +85,7 @@ jobs:
             -name "*.deb" -o \
             -name "*.rpm" -o \
             -name "*.tar.xz" -o \
+            -name "*.flatpak" -o \
             -name "*.dmg" -o \
             -name "*.zip" -o \
             -name "*.exe" \
@@ -108,7 +109,8 @@ jobs:
                   "appimage": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.AppImage",
                   "deb": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.deb",
                   "rpm": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.rpm",
-                  "tar": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.tar.xz"
+                  "tar": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.tar.xz",
+                  "flatpak": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.flatpak"
                 }
               },
               "windows": {
@@ -167,12 +169,13 @@ jobs:
             
             | Platform | Architecture | Format | Download |
             |----------|-------------|--------|----------|
-            | **Windows** | x64 | Portable ZIP | `HyPrism-win-x64-${{ steps.version.outputs.version }}.zip` |
-            | **macOS** | ARM64 (Apple Silicon) | DMG | `HyPrism-mac-arm64-${{ steps.version.outputs.version }}.dmg` |
-            | **Linux** | x64 | AppImage | `HyPrism-linux-x64-${{ steps.version.outputs.version }}.AppImage` |
-            | **Linux** | x64 | DEB | `HyPrism-linux-x64-${{ steps.version.outputs.version }}.deb` |
-            | **Linux** | x64 | RPM | `HyPrism-linux-x64-${{ steps.version.outputs.version }}.rpm` |
-            | **Linux** | x64 | tar.xz | `HyPrism-linux-x64-${{ steps.version.outputs.version }}.tar.xz` |
+            | **Windows** | x64 | Portable ZIP | [HyPrism-win-x64-${{ steps.version.outputs.version }}.zip](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/HyPrism-win-x64-${{ steps.version.outputs.version }}.zip) |
+            | **macOS** | ARM64 (Apple Silicon) | DMG | [HyPrism-mac-arm64-${{ steps.version.outputs.version }}.dmg](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/HyPrism-mac-arm64-${{ steps.version.outputs.version }}.dmg) |
+            | **Linux** | x64 | AppImage | [HyPrism-linux-x64-${{ steps.version.outputs.version }}.AppImage](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/HyPrism-linux-x64-${{ steps.version.outputs.version }}.AppImage) |
+            | **Linux** | x64 | DEB | [HyPrism-linux-x64-${{ steps.version.outputs.version }}.deb](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/HyPrism-linux-x64-${{ steps.version.outputs.version }}.deb) |
+            | **Linux** | x64 | RPM | [HyPrism-linux-x64-${{ steps.version.outputs.version }}.rpm](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/HyPrism-linux-x64-${{ steps.version.outputs.version }}.rpm) |
+            | **Linux** | x64 | tar.xz | [HyPrism-linux-x64-${{ steps.version.outputs.version }}.tar.xz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/HyPrism-linux-x64-${{ steps.version.outputs.version }}.tar.xz) |
+            | **Linux** | x64 | Flatpak | [HyPrism-linux-x64-${{ steps.version.outputs.version }}.flatpak](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag_name }}/HyPrism-linux-x64-${{ steps.version.outputs.version }}.flatpak) |
             
             ### System Requirements
             

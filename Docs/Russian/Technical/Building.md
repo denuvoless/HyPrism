@@ -70,8 +70,8 @@ dotnet build
 # Продакшен-публикация
 dotnet publish -c Release -r linux-x64
 
-# Flatpak (см. Packaging/flatpak/)
-flatpak-builder build Packaging/flatpak/dev.hyprism.HyPrism.json
+# Flatpak (см. packaging/flatpak/bundle/)
+flatpak-builder build packaging/flatpak/bundle/dev.hyprism.HyPrism.json
 ```
 
 Релизный CI (`.github/workflows/release.yml`) публикует Linux-артефакты только для `linux-x64`. Релизные сборки Linux `arm64` не поддерживаются.

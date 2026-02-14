@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>com.hyprismteam.hyprism</id>
   <name>HyPrism</name>
-  <summary>A modern launcher for Hytale</summary>
+  <summary>A modern launcher and mod manager for Hytale</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   

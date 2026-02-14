@@ -7,7 +7,7 @@
     "org.freedesktop.Sdk.Extension.golang",
     "org.freedesktop.Sdk.Extension.node22"
   ],
-  "command": "HyPrism",
+  "command": "hyprism-launcher-wrapper.sh",
   "finish-args": [
     "--share=ipc",
     "--socket=fallback-x11",
@@ -70,8 +70,7 @@
         "cp -R bundle/runtimes /app/lib/hyprism/ 2>/dev/null || true",
         "install -Dm644 bundle/jre.json /app/lib/hyprism/jre.json 2>/dev/null || true",
         "install -d /app/bin",
-        "printf '#!/bin/sh\\nexec /app/lib/hyprism/HyPrism --wrapper \"$@\"' > /app/bin/HyPrism",
-        "chmod +x /app/bin/HyPrism",
+        "install -Dm755 hyprism-launcher-wrapper.sh /app/bin",
         "install -Dm644 dev.hyprism.HyPrism.png /app/share/icons/hicolor/256x256/apps/dev.hyprism.HyPrism.png",
         "install -Dm644 dev.hyprism.HyPrism.desktop /app/share/applications/dev.hyprism.HyPrism.desktop",
         "install -Dm644 dev.hyprism.HyPrism.metainfo.xml /app/share/metainfo/dev.hyprism.HyPrism.metainfo.xml"
@@ -81,6 +80,10 @@
           "type": "dir",
           "path": "bundle",
           "dest": "bundle"
+        },
+        {
+          "type": "file",
+          "path": "Packaging/flatpak/hyprism-launcher-wrapper.sh"
         },
         {
           "type": "file",
