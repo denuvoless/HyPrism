@@ -118,23 +118,23 @@ modules:
   - name: HyPrism
     buildsystem: simple
     build-commands:
-      - install -d /app/lib/hyprism
-      - install -d /app/lib/i386-linux-gnu/codecs-extra || true
-      - install -Dm755 bundle/bin/HyPrism /app/lib/hyprism/HyPrism
-      - install -Dm644 bundle/bin/Release/net10.0/linux-x64/publish/linux-unpacked/libffmpeg.so /app/lib/libffmpeg.so
-      - cp -R bundle/wwwroot /app/lib/hyprism/ 2>/dev/null || true
-      - cp -R bundle/runtimes /app/lib/hyprism/ 2>/dev/null || true
-      - install -Dm644 bundle/jre.json /app/lib/hyprism/jre.json 2>/dev/null || true
-      - install -d /app/bin
+      - install -d /app/bin/HyPrism
+      - install -Dm755 linux-unpacked/HyPrism /app/bin/HyPrism/HyPrism
+      - cp -R linux-unpacked/* /app/bin/HyPrism
+      - cp -R wwwroot /app/bin/HyPrism
       - install -Dm755 hyprism-launcher-wrapper.sh /app/bin/hyprism-launcher-wrapper.sh
-      - chmod +x /app/bin/hyprism-launcher-wrapper.sh
       - install -Dm644 io.github.HyPrismTeam.HyPrism.png /app/share/icons/hicolor/256x256/apps/io.github.HyPrismTeam.HyPrism.png
       - install -Dm644 io.github.HyPrismTeam.HyPrism.desktop /app/share/applications/io.github.HyPrismTeam.HyPrism.desktop
       - install -Dm644 io.github.HyPrismTeam.HyPrism.metainfo.xml /app/share/metainfo/io.github.HyPrismTeam.HyPrism.metainfo.xml
     sources:
       - type: dir
-        path: bundle
-        dest: bundle
+        path: ../../../bin/Release/net10.0/linux-x64/publish/linux-unpacked
+        dest: linux-unpacked
+      - type: dir
+        path: ../../../wwwroot
+        dest: wwwroot
+      - type: file
+        path: hyprism-launcher-wrapper.sh
       - type: file
         path: io.github.HyPrismTeam.HyPrism.png
       - type: file
