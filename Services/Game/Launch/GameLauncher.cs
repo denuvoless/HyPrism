@@ -25,6 +25,8 @@ namespace HyPrism.Services.Game.Launch;
 /// </remarks>
 public class GameLauncher : IGameLauncher
 {
+    private const string DefaultCustomAuthDomain = "sessions.sanasol.ws";
+
     private readonly IConfigService _configService;
     private readonly ILaunchService _launchService;
     private readonly IInstanceService _instanceService;
@@ -117,12 +119,9 @@ public class GameLauncher : IGameLauncher
         var currentProfile = _config.Profiles?.FirstOrDefault(p => p.UUID == sessionUuid);
         bool isOfficialProfile = currentProfile?.IsOfficial == true;
 
-        if (IsOfficialServerMode() && !isOfficialProfile && _config.OnlineMode)
+        if (!isOfficialProfile && IsOfficialDomain(_config.AuthDomain) && _config.OnlineMode)
         {
-            // The frontend should prevent this scenario by disabling the play button.
-            // If we still get here (e.g. race condition), log a warning and continue
-            // in offline mode rather than crashing.
-            Logger.Warning("Game", "Official server mode with unofficial profile — falling back to offline mode");
+            Logger.Warning("Game", $"Unofficial profile with official auth domain '{_config.AuthDomain}'. Falling back to custom auth domain '{DefaultCustomAuthDomain}' for this launch.");
         }
 
         var (executable, workingDir) = ResolveExecutablePaths(versionPath);
@@ -202,12 +201,36 @@ public class GameLauncher : IGameLauncher
     /// </summary>
     private bool IsOfficialServerMode()
     {
-        var domain = _config.AuthDomain?.Trim();
-        if (string.IsNullOrWhiteSpace(domain)) return false;
+        var currentUuid = _userIdentityService.GetUuidForUser(_config.Nick);
+        var currentProfile = _config.Profiles?.FirstOrDefault(p => p.UUID == currentUuid);
+        return currentProfile?.IsOfficial == true;
+    }
 
-        // Known official domains / sentinel values
-        return domain.Equals("official", StringComparison.OrdinalIgnoreCase)
-            || domain.Contains("hytale.com", StringComparison.OrdinalIgnoreCase);
+    private static bool IsOfficialDomain(string? domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain)) return false;
+        var value = domain.Trim();
+        return value.Equals("official", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("hytale.com", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string? GetEffectiveCustomAuthDomain(bool logFallback)
+    {
+        var configuredDomain = _config.AuthDomain?.Trim();
+        if (string.IsNullOrWhiteSpace(configuredDomain))
+            return null;
+
+        if (IsOfficialDomain(configuredDomain))
+        {
+            if (logFallback)
+            {
+                Logger.Warning("Game", $"Configured auth domain '{configuredDomain}' is official, but active profile is not official. Using fallback custom auth domain '{DefaultCustomAuthDomain}'.");
+            }
+
+            return DefaultCustomAuthDomain;
+        }
+
+        return configuredDomain;
     }
 
     private async Task PatchClientIfNeededAsync(string versionPath)
@@ -253,12 +276,13 @@ public class GameLauncher : IGameLauncher
         }
 
         // ── Custom / default server mode: patch binaries ──
-        if (string.IsNullOrWhiteSpace(_config.AuthDomain)) return;
+        var effectiveAuthDomain = GetEffectiveCustomAuthDomain(logFallback: true);
+        if (string.IsNullOrWhiteSpace(effectiveAuthDomain)) return;
 
         _progressService.ReportDownloadProgress("patching", 0, "launch.detail.patching_init", null, 0, 0);
         try
         {
-            string baseDomain = _config.AuthDomain;
+            string baseDomain = effectiveAuthDomain;
             if (baseDomain.StartsWith("sessions."))
             {
                 baseDomain = baseDomain["sessions.".Length..];
@@ -394,15 +418,16 @@ public class GameLauncher : IGameLauncher
         }
 
         // Non-official profile — use custom auth domain if configured
-        if (!_config.OnlineMode || string.IsNullOrWhiteSpace(_config.AuthDomain))
+        var effectiveAuthDomain = GetEffectiveCustomAuthDomain(logFallback: true);
+        if (!_config.OnlineMode || string.IsNullOrWhiteSpace(effectiveAuthDomain))
             return (identityToken, sessionToken, authPlayerName);
 
-        _progressService.ReportDownloadProgress("launching", 20, "launch.detail.authenticating", [_config.AuthDomain], 0, 0);
-        Logger.Info("Game", $"Online mode enabled - fetching auth tokens from {_config.AuthDomain}...");
+        _progressService.ReportDownloadProgress("launching", 20, "launch.detail.authenticating", [effectiveAuthDomain], 0, 0);
+        Logger.Info("Game", $"Online mode enabled - fetching auth tokens from {effectiveAuthDomain}...");
 
         try
         {
-            var authService = new AuthService(_httpClient, _config.AuthDomain);
+            var authService = new AuthService(_httpClient, effectiveAuthDomain);
             var tokenResult = await authService.GetGameSessionTokenAsync(sessionUuid, _config.Nick);
 
             if (tokenResult.Success && !string.IsNullOrEmpty(tokenResult.Token))
@@ -632,7 +657,7 @@ public class GameLauncher : IGameLauncher
         if (string.IsNullOrEmpty(_dualAuthAgentPath) || IsOfficialServerMode())
             return;
 
-        string baseDomain = _config.AuthDomain ?? "";
+        string baseDomain = GetEffectiveCustomAuthDomain(logFallback: false) ?? "";
         if (baseDomain.StartsWith("sessions."))
             baseDomain = baseDomain["sessions.".Length..];
 
@@ -894,7 +919,7 @@ export __NV_PRIME_RENDER_OFFLOAD=0
         if (string.IsNullOrEmpty(_dualAuthAgentPath) || IsOfficialServerMode())
             return "# No DualAuth (official server mode or agent unavailable)\nDUALAUTH_JAVA_TOOL_OPTIONS=\"\"\nDUALAUTH_AUTH_DOMAIN=\"\"\nDUALAUTH_TRUST_ALL=\"\"\nDUALAUTH_TRUST_OFFICIAL=\"\"\n\n";
 
-        string baseDomain = _config.AuthDomain ?? "";
+        string baseDomain = GetEffectiveCustomAuthDomain(logFallback: false) ?? "";
         if (baseDomain.StartsWith("sessions."))
             baseDomain = baseDomain["sessions.".Length..];
 

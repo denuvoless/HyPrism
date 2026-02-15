@@ -75,6 +75,7 @@ All services are registered as singletons in `Bootstrapper.cs` and injected via 
 ### ModService
 - **Purpose:** Mod listing, searching, and management (CurseForge integration)
 - **Instance mods source:** Reads from `UserData/Mods` and falls back to file-system discovery (`.jar`, `.zip`, `.disabled`) when manifest entries are missing
+- **Download URL fallback:** if CurseForge returns no `downloadUrl` and `/download-url` is forbidden/empty, the service derives a deterministic CDN URL from `fileId + fileName`.
 
 ## User Services (`Services/User/`)
 

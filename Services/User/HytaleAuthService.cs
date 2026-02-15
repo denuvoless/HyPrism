@@ -306,7 +306,6 @@ public class HytaleAuthService : IHytaleAuthService
                 else
                 {
                     responseHtml = "<html><body><h1>Waiting for authorization...</h1></body></html>";
-                    continue;
                 }
 
                 var buffer = Encoding.UTF8.GetBytes(responseHtml);
@@ -314,7 +313,9 @@ public class HytaleAuthService : IHytaleAuthService
                 response.ContentLength64 = buffer.Length;
                 await response.OutputStream.WriteAsync(buffer, ct);
                 response.Close();
-                break;
+
+                if (!string.IsNullOrEmpty(code) || !string.IsNullOrEmpty(error))
+                    break;
             }
         }
         catch (ObjectDisposedException) { /* listener stopped */ }

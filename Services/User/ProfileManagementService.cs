@@ -276,7 +276,7 @@ public class ProfileManagementService : IProfileManagementService
             };
             
             var config = _configService.Configuration;
-            config.Profiles ??= new List<Profile>();
+            config.Profiles ??= [];
             config.Profiles.Add(profile);
             
             // Auto-activate the first profile created

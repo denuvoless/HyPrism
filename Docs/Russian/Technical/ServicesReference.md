@@ -71,6 +71,7 @@
 
 ### ModService
 - **Назначение:** Просмотр, поиск и управление модами (интеграция с CurseForge)
+- **Fallback для URL загрузки:** если CurseForge возвращает пустой `downloadUrl`, а `/download-url` отвечает `403` или пустым payload, сервис вычисляет детерминированный CDN URL по `fileId + fileName`.
 
 ## Пользовательские сервисы (`Services/User/`)
 

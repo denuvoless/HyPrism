@@ -74,6 +74,7 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
 }) => {
   const { t } = useTranslation();
   const { accentColor, accentTextColor } = useAccentColor();
+  const normalizeId = (value: string | number | null | undefined) => String(value ?? '');
 
   // --- Search state ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -225,12 +226,13 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
     setActiveScreenshot(0);
     setIsLoadingModFiles(true);
 
-    if (mod.id) {
-      const files = await loadModFiles(mod.id);
-      const selectedFileId = selectedVersions.get(mod.id) || files[0]?.id;
+    const modId = normalizeId(mod.id);
+    if (modId) {
+      const files = await loadModFiles(modId);
+      const selectedFileId = selectedVersions.get(modId) || files[0]?.id;
       setSelectedModFiles(files);
       setDetailSelectedFileId(selectedFileId);
-      if (selectedFileId) setSelectedVersions(prev => new Map(prev).set(mod.id, selectedFileId));
+      if (selectedFileId) setSelectedVersions(prev => new Map(prev).set(modId, selectedFileId));
     } else {
       setSelectedModFiles([]);
       setDetailSelectedFileId(undefined);
@@ -252,20 +254,21 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
   }, [getCurseForgeUrl]);
 
   const toggleModSelection = (mod: ModInfo, index: number) => {
+    const modId = normalizeId(mod.id);
     let shouldPrefetch = false;
     setSelectedMods((prev) => {
       const next = new Set(prev);
-      if (next.has(mod.id)) {
-        next.delete(mod.id);
+      if (next.has(modId)) {
+        next.delete(modId);
       } else {
-        next.add(mod.id);
+        next.add(modId);
         shouldPrefetch = true;
       }
       return next;
     });
     browseSelectionAnchorRef.current = index;
     if (shouldPrefetch) {
-      void loadModFiles(mod.id);
+      void loadModFiles(modId);
     }
   };
 
@@ -283,9 +286,10 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
     const anchor = browseSelectionAnchorRef.current ?? index;
     const start = Math.min(anchor, index);
     const end = Math.max(anchor, index);
-    const ids = searchResults.slice(start, end + 1).map((mod) => mod.id);
+    const ids = searchResults.slice(start, end + 1).map((mod) => normalizeId(mod.id));
 
     setSelectedMods(new Set(ids));
+    ids.forEach((id) => { void loadModFiles(id); });
   };
 
   // ------- Download -------
@@ -320,12 +324,14 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
   const handleDownloadSelected = async () => {
     if (selectedMods.size === 0) return;
 
-    console.log('[ModBrowser] handleDownloadSelected called, selectedMods:', Array.from(selectedMods));
+    const selectedIds = Array.from(selectedMods);
+    console.log('[ModBrowser] handleDownloadSelected called, selectedMods:', selectedIds);
+    const modsById = new Map(searchResults.map((m) => [normalizeId(m.id), m]));
 
     const items: Array<{ id: string; name: string; fileId: string }> = [];
-    for (const modId of selectedMods) {
+    for (const modId of selectedIds) {
       console.log('[ModBrowser] Processing mod:', modId);
-      const mod = searchResults.find(m => m.id === modId);
+      const mod = modsById.get(modId);
       console.log('[ModBrowser] Found mod in searchResults:', mod?.name || 'NOT FOUND');
       let fileId = selectedVersions.get(modId);
       console.log('[ModBrowser] Selected version fileId:', fileId || 'NOT SET');
@@ -336,11 +342,12 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
         fileId = files?.[0]?.id;
         console.log('[ModBrowser] Using first file:', fileId);
       }
-      if (fileId && mod) {
-        items.push({ id: modId, name: mod.name, fileId });
-        console.log('[ModBrowser] Added to items:', { id: modId, name: mod.name, fileId });
+      if (fileId) {
+        const name = mod?.name || `Mod ${modId}`;
+        items.push({ id: modId, name, fileId });
+        console.log('[ModBrowser] Added to items:', { id: modId, name, fileId });
       } else {
-        console.log('[ModBrowser] SKIPPED mod (missing fileId or mod):', { modId, hasFileId: !!fileId, hasMod: !!mod });
+        console.log('[ModBrowser] SKIPPED mod (missing fileId):', { modId, hasFileId: !!fileId, hasMod: !!mod });
       }
     }
 
@@ -620,9 +627,10 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
           ) : (
             <div className="grid grid-cols-1 gap-2">
               {searchResults.map((mod, index) => {
-                const isSelected = selectedMods.has(mod.id);
-                const isDetailSelected = selectedMod?.id === mod.id;
-                const isInstalled = installedModIds?.has(`cf-${mod.id}`) ?? false;
+                const modId = normalizeId(mod.id);
+                const isSelected = selectedMods.has(modId);
+                const isDetailSelected = normalizeId(selectedMod?.id) === modId;
+                const isInstalled = installedModIds?.has(`cf-${modId}`) ?? false;
 
                 return (
                   <div
@@ -811,15 +819,20 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
                   ) : (
                     <div className="space-y-1.5 max-h-40 overflow-y-auto">
                       {selectedModFiles.slice(0, 10).map(file => {
-                        const isFileInstalled = installedFileIds?.has(file.id) ?? false;
+                        const fileId = normalizeId(file.id);
+                        const isFileInstalled = installedFileIds?.has(fileId) ?? false;
                         return (
                         <button
                           key={file.id}
-                          onClick={() => { setDetailSelectedFileId(file.id); setSelectedVersions(prev => new Map(prev).set(selectedMod.id, file.id)); }}
+                          onClick={() => {
+                            const selectedModId = normalizeId(selectedMod.id);
+                            setDetailSelectedFileId(fileId);
+                            setSelectedVersions(prev => new Map(prev).set(selectedModId, fileId));
+                          }}
                           className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all border ${
                             isFileInstalled
                               ? 'border-green-500/30 bg-green-500/10'
-                              : detailSelectedFileId === file.id
+                              : detailSelectedFileId === fileId
                                 ? 'border-white/20 bg-[#2c2c2e]'
                                 : 'border-transparent hover:bg-[#252527]'
                           }`}
@@ -853,12 +866,15 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
 
                 {/* Install button */}
                 {(() => {
-                  const fileId = detailSelectedFileId || selectedModFiles[0]?.id;
+                  const fileId = detailSelectedFileId || normalizeId(selectedModFiles[0]?.id);
                   const isSelectedFileInstalled = fileId ? (installedFileIds?.has(fileId) ?? false) : false;
                   return (
                     <button
                       onClick={() => {
-                        if (fileId && !isSelectedFileInstalled) handleInstallSingleMod(selectedMod.id, fileId, selectedMod.name);
+                        const selectedModId = normalizeId(selectedMod.id);
+                        if (fileId && !isSelectedFileInstalled && selectedModId) {
+                          handleInstallSingleMod(selectedModId, fileId, selectedMod.name);
+                        }
                       }}
                       disabled={isDownloading || selectedModFiles.length === 0 || isSelectedFileInstalled}
                       className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-40 ${

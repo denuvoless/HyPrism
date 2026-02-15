@@ -580,6 +580,26 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
     setSelectedMods(new Set(ids));
   }, [filteredMods]);
 
+  const selectOnlyContentMod = useCallback((modId: string, index: number) => {
+    setSelectedMods(new Set([modId]));
+    contentSelectionAnchorRef.current = index;
+  }, []);
+
+  const handleContentRowClick = useCallback((e: React.MouseEvent, modId: string, index: number) => {
+    if (e.shiftKey) {
+      handleContentShiftLeftClick(e, index);
+      return;
+    }
+
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      toggleContentModSelection(modId, index);
+      return;
+    }
+
+    selectOnlyContentMod(modId, index);
+  }, [handleContentShiftLeftClick, selectOnlyContentMod, toggleContentModSelection]);
+
   const getCurseForgeUrl = useCallback((mod: ModInfo): string => {
     if (mod.slug) {
       return `https://www.curseforge.com/hytale/mods/${mod.slug}`;
@@ -1403,15 +1423,6 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                       )}
                     </div>
                   </div>
-
-                  {/* Mods List Header */}
-                  <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center text-xs text-white/50 font-medium uppercase tracking-wide">
-                    <div className="w-8" />
-                    <div className="flex-1 pl-3">{t('modManager.name')}</div>
-                    <div className="w-32 text-center">{t('modManager.version')}</div>
-                    <div className="w-20 text-center">{t('modManager.enabled')}</div>
-                    <div className="w-20" />
-                  </div>
                     </>
                   )}
 
@@ -1442,132 +1453,144 @@ export const InstancesPage: React.FC<InstancesPageProps> = ({
                         </button>
                       </div>
                     ) : (
-                      <div className="divide-y divide-white/5">
-                        {filteredMods.map((mod, index) => {
-                          const hasUpdate = modsWithUpdates.some(u => u.id === mod.id);
-                          const isSelected = selectedMods.has(mod.id);
+                      <div className="p-4">
+                        <div className="grid grid-cols-1 gap-2">
+                          {filteredMods.map((mod, index) => {
+                            const hasUpdate = modsWithUpdates.some(u => u.id === mod.id);
+                            const isSelected = selectedMods.has(mod.id);
 
-                          return (
-                            <div
-                              key={mod.id}
-                              onClick={(e) => {
-                                if (e.shiftKey) {
-                                  handleContentShiftLeftClick(e, index);
-                                  return;
-                                }
-                                contentSelectionAnchorRef.current = index;
-                              }}
-                              className={`px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors ${
-                                isSelected ? 'bg-white/5' : ''
-                              }`}
-                            >
-                              {/* Selection Checkbox */}
-                              <button
+                            return (
+                              <div
+                                key={mod.id}
                                 onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (e.shiftKey) {
-                                    handleContentShiftLeftClick(e, index);
-                                    return;
-                                  }
-                                  toggleContentModSelection(mod.id, index);
+                                  handleContentRowClick(e, mod.id, index);
                                 }}
-                                className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                                  isSelected ? '' : 'bg-transparent border-white/30 hover:border-white/50'
+                                className={`group flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${
+                                  isSelected
+                                    ? 'border-white/[0.08] bg-[#252527]'
+                                    : 'border-transparent hover:bg-[#252527]'
                                 }`}
-                                style={isSelected ? { backgroundColor: accentColor, borderColor: accentColor } : undefined}
                               >
-                                {isSelected && <Check size={12} style={{ color: accentTextColor }} />}
-                              </button>
+                                {/* Checkbox */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (e.shiftKey) {
+                                      handleContentShiftLeftClick(e, index);
+                                      return;
+                                    }
+                                    toggleContentModSelection(mod.id, index);
+                                  }}
+                                  className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                                    isSelected ? '' : 'bg-transparent border-white/30 hover:border-white/50'
+                                  }`}
+                                  style={isSelected ? { backgroundColor: accentColor, borderColor: accentColor } : undefined}
+                                >
+                                  {isSelected && <Check size={12} style={{ color: accentTextColor }} />}
+                                </button>
 
-                              {/* Mod Icon */}
-                              <div className="w-10 h-10 rounded-lg bg-[#1c1c1e] flex items-center justify-center overflow-hidden flex-shrink-0">
-                                {mod.iconUrl ? (
-                                  <img src={mod.iconUrl} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <Package size={18} className="text-white/40" />
-                                )}
-                              </div>
-
-                              {/* Mod Info */}
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={(e) => handleOpenModPage(e, mod)}
-                                    className="text-white font-medium truncate hover:underline underline-offset-2 text-left"
-                                    title="Open CurseForge page"
-                                  >
-                                    {mod.name}
-                                  </button>
-                                  {hasUpdate && (
-                                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-400">
-                                      {t('modManager.updateBadge')}
-                                    </span>
+                                {/* Icon */}
+                                <div className="w-12 h-12 rounded-lg bg-[#1c1c1e] flex items-center justify-center overflow-hidden flex-shrink-0">
+                                  {mod.iconUrl ? (
+                                    <img src={mod.iconUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                                  ) : (
+                                    <Package size={20} className="text-white/30" />
                                   )}
                                 </div>
-                                <p className="text-white/40 text-xs truncate">
-                                  {mod.author || t('modManager.unknownAuthor')}
-                                </p>
-                              </div>
 
-                              {/* Version */}
-                              <div className="w-32 text-center flex items-center justify-center gap-1.5">
-                                <span className="text-white/60 text-sm truncate">{mod.version || '-'}</span>
-                                {mod.releaseType && mod.releaseType !== 1 && (
-                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
-                                    mod.releaseType === 2 ? 'bg-yellow-500/20 text-yellow-400'
-                                      : 'bg-red-500/20 text-red-400'
-                                  }`}>
-                                    {mod.releaseType === 2 ? 'β' : 'α'}
-                                  </span>
-                                )}
-                              </div>
+                                {/* Info (no description in Installed) */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={(e) => handleOpenModPage(e, mod)}
+                                      className="text-white font-medium truncate hover:underline underline-offset-2 text-left"
+                                      title="Open CurseForge page"
+                                    >
+                                      {mod.name}
+                                    </button>
+                                    {hasUpdate && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-400 flex-shrink-0">
+                                        {t('modManager.updateBadge')}
+                                      </span>
+                                    )}
+                                    {mod.categories?.length > 0 && typeof mod.categories[0] === 'string' && (
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] text-white/40 bg-[#2c2c2e] flex-shrink-0">
+                                        {(() => {
+                                          const raw = mod.categories[0] as string;
+                                          const key = `modManager.category.${raw.replace(/[\s\\/]+/g, '_').toLowerCase()}`;
+                                          const translated = t(key);
+                                          return translated !== key ? translated : raw;
+                                        })()}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-white/30 text-xs truncate mt-0.5">
+                                    {mod.author || t('modManager.unknownAuthor')}
+                                  </p>
+                                </div>
 
-                              {/* Toggle */}
-                              <div className="w-20 flex items-center justify-center">
-                                <button
-                                  className="w-11 h-6 rounded-full p-0.5 transition-colors"
-                                  style={{ backgroundColor: mod.enabled ? accentColor : 'rgba(255,255,255,0.18)' }}
-                                  onClick={async () => {
-                                    if (!selectedInstance) return;
-                                    try {
-                                      const ok = await ipc.mods.toggle({
-                                        modId: mod.id,
-                                        instanceId: selectedInstance.id,
-                                        branch: selectedInstance.branch,
-                                        version: selectedInstance.version,
-                                      });
-                                      if (ok) {
-                                        setInstalledMods(prev =>
-                                          prev.map(m => m.id === mod.id ? { ...m, enabled: !m.enabled } : m)
-                                        );
+                                {/* Right side: version + toggle (Installed-specific) */}
+                                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-white/60 text-xs truncate max-w-[140px]">{mod.version || '-'}</span>
+                                    {mod.releaseType && mod.releaseType !== 1 && (
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0 ${
+                                          mod.releaseType === 2
+                                            ? 'bg-yellow-500/20 text-yellow-400'
+                                            : 'bg-red-500/20 text-red-400'
+                                        }`}
+                                      >
+                                        {mod.releaseType === 2 ? 'β' : 'α'}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    className="w-11 h-6 rounded-full p-0.5 transition-colors"
+                                    style={{ backgroundColor: mod.enabled ? accentColor : 'rgba(255,255,255,0.18)' }}
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (!selectedInstance) return;
+                                      try {
+                                        const ok = await ipc.mods.toggle({
+                                          modId: mod.id,
+                                          instanceId: selectedInstance.id,
+                                          branch: selectedInstance.branch,
+                                          version: selectedInstance.version,
+                                        });
+                                        if (ok) {
+                                          setInstalledMods(prev =>
+                                            prev.map(m => (m.id === mod.id ? { ...m, enabled: !m.enabled } : m))
+                                          );
+                                        }
+                                      } catch (err) {
+                                        console.warn('[IPC] ToggleMod:', err);
                                       }
-                                    } catch (e) {
-                                      console.warn('[IPC] ToggleMod:', e);
-                                    }
-                                  }}
-                                >
-                                  <motion.div
-                                    className="w-5 h-5 rounded-full shadow-md"
-                                    style={{ backgroundColor: mod.enabled ? accentTextColor : 'white' }}
-                                    animate={{ x: mod.enabled ? 20 : 0 }}
-                                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                                  />
-                                </button>
-                              </div>
+                                    }}
+                                    title={t('modManager.enabled')}
+                                  >
+                                    <motion.div
+                                      className="w-5 h-5 rounded-full shadow-md"
+                                      style={{ backgroundColor: mod.enabled ? accentTextColor : 'white' }}
+                                      animate={{ x: mod.enabled ? 20 : 0 }}
+                                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                    />
+                                  </button>
+                                </div>
 
-                              {/* Actions */}
-                              <div className="w-20 flex items-center justify-end gap-1">
+                                {/* Actions */}
                                 <button
-                                  onClick={() => setModToDelete(mod)}
-                                  className="p-1.5 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                  onClick={(e) => { e.stopPropagation(); setModToDelete(mod); }}
+                                  className="p-1.5 rounded-lg text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
                                   title={t('common.delete')}
                                 >
                                   <Trash2 size={14} />
                                 </button>
                               </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>

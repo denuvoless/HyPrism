@@ -83,6 +83,90 @@ public class ModService : IModService
         Logger.Warning("ModService", "CurseForge API key is not configured");
         return false;
     }
+
+    private async Task<CurseForgeFile?> ResolveCurseForgeFileAsync(string modId, string? fileId)
+    {
+        if (!string.IsNullOrWhiteSpace(fileId))
+        {
+            var fileEndpoint = $"/v1/mods/{modId}/files/{fileId}";
+            using var fileRequest = CreateCurseForgeRequest(HttpMethod.Get, fileEndpoint);
+            using var fileResponse = await _httpClient.SendAsync(fileRequest);
+
+            if (!fileResponse.IsSuccessStatusCode)
+            {
+                Logger.Warning("ModService", $"Get file info returned {fileResponse.StatusCode} for mod {modId} file {fileId}");
+                return null;
+            }
+
+            var fileJson = await fileResponse.Content.ReadAsStringAsync();
+            var cfFileResp = JsonSerializer.Deserialize<CurseForgeFileResponse>(fileJson, _jsonOptions);
+            return cfFileResp?.Data;
+        }
+
+        var filesEndpoint = $"/v1/mods/{modId}/files?pageSize=1";
+        using var filesRequest = CreateCurseForgeRequest(HttpMethod.Get, filesEndpoint);
+        using var filesResponse = await _httpClient.SendAsync(filesRequest);
+
+        if (!filesResponse.IsSuccessStatusCode)
+        {
+            Logger.Warning("ModService", $"Get latest mod file returned {filesResponse.StatusCode} for mod {modId}");
+            return null;
+        }
+
+        var filesJson = await filesResponse.Content.ReadAsStringAsync();
+        var filesResp = JsonSerializer.Deserialize<CurseForgeFilesResponse>(filesJson, _jsonOptions);
+        return filesResp?.Data?.FirstOrDefault();
+    }
+
+    private static string? BuildEdgeCdnFallbackUrl(string fileId, string? fileName)
+    {
+        if (!int.TryParse(fileId, out var numericFileId) || numericFileId <= 0)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(fileName))
+            return null;
+
+        var firstPart = numericFileId / 1000;
+        var secondPart = numericFileId % 1000;
+        var encodedFileName = Uri.EscapeDataString(fileName.Trim());
+        return $"https://edge.forgecdn.net/files/{firstPart}/{secondPart}/{encodedFileName}";
+    }
+
+    private async Task<string?> ResolveDownloadUrlAsync(string modId, string fileId, string? directUrl, string? fileName)
+    {
+        if (!string.IsNullOrWhiteSpace(directUrl))
+            return directUrl;
+
+        var endpoint = $"/v1/mods/{modId}/files/{fileId}/download-url";
+        using var request = CreateCurseForgeRequest(HttpMethod.Get, endpoint);
+        using var response = await _httpClient.SendAsync(request);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var edgeFallbackOnError = BuildEdgeCdnFallbackUrl(fileId, fileName);
+            if (!string.IsNullOrWhiteSpace(edgeFallbackOnError))
+            {
+                Logger.Info("ModService", $"Falling back to deterministic CDN URL for mod {modId} file {fileId}");
+                return edgeFallbackOnError;
+            }
+
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        var downloadUrlResp = JsonSerializer.Deserialize<CurseForgeDownloadUrlResponse>(json, _jsonOptions);
+        if (!string.IsNullOrWhiteSpace(downloadUrlResp?.Data))
+            return downloadUrlResp.Data;
+
+        var edgeFallback = BuildEdgeCdnFallbackUrl(fileId, fileName);
+        if (!string.IsNullOrWhiteSpace(edgeFallback))
+        {
+            Logger.Info("ModService", $"Download-url payload missing, using deterministic CDN URL for mod {modId} file {fileId}");
+            return edgeFallback;
+        }
+
+        return null;
+    }
     
     /// <inheritdoc/>
     public async Task<ModSearchResult> SearchModsAsync(string query, int page, int pageSize, string[] categories, int sortField, int sortOrder)
@@ -226,24 +310,28 @@ public class ModService : IModService
 
         try
         {
-            // Get file info first
-            var fileEndpoint = $"/v1/mods/{slugOrId}/files/{fileIdOrVersion}";
-            using var fileRequest = CreateCurseForgeRequest(HttpMethod.Get, fileEndpoint);
-            using var fileResponse = await _httpClient.SendAsync(fileRequest);
-            
-            if (!fileResponse.IsSuccessStatusCode)
+            var requestedFileId = string.IsNullOrWhiteSpace(fileIdOrVersion) ? null : fileIdOrVersion.Trim();
+            var cfFile = await ResolveCurseForgeFileAsync(slugOrId, requestedFileId);
+
+            if (cfFile == null)
             {
-                Logger.Warning("ModService", $"Get file info returned {fileResponse.StatusCode}");
+                Logger.Warning("ModService", $"File info missing for mod {slugOrId} file '{fileIdOrVersion}'");
                 return false;
             }
-            
-            var fileJson = await fileResponse.Content.ReadAsStringAsync();
-            var cfFileResp = JsonSerializer.Deserialize<CurseForgeFileResponse>(fileJson, _jsonOptions);
-            var cfFile = cfFileResp?.Data;
-            
-            if (cfFile == null || string.IsNullOrEmpty(cfFile.DownloadUrl))
+
+            var numericModId = cfFile.ModId > 0 ? cfFile.ModId.ToString() : slugOrId;
+            var resolvedFileId = cfFile.Id > 0 ? cfFile.Id.ToString() : requestedFileId;
+
+            if (string.IsNullOrWhiteSpace(resolvedFileId))
             {
-                Logger.Warning("ModService", "File info missing or no download URL");
+                Logger.Warning("ModService", $"Could not resolve fileId for mod {slugOrId}");
+                return false;
+            }
+
+            var downloadUrl = await ResolveDownloadUrlAsync(numericModId, resolvedFileId, cfFile.DownloadUrl, cfFile.FileName);
+            if (string.IsNullOrWhiteSpace(downloadUrl))
+            {
+                Logger.Warning("ModService", $"File info missing or no download URL for mod {numericModId} file {resolvedFileId}");
                 return false;
             }
             
@@ -253,22 +341,37 @@ public class ModService : IModService
             var modsPath = Path.Combine(instancePath, "UserData", "Mods");
             Directory.CreateDirectory(modsPath);
             
-            var filePath = Path.Combine(modsPath, cfFile.FileName ?? $"mod_{cfFile.Id}.jar");
-            
-            using var downloadResponse = await _httpClient.GetAsync(cfFile.DownloadUrl);
-            if (!downloadResponse.IsSuccessStatusCode)
+            var fallbackName = !string.IsNullOrWhiteSpace(resolvedFileId)
+                ? $"mod_{resolvedFileId}.jar"
+                : $"mod_{cfFile.Id}.jar";
+            var filePath = Path.Combine(modsPath, cfFile.FileName ?? fallbackName);
+
+            const int maxDownloadAttempts = 3;
+            var downloaded = false;
+            for (var attempt = 1; attempt <= maxDownloadAttempts; attempt++)
             {
-                Logger.Warning("ModService", $"Download returned {downloadResponse.StatusCode}");
+                using var downloadResponse = await _httpClient.GetAsync(downloadUrl);
+                if (downloadResponse.IsSuccessStatusCode)
+                {
+                    await using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+                    await downloadResponse.Content.CopyToAsync(fs);
+                    downloaded = true;
+                    break;
+                }
+
+                Logger.Warning("ModService", $"Download returned {downloadResponse.StatusCode} for mod {numericModId} file {resolvedFileId} (attempt {attempt}/{maxDownloadAttempts})");
+                if (attempt < maxDownloadAttempts)
+                {
+                    await Task.Delay(300 * attempt);
+                }
+            }
+
+            if (!downloaded)
+            {
                 return false;
             }
             
-            await using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
-            await downloadResponse.Content.CopyToAsync(fs);
-            
             onProgress?.Invoke("installing", cfFile.FileName ?? "mod file");
-            
-            // Get the actual numeric mod ID from the file response
-            var numericModId = cfFile.ModId > 0 ? cfFile.ModId.ToString() : slugOrId;
             
             // Also get mod info for the manifest
             CurseForgeMod? modInfo = null;
@@ -299,7 +402,7 @@ public class ModService : IModService
                 Name = modInfo?.Name ?? cfFile.DisplayName ?? cfFile.FileName ?? "Unknown Mod",
                 Slug = modInfo?.Slug ?? "",
                 Version = ExtractVersion(cfFile.DisplayName, cfFile.FileName),
-                FileId = cfFile.Id.ToString(),
+                FileId = resolvedFileId,
                 FileName = cfFile.FileName ?? "",
                 Enabled = true,
                 Author = modInfo?.Authors?.FirstOrDefault()?.Name ?? "",

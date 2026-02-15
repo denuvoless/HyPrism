@@ -23,6 +23,7 @@
 - Ensure `Build/icon.png` exists before running publish targets (`deb`, `rpm`, `linux`, `all`).
 - Linux package app ID is `com.hyprismteam.hyprism`.
 - AppStream metadata is injected for Linux packaging from `Packaging/linux/com.hyprismteam.hyprism.metainfo.xml`.
+- RPM repack step intentionally strips `/usr/lib/.build-id` payload and does not own system directories (`/`, `/usr`, `/usr/lib`) to avoid install conflicts on Fedora.
 
 ## Adding a New Feature
 

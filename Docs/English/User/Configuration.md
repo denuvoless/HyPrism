@@ -133,8 +133,9 @@ Before launch, HyPrism validates `UserData/Mods` for known-incompatible server m
 
 In both **Installed Mods** and **Browse Mods** tabs, HyPrism supports faster multi-select for mods:
 
-- Use **Shift + Left Click** to replace the current selection with the range from your anchor mod to the clicked mod.
-- A normal click first sets the selection anchor for later Shift range selection.
+- **Click** selects a single mod.
+- **Ctrl/Cmd + Click** toggles a mod in the selection.
+- **Shift + Click** replaces the current selection with the range from your anchor mod to the clicked mod.
 
 ## Instances and Worlds Quick Actions
 

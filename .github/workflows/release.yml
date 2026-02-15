@@ -85,6 +85,7 @@ jobs:
             -name "*.deb" -o \
             -name "*.rpm" -o \
             -name "*.tar.xz" -o \
+            -name "*.flatpak" -o \
             -name "*.dmg" -o \
             -name "*.zip" -o \
             -name "*.exe" \
@@ -108,7 +109,8 @@ jobs:
                   "appimage": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.AppImage",
                   "deb": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.deb",
                   "rpm": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.rpm",
-                  "tar": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.tar.xz"
+                  "tar": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.tar.xz",
+                  "flatpak": "https://github.com/$REPO/releases/download/$TAG/HyPrism-linux-x64-$VERSION.flatpak"
                 }
               },
               "windows": {
@@ -173,6 +175,7 @@ jobs:
             | **Linux** | x64 | DEB | `HyPrism-linux-x64-${{ steps.version.outputs.version }}.deb` |
             | **Linux** | x64 | RPM | `HyPrism-linux-x64-${{ steps.version.outputs.version }}.rpm` |
             | **Linux** | x64 | tar.xz | `HyPrism-linux-x64-${{ steps.version.outputs.version }}.tar.xz` |
+            | **Linux** | x64 | Flatpak | `HyPrism-linux-x64-${{ steps.version.outputs.version }}.flatpak` |
             
             ### System Requirements
             
