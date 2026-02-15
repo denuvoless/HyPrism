@@ -592,7 +592,123 @@ build_appimage() { build_platform "linux" '["AppImage"]'                        
 build_deb()      { build_platform "linux" '["deb"]'                                 "deb"; }
 build_rpm()      { build_platform "linux" '["rpm"]'                                 "rpm"; }
 build_tar()      { build_platform "linux" '["tar.xz"]'                              "tar.xz"; }
-build_flatpak()  { build_platform "linux" '["flatpak"]'                              "flatpak"; }
+
+# Build flatpak using the repository Flatpak manifest (Packaging/linux/flatpak/...)
+# -- do NOT rely on electron-builder's flatpak target; use flatpak-builder + build-bundle
+arch_to_flatpak_arch() {
+    case "$1" in
+        x64)  echo "x86_64" ;;
+        arm64) echo "aarch64" ;;
+        *)    echo "$1" ;;
+    esac
+}
+
+build_flatpak() {
+    local platform="linux"
+
+    # Platform check
+    if ! check_platform "$platform"; then
+        local pname
+        pname=$(platform_name "$platform")
+        log_warn "Skipping flatpak — requires $pname (current OS: $(platform_name "$CURRENT_OS"))"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    log_section "flatpak"
+    prepare_linux_icon_set
+
+    local arches
+    arches=$(get_arches "$platform")
+    if [[ -z "$arches" ]]; then
+        log_warn "No valid architectures for flatpak"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    for arch in $arches; do
+        local rid
+        rid=$(get_rid "$platform" "$arch")
+        do_flatpak_publish "$rid" "$arch"
+    done
+}
+
+# Publish for a single RID then build .flatpak from Packaging/linux/flatpak manifest
+do_flatpak_publish() {
+    local rid="$1"
+    local arch="$2"
+    local start_time=$SECONDS
+
+    log_info "Building flatpak for ${BOLD}$arch${NC} (RID: $rid)"
+
+    # dotnet publish (same as do_publish does)
+    cd "$PROJECT_ROOT"
+    if ! dotnet publish -c Release -p:RuntimeIdentifier="$rid"; then
+        log_error "dotnet publish failed for $rid"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        return 1
+    fi
+
+    local publish_dir="$PROJECT_ROOT/bin/Release/net10.0/$rid/publish"
+    if [[ ! -d "$publish_dir" ]]; then
+        log_error "No publish output at $publish_dir"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        return 1
+    fi
+
+    # Copy publish output into manifest 'bundle' source (manifest expects a 'bundle' dir)
+    local manifest_dir="$PROJECT_ROOT/Packaging/linux/flatpak"
+    local bundle_dir="$manifest_dir/bundle"
+    rm -rf "$bundle_dir"
+    mkdir -p "$bundle_dir"
+    cp -a "$publish_dir/." "$bundle_dir/"
+
+    # Ensure flatpak manifest can find the executable when electron-builder places
+    # the binary under linux-unpacked/ (copy it to bundle/HyPrism for compatibility)
+    if [[ -x "$bundle_dir/linux-unpacked/HyPrism" ]]; then
+        cp -a "$bundle_dir/linux-unpacked/HyPrism" "$bundle_dir/HyPrism"
+        chmod +x "$bundle_dir/HyPrism" || true
+    fi
+
+    # Build local flatpak repo and export .flatpak
+    local repo_dir="$DIST_DIR/flatpak-repo-$arch"
+    rm -rf "$repo_dir"
+    mkdir -p "$repo_dir"
+
+    local build_dir="$PROJECT_ROOT/.flatpak-builder/build-flatpak-$arch"
+    rm -rf "$build_dir"
+    mkdir -p "$build_dir"
+
+    if ! (cd "$manifest_dir" && flatpak-builder --force-clean --repo="$repo_dir" --install-deps-from=flathub --install-deps-from=flathub-beta "$build_dir" com.hyprismteam.hyprism.json); then
+        log_error "flatpak-builder failed for $arch"
+        rm -rf "$bundle_dir" "$build_dir"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        return 1
+    fi
+
+    # Version from project file
+    local version
+    version=$(grep -oP '<Version>\K[^<]+' "$PROJECT_ROOT/HyPrism.csproj" || echo "0.0.0")
+
+    local flatpak_arch
+    flatpak_arch=$(arch_to_flatpak_arch "$arch")
+    local out_file="$DIST_DIR/HyPrism-linux-$arch-$version.flatpak"
+
+    if ! flatpak build-bundle --repo="$repo_dir" "$out_file" com.hyprismteam.hyprism "$version" --arch="$flatpak_arch"; then
+        log_error "flatpak build-bundle failed for $arch"
+        rm -rf "$bundle_dir" "$build_dir"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        return 1
+    fi
+
+    local elapsed=$(( SECONDS - start_time ))
+    log_ok "Flatpak built: $(basename "$out_file") — ${elapsed}s"
+    BUILD_COUNT=$((BUILD_COUNT + 1))
+
+    # cleanup temporary bundle & build dir (keep repo for inspection)
+    rm -rf "$bundle_dir" "$build_dir"
+}
+
 build_dmg()      { build_platform "mac"   '["dmg"]'                                 "dmg"; }
 build_zip()      { build_platform "win"   '["zip"]'                                 "zip"; }
 

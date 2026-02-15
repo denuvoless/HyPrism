@@ -1,12 +1,10 @@
 {
-  "app-id": "dev.hyprism.HyPrism",
-  "runtime": "org.gnome.Platform",
-  "runtime-version": "48",
-  "sdk": "org.gnome.Sdk",
-  "sdk-extensions": [
-    "org.freedesktop.Sdk.Extension.golang",
-    "org.freedesktop.Sdk.Extension.node22"
-  ],
+"id": "com.hyprismteam.hyprism",
+"runtime": "org.freedesktop.Platform",
+"runtime-version": "24.08",
+"sdk": "org.freedesktop.Sdk",
+"base": "org.electronjs.Electron2.BaseApp",
+"base-version": "24.08",
   "command": "hyprism-launcher-wrapper.sh",
   "finish-args": [
     "--share=ipc",
@@ -65,26 +63,21 @@
       "buildsystem": "simple",
       "build-commands": [
         "install -d /app/lib/hyprism",
-        "install -Dm755 bundle/HyPrism /app/lib/hyprism/HyPrism",
+        "sh -c 'if [ -x bundle/HyPrism ]; then install -Dm755 bundle/HyPrism /app/lib/hyprism/HyPrism; elif [ -x bundle/linux-unpacked/HyPrism ]; then install -Dm755 bundle/linux-unpacked/HyPrism /app/lib/hyprism/HyPrism; else echo HyPrism binary not found in bundle >&2; false; fi'",
         "cp -R bundle/wwwroot /app/lib/hyprism/ 2>/dev/null || true",
         "cp -R bundle/runtimes /app/lib/hyprism/ 2>/dev/null || true",
         "install -Dm644 bundle/jre.json /app/lib/hyprism/jre.json 2>/dev/null || true",
         "install -d /app/bin",
         "install -Dm755 hyprism-launcher-wrapper.sh /app/bin/hyprism-launcher-wrapper.sh",
         "chmod +x /app/bin/hyprism-launcher-wrapper.sh",
-        "install -Dm644 dev.hyprism.HyPrism.png /app/share/icons/hicolor/256x256/apps/dev.hyprism.HyPrism.png",
+        "install -Dm644 Frontend/src/assets/images/preview_logo.png /app/share/icons/hicolor/256x256/apps/dev.hyprism.HyPrism.png",
         "install -Dm644 dev.hyprism.HyPrism.desktop /app/share/applications/HyPrism.desktop",
         "install -Dm644 ../../../Packaging/linux/com.hyprismteam.hyprism.metainfo.xml /app/share/metainfo/com.hyprismteam.hyprism.metainfo.xml"
       ],
       "sources": [
         {
-          "type": "dir",
-          "path": "bundle",
-          "dest": "bundle"
-        },
-        {
           "type": "file",
-          "path": "../../../Packaging/linux/flatpak/dev.hyprism.HyPrism.png"
+          "path": "../../../Packaging/linux/flatpak/Frontend/src/assets/images/preview_logo.png"
         },
         {
           "type": "file",
@@ -92,7 +85,15 @@
         },
         {
           "type": "file",
-          "path": "../../../Packaging/linux/flatpak/dev.hyprism.HyPrism.desktop"
+          "path": "../../../Packaging/linux/flatpak/Frontend/src/assets/images/preview_logo.png"
+        },
+        {
+          "type": "file",
+          "path": "../../../Packaging/linux/flatpak/hyprism-launcher-wrapper.sh"
+        },
+        {
+          "type": "file",
+          "path": "../../../Packaging/linux/flatpak/Frontend/src/assets/images/preview_logo.png"
         },
         {
           "type": "file",
