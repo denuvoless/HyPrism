@@ -24,7 +24,8 @@
 - Linux package app ID: `com.hyprismteam.hyprism`.
 - AppStream-метаданные для Linux-пакетов берутся из `Packaging/linux/com.hyprismteam.hyprism.metainfo.xml`.
 - На этапе repack для RPM намеренно удаляется payload `/usr/lib/.build-id`, а системные директории (`/`, `/usr`, `/usr/lib`) не добавляются как владельцы пакета — это предотвращает конфликты установки на Fedora.
-- Для Flatpak используется runtime/base `24.08`; в CI перед сборкой подключается Flathub и устанавливаются `org.freedesktop.Platform`, `org.freedesktop.Sdk` и `org.electronjs.Electron2.BaseApp` этой версии.
+- Для Flatpak используется runtime/base `24.08`; в CI перед сборкой Flathub подключается через `sudo flatpak remote-add`, а `org.freedesktop.Platform`, `org.freedesktop.Sdk` и `org.electronjs.Electron2.BaseApp` устанавливаются на **system**-уровень.
+- После установки Linux CI выводит диагностику remotes/runtimes Flatpak, чтобы упрощать разбор сбоев flatpak-bundler.
 
 ## Добавление новой функции
 
