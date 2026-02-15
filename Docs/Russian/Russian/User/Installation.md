@@ -43,8 +43,8 @@ HyPrism использует нативные Linux-утилиты диалог�
 
 #### Flatpak
 ```bash
-flatpak install com.hyprismteam.hyprism
-flatpak run com.hyprismteam.hyprism
+flatpak install io.github.HyPrismTeam.HyPrism
+flatpak run io.github.HyPrismTeam.HyPrism
 ```
 
 ### macOS
