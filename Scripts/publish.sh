@@ -680,6 +680,7 @@ do_flatpak_publish() {
 
     # Copy publish output into manifest 'bundle' source (manifest expects a 'bundle' dir)
 local manifest_dir="$PROJECT_ROOT/Properties/linux/flatpak"
+    local bundle_dir="$manifest_dir/bundle"
     rm -rf "$bundle_dir"
     mkdir -p "$bundle_dir"
     cp -a "$publish_dir/." "$bundle_dir/"
