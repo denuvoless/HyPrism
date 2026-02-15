@@ -17,7 +17,7 @@
     <Description>Cross-platform Hytale launcher</Description>
     <Company>HyPrism</Company>
     <Copyright>Copyright © 2026 HyPrism Team</Copyright>
-    <License>MIT</License>
+    <License>CC-BY-NC-SA-4.0</License>
     <ProjectUrl>https://github.com/yyyumeniku/HyPrism</ProjectUrl>
     <ElectronVersion>34.2.0</ElectronVersion>
     <ElectronSkipMigrationChecks>true</ElectronSkipMigrationChecks>

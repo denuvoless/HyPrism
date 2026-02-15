@@ -45,7 +45,7 @@ We provide a comprehensive glossary of the basic principles of operation and int
 
 ## Credits & Contributors
 
-Special thanks to **Sanasol** for maintaining and creating the [auth server](https://github.com/sanasol/hytale-auth-server).
+Special thanks to **Sanasol** for maintaining and creating the [auth server](https://github.com/sanasol/hytale-auth-server)
 
 <a href="https://github.com/yyyumeniku/HyPrism/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=yyyumeniku/HyPrism" alt="Contributors" />
@@ -53,8 +53,15 @@ Special thanks to **Sanasol** for maintaining and creating the [auth server](htt
 
 ## Legal Notice
 
+## License
+
+HyPrism is licensed under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)**.
+
+- Full license text: [LICENSE.md](LICENSE.md)
+- Third-party licenses: [Licenses/COPYING.md](Licenses/COPYING.md)
+
 ### Unofficial Product
-**HyPrism** is an unofficial, open-source launcher for Hytale. This project is **not** affiliated with, endorsed by, sponsored by, or approved by **Hypixel Studios**, **Riot Games**, or any of their affiliates.
+**HyPrism** is an unofficial, open-source launcher for Hytale. This project is **not** affiliated with, endorsed by, sponsored by, or approved by **Hypixel Studios**, **Riot Games**, or any of their affiliates
 
 ### Intellectual Property
 "Hytale", "Hypixel Studios", and strictly related logos and assets are trademarks or registered trademarks of **Hypixel Studios Inc.**. All rights reserved by their respective owners. usage of this software is subject to the terms of the [Hytale End-User License Agreement (EULA)](https://hytale.com/eula)
@@ -67,6 +74,10 @@ Special thanks to **Sanasol** for maintaining and creating the [auth server](htt
 2.  **Third-Party Mirrors:** The software is also capable of retrieving game files via third-party mirrors (e.g., repositories provided by [MobCat](https://github.com/MobCat))
 
 The developers of HyPrism constitute no control over the content hosted on external mirrors. The choice of download source and compliance with the applicable license agreements rests with the user
+
+### Third-Party Components
+
+HyPrism depends on third-party libraries distributed under licenses including MIT, Apache-2.0, BSD-style licenses, and CC-BY-4.0
 
 <div align="center">
   <sub>Made with ❤️ by the HyPrism Community</sub>
