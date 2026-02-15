@@ -460,8 +460,8 @@ INNER
         flatpak_block=$(cat <<'FLATPAK'
 ,
   "flatpak": {
-    "runtimeVersion": "25.08",
-    "baseVersion": "25.08",
+        "runtimeVersion": "24.08",
+        "baseVersion": "24.08",
     "useWaylandFlags": true
   }
 FLATPAK

@@ -109,6 +109,14 @@ jobs:
             flatpak \
             flatpak-builder
 
+      - name: Prepare Flatpak runtimes
+        run: |
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --system -y flathub \
+            org.freedesktop.Platform//24.08 \
+            org.freedesktop.Sdk//24.08 \
+            org.electronjs.Electron2.BaseApp//24.08
+
       - name: Build Linux ${{ matrix.arch }}
         run: |
           chmod +x Scripts/publish.sh
