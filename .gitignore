@@ -79,6 +79,7 @@ flatpak-repo/
 *.flatpak
 Properties/linux/flatpak/bundle
 repo
+build-dir
 
 # scripts
 scripts/run.sh
