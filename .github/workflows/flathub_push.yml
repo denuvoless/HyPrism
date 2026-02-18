@@ -1,0 +1,145 @@
+name: "Flathub push"
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Enable DRY RUN: don't push to Flathub, just simulate the process"
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  Pushing_branch_to_flathub:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install xmlstarlet
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xmlstarlet
+          xmlstarlet --version || true
+
+      - name: Prepare Flathub content (copy + optional manifest patch)
+        id: prepare
+        run: |
+          set -euo pipefail
+
+          # prepare flathub folder and replace README (manifest is generated from Properties/linux/flatpak)
+          ./Scripts/update-flathub-manifest.sh -r README.md
+
+          # try to read a release version from metainfo (if present)
+          METAFILE="Properties/linux/flathub/io.github.HyPrismTeam.HyPrism.metainfo.xml"
+          RELEASE_VERSION=""
+          if [ -f "$METAFILE" ]; then
+            RELEASE_VERSION=$(xmlstarlet sel -t -v "//*[local-name()='release']/@version" "$METAFILE" 2>/dev/null || true)
+          fi
+
+          if [ -z "$RELEASE_VERSION" ]; then
+            SHORT_SHA=$(git rev-parse --short=7 HEAD 2>/dev/null || echo "local")
+            RELEASE_VERSION="auto-$(date +%Y%m%d%H%M%S)-$SHORT_SHA"
+          fi
+
+          echo "RELEASE_VERSION=$RELEASE_VERSION" > flathub_push_info.env
+          echo "Prepared Properties/linux/flathub — release_version=$RELEASE_VERSION"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Debug: show flathub dir and manifest
+        run: |
+          echo "Listing Properties/linux/flathub"
+          ls -lah Properties/linux/flathub || true
+          echo "----- manifest (if generated) -----"
+          cat Properties/linux/flathub/io.github.HyPrismTeam.HyPrism.yml || true
+
+      - name: Clone Flathub repo and push
+        env:
+          GH_TOKEN: ${{ secrets.FLATHUB_PUSH }}
+          GIT_NAME: ${{ secrets.GITNAME || github.actor }}
+          GIT_MAIL: ${{ secrets.GITMAIL || github.actor }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "ERROR: secret FLATHUB_PUSH is required to push to the Flathub repository" >&2
+            exit 1
+          fi
+
+          git config --global user.name "${GIT_NAME}"
+          git config --global user.email "${GIT_MAIL}"
+
+          rm -rf flathub-repo || true
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/flathub/io.github.HyPrismTeam.HyPrism.git" flathub-repo
+
+          # determine branch name
+          source flathub_push_info.env || true
+          BRANCH_NAME="$RELEASE_VERSION"
+
+          echo "Using branch: $BRANCH_NAME"
+
+          cd flathub-repo
+
+          # create branch if it doesn't exist
+          if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
+            git checkout "$BRANCH_NAME"
+          else
+            git checkout -b "$BRANCH_NAME"
+          fi
+
+          # remove tracked files (keep .git)
+          git rm -rf . || true
+          git clean -fdx || true
+
+          # copy prepared flathub content
+          cp -a ../Properties/linux/flathub/. .
+
+          # ensure README.md is present
+          if [ ! -f README.md ]; then
+            echo "WARNING: README.md missing in flathub content" >&2
+          fi
+
+          git add -A
+          if git commit -m "chore(flathub): update manifest/content for $BRANCH_NAME" >/dev/null 2>&1; then
+            echo "Committed changes"
+          else
+            echo "No changes to commit"
+          fi
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "Dry-run: not pushing to flathub"
+            exit 0
+          fi
+
+          git push origin HEAD:$BRANCH_NAME --force
+          echo "Pushed to https://github.com/flathub/io.github.HyPrismTeam.HyPrism/tree/$BRANCH_NAME"
+
+  Summary:
+    needs: Pushing_branch_to_flathub
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Write Flathub push summary
+        run: |
+          set -e
+          if [ -f flathub_push_info.env ]; then
+            source flathub_push_info.env || true
+          fi
+
+          branch_name="$RELEASE_VERSION"
+          flathub_repo="https://github.com/flathub/io.github.HyPrismTeam.HyPrism"
+          branch_url="$flathub_repo/tree/$branch_name"
+
+          echo "### Flathub push summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "* Flathub branch pushed: **$branch_name**" >> "$GITHUB_STEP_SUMMARY"
+          echo "* Branch link: [$branch_url]($branch_url)" >> "$GITHUB_STEP_SUMMARY"
+          echo "* Flathub content source: \\`Properties/linux/flathub\\
