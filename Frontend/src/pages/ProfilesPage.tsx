@@ -3,14 +3,9 @@ import { motion } from 'framer-motion';
 import { Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { PageContainer } from '@/components/ui/PageContainer';
+import { pageVariants } from '@/constants/animations';
 
 const ProfileEditor = lazy(() => import('../components/ProfileEditor'));
-
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-};
 
 interface ProfilesPageProps {
   onProfileUpdate?: () => void;

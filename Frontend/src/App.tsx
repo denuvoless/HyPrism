@@ -14,13 +14,14 @@ import { InstancesPage } from './pages/InstancesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LogsPage } from './pages/LogsPage';
 import { Button, LauncherActionButton } from '@/components/ui/Controls';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 // Controller detection removed - not using floating indicator
 
 // Lazy load heavy modals for better initial load performance
 const NewsPreview = lazy(() => import('./components/NewsPreview').then(m => ({ default: m.NewsPreview })));
 const ErrorModal = lazy(() => import('./components/modals/ErrorModal').then(m => ({ default: m.ErrorModal })));
 const DeleteConfirmationModal = lazy(() => import('./components/modals/DeleteConfirmationModal').then(m => ({ default: m.DeleteConfirmationModal })));
-const OnboardingModal = lazy(() => import('./components/modals/OnboardingModal').then(m => ({ default: m.OnboardingModal })));
+const OnboardingModal = lazy(() => import('./pages/onboarding').then(m => ({ default: m.OnboardingModal })));
 
 // Functions that map to real IPC channels
 const WindowClose = () => ipc.windowCtl.close();
@@ -43,7 +44,6 @@ function EventsOn(event: string, cb: (...args: any[]) => void): () => void {
 // Settings-backed getters
 async function GetBackgroundMode(): Promise<string> { return (await ipc.settings.get()).backgroundMode ?? 'image'; }
 async function GetMusicEnabled(): Promise<boolean> { return (await ipc.settings.get()).musicEnabled ?? true; }
-async function GetAccentColor(): Promise<string> { return (await ipc.settings.get()).accentColor ?? '#FF6B2B'; }
 async function GetCloseAfterLaunch(): Promise<boolean> { return (await ipc.settings.get()).closeAfterLaunch ?? false; }
 async function GetLaunchAfterDownload(): Promise<boolean> { return (await ipc.settings.get()).launchAfterDownload ?? true; }
 async function GetHasCompletedOnboarding(): Promise<boolean> { return (await ipc.settings.get()).hasCompletedOnboarding ?? false; }
@@ -62,8 +62,6 @@ const stub = <T,>(name: string, fallback: T) => async (..._args: any[]): Promise
   console.warn(`[IPC] ${name}: no IPC channel yet`);
   return fallback;
 };
-const _OpenInstanceFolder = stub('OpenInstanceFolder', undefined as void);
-const DeleteGame = stub('DeleteGame', false);
 const Update = async (): Promise<boolean> => ipc.update.install();
 const GetRecentLogs = stub<string[]>('GetRecentLogs', []);
 
@@ -105,7 +103,7 @@ const CheckRosettaStatus = stub<{ NeedsInstall: boolean; Message: string; Comman
 // Modal loading fallback - minimal spinner
 const ModalFallback = () => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-    <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+    <LoadingSpinner />
   </div>
 );
 
@@ -206,7 +204,6 @@ const App: React.FC = () => {
   // Background, news, and accent color settings
   // Initialize as null to prevent flash — don't render background until config is loaded
   const [backgroundMode, setBackgroundMode] = useState<string | null>(null);
-  const [_accentColor, setAccentColor] = useState<string>('#FFA845'); // Used only for SettingsModal callback
   const [isMuted, setIsMuted] = useState<boolean>(false);
   
   const handleToggleMute = useCallback(() => {
@@ -469,7 +466,6 @@ const App: React.FC = () => {
 
     // Load background mode, news settings, and accent color
     GetBackgroundMode().then((mode: string) => setBackgroundMode(mode || 'slideshow'));
-    GetAccentColor().then((color: string) => setAccentColor(color || '#FFA845'));
     GetMusicEnabled().then((enabled: boolean) => setIsMuted(!enabled));
 
     // Load launcher branch and other settings
@@ -1122,7 +1118,6 @@ const App: React.FC = () => {
               onLauncherBranchChange={handleLauncherBranchChange}
               rosettaWarning={rosettaWarning}
               onBackgroundModeChange={(mode) => setBackgroundMode(mode)}
-              onAccentColorChange={(color) => setAccentColor(color)}
               onInstanceDeleted={handleInstanceDeleted}
               onAuthSettingsChange={refreshOfficialStatus}
               onNavigateToMods={() => {

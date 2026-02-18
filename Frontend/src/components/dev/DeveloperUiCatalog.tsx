@@ -1,35 +1,52 @@
 import { useMemo, useState } from 'react';
 import {
   Bug,
+  Coffee,
   Copy,
   Download,
   Edit,
   ExternalLink,
   FolderOpen,
+  Globe,
   Play,
+  Power,
   RefreshCw,
   Save,
+  Server,
+  Settings,
   Trash2,
   Upload,
+  Wifi,
   X,
 } from 'lucide-react';
 import {
   AccentSegmentedControl,
   Button,
+  DropdownTriggerButton,
   IconButton,
   LauncherActionButton,
+  LinkButton,
   MenuActionButton,
+  MenuItemButton,
+  MirrorSpeedCard,
+  ModalFooterActions,
+  RadioOptionCard,
+  ScrollArea,
+  SegmentedControl,
   SelectionMark,
+  SettingsToggleCard,
   Switch,
 } from '@/components/ui/Controls';
 import { SelectionCard } from '@/components/ui/SelectionCard';
 
-type CatalogTab = 'launcher' | 'buttons' | 'tabs' | 'switches' | 'menus' | 'cards';
+type CatalogTab = 'launcher' | 'buttons' | 'tabs' | 'switches' | 'menus' | 'cards' | 'settings' | 'layout';
 
 export function DeveloperUiCatalog() {
   const [tab, setTab] = useState<CatalogTab>('launcher');
   const [switchOn, setSwitchOn] = useState(true);
   const [selected, setSelected] = useState(true);
+  const [radioValue, setRadioValue] = useState<'a' | 'b' | 'c'>('a');
+  const [segValue, setSegValue] = useState<'one' | 'two' | 'three'>('one');
 
   const tabs = useMemo(
     () =>
@@ -40,6 +57,8 @@ export function DeveloperUiCatalog() {
         { value: 'switches' as const, label: 'Switches' },
         { value: 'menus' as const, label: 'Menus' },
         { value: 'cards' as const, label: 'Cards' },
+        { value: 'settings' as const, label: 'Settings' },
+        { value: 'layout' as const, label: 'Layout' },
       ],
     []
   );
@@ -201,6 +220,162 @@ export function DeveloperUiCatalog() {
             />
           </div>
         </div>
+      ) : null}
+
+      {tab === 'settings' ? (
+        <>
+          <div className="glass-panel-static-solid rounded-2xl p-4">
+            <div className="text-xs font-semibold text-white/60">Primitive</div>
+            <div className="mt-2 text-[11px] text-white/40">SettingsToggleCard</div>
+
+            <div className="mt-3 space-y-2">
+              <SettingsToggleCard
+                icon={<Power size={16} className="text-white/70" />}
+                title="Toggle setting"
+                description="Description of the setting"
+                checked={switchOn}
+                onCheckedChange={setSwitchOn}
+              />
+              <SettingsToggleCard
+                icon={<Wifi size={16} className="text-white/70" />}
+                title="With badge"
+                description="A toggle card with a badge"
+                badge={
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider uppercase"
+                    style={{ backgroundColor: '#ef444420', color: '#ef4444', border: '1px solid #ef444430' }}>
+                    BETA
+                  </span>
+                }
+                checked={!switchOn}
+                onCheckedChange={(v) => setSwitchOn(!v)}
+              />
+              <SettingsToggleCard
+                icon={<Settings size={16} className="text-white/70" />}
+                title="Disabled"
+                description="This setting is disabled"
+                checked={false}
+                onCheckedChange={() => {}}
+                disabled
+              />
+            </div>
+          </div>
+
+          <div className="glass-panel-static-solid rounded-2xl p-4">
+            <div className="text-xs font-semibold text-white/60">Primitive</div>
+            <div className="mt-2 text-[11px] text-white/40">RadioOptionCard</div>
+
+            <div className="mt-3 space-y-2">
+              <RadioOptionCard
+                icon={<Coffee size={16} />}
+                title="Option A"
+                description="First option"
+                selected={radioValue === 'a'}
+                onClick={() => setRadioValue('a')}
+              />
+              <RadioOptionCard
+                icon={<Globe size={16} />}
+                title="Option B"
+                description="Second option"
+                selected={radioValue === 'b'}
+                onClick={() => setRadioValue('b')}
+              />
+              <RadioOptionCard
+                icon={<Server size={16} />}
+                title="Option C (expandable)"
+                description="Has child content when selected"
+                selected={radioValue === 'c'}
+                onClick={() => setRadioValue('c')}
+              >
+                <div className="text-xs text-white/50 p-2 rounded-lg bg-white/5">
+                  Expanded content shown when selected
+                </div>
+              </RadioOptionCard>
+            </div>
+          </div>
+
+          <div className="glass-panel-static-solid rounded-2xl p-4">
+            <div className="text-xs font-semibold text-white/60">Primitive</div>
+            <div className="mt-2 text-[11px] text-white/40">MirrorSpeedCard</div>
+
+            <div className="mt-3">
+              <MirrorSpeedCard
+                name="Example Mirror"
+                description="Community mirror"
+                hostname="mirror.example.com"
+                speedTest={null}
+                isTesting={false}
+                onTest={() => {}}
+                testLabel="Test speed"
+                testingLabel="Testing..."
+                unavailableLabel="Unavailable"
+              />
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {tab === 'layout' ? (
+        <>
+          <div className="glass-panel-static-solid rounded-2xl p-4">
+            <div className="text-xs font-semibold text-white/60">Primitives</div>
+            <div className="mt-2 text-[11px] text-white/40">
+              LinkButton • DropdownTriggerButton • MenuItemButton
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <LinkButton onClick={() => {}}>
+                <ExternalLink size={12} /> Link button
+              </LinkButton>
+
+              <DropdownTriggerButton label="Dropdown" open={false} onClick={() => {}} />
+              <DropdownTriggerButton label="Open" open onClick={() => {}} />
+            </div>
+
+            <div className="mt-3 w-[260px] rounded-2xl overflow-hidden border border-white/15 bg-[#0a0a0a]/35">
+              <MenuItemButton onClick={() => {}}>
+                <FolderOpen className="w-4 h-4" /> Menu item (default)
+              </MenuItemButton>
+              <div className="h-px bg-white/10" />
+              <MenuItemButton variant="danger" onClick={() => {}}>
+                <Trash2 className="w-4 h-4" /> Menu item (danger)
+              </MenuItemButton>
+            </div>
+          </div>
+
+          <div className="glass-panel-static-solid rounded-2xl p-4">
+            <div className="text-xs font-semibold text-white/60">Primitives</div>
+            <div className="mt-2 text-[11px] text-white/40">SegmentedControl • ScrollArea • ModalFooterActions</div>
+
+            <div className="mt-3">
+              <SegmentedControl
+                value={segValue}
+                onChange={setSegValue}
+                items={[
+                  { value: 'one' as const, label: 'One' },
+                  { value: 'two' as const, label: 'Two' },
+                  { value: 'three' as const, label: 'Three' },
+                ]}
+              />
+            </div>
+
+            <div className="mt-3">
+              <ScrollArea axis="y" thin className="h-24 rounded-lg border border-white/10 p-2">
+                {Array.from({ length: 12 }, (_, i) => (
+                  <div key={i} className="text-xs text-white/50 py-1">
+                    ScrollArea item {i + 1}
+                  </div>
+                ))}
+              </ScrollArea>
+            </div>
+
+            <div className="mt-3 rounded-xl overflow-hidden border border-white/10">
+              <ModalFooterActions>
+                <Button size="sm">Cancel</Button>
+                <Button size="sm" variant="primary">Confirm</Button>
+              </ModalFooterActions>
+            </div>
+          </div>
+        </>
       ) : null}
     </div>
   );

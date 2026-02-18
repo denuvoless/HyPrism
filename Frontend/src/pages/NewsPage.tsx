@@ -6,6 +6,7 @@ import { useAccentColor } from '../contexts/AccentColorContext';
 import { ipc } from '@/lib/ipc';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { Button, LinkButton } from '@/components/ui/Controls';
+import { pageVariants } from '@/constants/animations';
 
 type NewsFilter = 'all' | 'hytale' | 'hyprism';
 
@@ -22,12 +23,6 @@ interface EnrichedNewsItem {
 interface NewsPageProps {
   getNews: (count: number) => Promise<EnrichedNewsItem[]>;
 }
-
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-};
 
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },

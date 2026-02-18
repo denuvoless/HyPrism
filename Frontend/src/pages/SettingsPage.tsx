@@ -3,21 +3,16 @@ import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { SettingsHeader } from '@/components/ui/SettingsHeader';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { pageVariants } from '@/constants/animations';
 
-const SettingsModal = lazy(() => import('../components/SettingsModal').then(m => ({ default: m.SettingsModal })));
-
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-};
+const SettingsPageContent = lazy(() => import('./settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
 
 interface SettingsPageProps {
   launcherBranch: string;
   onLauncherBranchChange: (branch: string) => void;
   rosettaWarning?: { message: string; command: string; tutorialUrl?: string } | null;
   onBackgroundModeChange?: (mode: string) => void;
-  onAccentColorChange?: (color: string) => void;
   onInstanceDeleted?: () => void;
   onNavigateToMods?: () => void;
   onAuthSettingsChange?: () => void;
@@ -45,16 +40,15 @@ export const SettingsPage: React.FC<SettingsPageProps> = (props) => {
           <div className="flex-1 min-h-0">
             <Suspense fallback={
               <div className="flex items-center justify-center h-full">
-                <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                <LoadingSpinner />
               </div>
             }>
-              <SettingsModal
+              <SettingsPageContent
                 onClose={() => {}}
                 launcherBranch={props.launcherBranch}
                 onLauncherBranchChange={props.onLauncherBranchChange}
                 rosettaWarning={props.rosettaWarning}
                 onBackgroundModeChange={props.onBackgroundModeChange}
-                onAccentColorChange={props.onAccentColorChange}
                 onInstanceDeleted={props.onInstanceDeleted}
                 onAuthSettingsChange={props.onAuthSettingsChange}
                 pageMode={true}

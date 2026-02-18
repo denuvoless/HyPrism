@@ -13,7 +13,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { Button, IconButton, MenuItemButton } from '@/components/ui/Controls';
-import type { InstalledVersionInfo } from './types';
+import type { InstalledVersionInfo } from '@/types';
 
 export type ValidationInfo = {
   status: 'valid' | 'warning' | 'error';

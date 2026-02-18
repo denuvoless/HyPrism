@@ -10,6 +10,7 @@ import { formatBytes } from '../utils/format';
 import previewLogo from '../assets/images/preview_logo.png';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { Button, IconButton, LauncherActionButton, LinkButton } from '@/components/ui/Controls';
+import { pageVariants } from '@/constants/animations';
 
 interface DashboardPageProps {
   // Profile
@@ -54,12 +55,6 @@ interface DashboardPageProps {
   isOfficialProfile: boolean;
   isOfficialServerMode: boolean;
 }
-
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-};
 
 export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
   const { t } = useTranslation();
