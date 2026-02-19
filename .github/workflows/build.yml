@@ -105,34 +105,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             rpm \
-            libfuse2 \
-            flatpak \
-            flatpak-builder
-
-      - name: Prepare Flatpak remotes
-        run: |
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak remote-add --user --if-not-exists flathub-beta https://dl.flathub.org/beta-repo/flathub-beta.flatpakrepo
-
-      - name: Diagnose Flatpak environment
-        run: |
-          flatpak --version
-          flatpak remotes --system || true
-          flatpak list --system --runtime | grep -E 'freedesktop|electronjs|24\.08|Electron2' || true
-
-      - name: Diagnose Flatpak environment
-        run: |
-          echo "=== flatpak --version ==="
-          flatpak --version
-          echo "=== system remotes ==="
-          flatpak remotes --system || true
-          echo "=== system runtimes (24.08 / Electron2) ==="
-          flatpak list --system --runtime | grep -E 'freedesktop|electronjs|24\.08|Electron2' || true
-
+            libfuse2
+            
       - name: Build Linux ${{ matrix.arch }}
         run: |
           chmod +x Scripts/publish.sh
-          ./Scripts/publish.sh linux flatpak --arch ${{ matrix.arch }}
+          ./Scripts/publish.sh linux --arch ${{ matrix.arch }}
 
       - name: Upload Linux ${{ matrix.arch }} artifacts
         uses: actions/upload-artifact@v4
@@ -143,7 +121,6 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.tar.xz
-            dist/*.flatpak
           if-no-files-found: warn
 
   # ============================================================================
