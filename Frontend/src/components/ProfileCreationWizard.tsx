@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Shield, ArrowRight, ArrowLeft, Loader2, Dices, Check, AlertCircle, AlertTriangle } from 'lucide-react';
+import { User, Shield, ArrowLeft, Loader2, Dices, Check, AlertCircle, AlertTriangle } from 'lucide-react';
 import { useAccentColor } from '../contexts/AccentColorContext';
 import { ipc, Profile } from '@/lib/ipc';
+import { SelectionCard } from '@/components/ui/SelectionCard';
+import { Button, LinkButton, IconButton } from '@/components/ui/Controls';
 
 type WizardStep = 'choose-type' | 'official-auth' | 'unofficial-name' | 'done';
 type ErrorLevel = 'error' | 'warning';
@@ -46,7 +48,6 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
     const { accentColor } = useAccentColor();
 
     const [step, setStep] = useState<WizardStep>('choose-type');
-    const [isOfficial, setIsOfficial] = useState(false);
     const [name, setName] = useState(generateRandomName());
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -54,13 +55,11 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
 
     // --- Step: Choose Type ---
     const handleChooseOfficial = () => {
-        setIsOfficial(true);
         setStep('official-auth');
         setError(null);
     };
 
     const handleChooseUnofficial = () => {
-        setIsOfficial(false);
         setStep('unofficial-name');
         setError(null);
     };
@@ -171,53 +170,28 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
 
                         <div className="flex flex-col gap-3 w-full">
                             {/* Official */}
-                            <button
+                            <SelectionCard
                                 onClick={handleChooseOfficial}
-                                className="flex items-center gap-4 p-4 rounded-xl border border-white/[0.08] bg-[#2c2c2e] hover:border-white/20 transition-all group"
-                            >
-                                <div
-                                    className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0"
-                                    style={{ backgroundColor: `${accentColor}20` }}
-                                >
-                                    <Shield size={24} style={{ color: accentColor }} />
-                                </div>
-                                <div className="flex-1 text-left">
-                                    <p className="font-semibold text-white group-hover:text-white">
-                                        {t('profiles.wizard.official')}
-                                    </p>
-                                    <p className="text-xs text-white/40 mt-0.5">
-                                        {t('profiles.wizard.officialDesc')}
-                                    </p>
-                                </div>
-                                <ArrowRight size={18} className="text-white/20 group-hover:text-white/50 transition-colors" />
-                            </button>
+                                icon={<Shield size={20} style={{ color: accentColor }} />}
+                                title={t('profiles.wizard.official')}
+                                description={t('profiles.wizard.officialDesc')}
+                            />
 
                             {/* Unofficial */}
-                            <button
+                            <SelectionCard
                                 onClick={handleChooseUnofficial}
-                                className="flex items-center gap-4 p-4 rounded-xl border border-white/[0.08] bg-[#2c2c2e] hover:border-white/20 transition-all group"
-                            >
-                                <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 bg-white/5">
-                                    <User size={24} className="text-white/50" />
-                                </div>
-                                <div className="flex-1 text-left">
-                                    <p className="font-semibold text-white group-hover:text-white">
-                                        {t('profiles.wizard.unofficial')}
-                                    </p>
-                                    <p className="text-xs text-white/40 mt-0.5">
-                                        {t('profiles.wizard.unofficialDesc')}
-                                    </p>
-                                </div>
-                                <ArrowRight size={18} className="text-white/20 group-hover:text-white/50 transition-colors" />
-                            </button>
+                                icon={<User size={20} className="text-white/70" />}
+                                title={t('profiles.wizard.unofficial')}
+                                description={t('profiles.wizard.unofficialDesc')}
+                            />
                         </div>
 
-                        <button
+                        <LinkButton
                             onClick={onCancel}
-                            className="text-sm text-white/30 hover:text-white/60 transition-colors mt-2"
+                            className="text-sm mt-2"
                         >
                             {t('common.cancel')}
-                        </button>
+                        </LinkButton>
                     </motion.div>
                 )}
 
@@ -257,13 +231,11 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
                             </div>
                         )}
 
-                        <motion.button
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
+                        <Button
+                            variant="primary"
                             onClick={handleStartAuth}
                             disabled={isLoading}
-                            className="w-full py-3 rounded-xl font-medium text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-50"
-                            style={{ backgroundColor: accentColor }}
+                            className="w-full py-3"
                         >
                             {isLoading ? (
                                 <>
@@ -275,7 +247,7 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
                                     {t('profiles.wizard.loginHytale')}
                                 </>
                             )}
-                        </motion.button>
+                        </Button>
 
                         {isLoading && (
                             <p className="text-xs text-white/30 text-center">
@@ -283,14 +255,14 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
                             </p>
                         )}
 
-                        <button
+                        <LinkButton
                             onClick={() => { setStep('choose-type'); setError(null); }}
                             disabled={isLoading}
-                            className="flex items-center gap-1 text-sm text-white/30 hover:text-white/60 transition-colors disabled:opacity-30"
+                            className="text-sm"
                         >
                             <ArrowLeft size={14} />
                             {t('common.back')}
-                        </button>
+                        </LinkButton>
                     </motion.div>
                 )}
 
@@ -328,15 +300,12 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
                                 className="flex-1 bg-[#2c2c2e] text-white text-lg font-semibold px-4 py-3 rounded-xl border outline-none text-center"
                                 style={{ borderColor: isNickValid || !name.trim() ? accentColor : '#ef4444' }}
                             />
-                            <motion.button
-                                whileHover={{ scale: 1.1 }}
-                                whileTap={{ scale: 0.9 }}
+                            <IconButton
                                 onClick={() => setName(generateRandomName())}
-                                className="p-3 rounded-xl bg-white/10 text-white/70 hover:bg-white/20"
                                 title={t('profiles.generateName')}
                             >
                                 <Dices size={20} />
-                            </motion.button>
+                            </IconButton>
                         </div>
 
                         <p className={`text-xs ${isNickValid || !name.trim() ? 'text-white/30' : 'text-red-400/70'}`}>
@@ -350,13 +319,11 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
                             </div>
                         )}
 
-                        <motion.button
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.98 }}
+                        <Button
+                            variant="primary"
                             onClick={handleCreateUnofficial}
                             disabled={isLoading || !isNickValid}
-                            className="w-full py-3 rounded-xl font-medium text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-50"
-                            style={{ backgroundColor: accentColor }}
+                            className="w-full py-3"
                         >
                             {isLoading ? (
                                 <Loader2 size={18} className="animate-spin" />
@@ -366,16 +333,16 @@ export const ProfileCreationWizard: React.FC<ProfileCreationWizardProps> = ({ on
                                     {t('profiles.wizard.create')}
                                 </>
                             )}
-                        </motion.button>
+                        </Button>
 
-                        <button
+                        <LinkButton
                             onClick={() => { setStep('choose-type'); setError(null); }}
                             disabled={isLoading}
-                            className="flex items-center gap-1 text-sm text-white/30 hover:text-white/60 transition-colors disabled:opacity-30"
+                            className="text-sm"
                         >
                             <ArrowLeft size={14} />
                             {t('common.back')}
-                        </button>
+                        </LinkButton>
                     </motion.div>
                 )}
             </AnimatePresence>

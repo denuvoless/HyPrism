@@ -382,6 +382,8 @@
     "instanceNamePlaceholder": "Bu örnek için bir ad girin",
     "selectIcon": "Simge Seç",
     "uploadIcon": "Simge Yükle",
+    "versionChangeWarning": "Changing version will remove game files",
+    "versionChangeWarningHint": "The game client will be deleted and you will need to re-download this version. User data (saves, mods) will be kept.",
     "creating": "Oluşturuluyor...",
     "create": "Oluştur",
     "downloadFromDashboard": "Ana sayfadan bir oyun sürümü indirin",

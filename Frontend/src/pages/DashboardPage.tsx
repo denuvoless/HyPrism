@@ -8,6 +8,9 @@ import { ipc, InstanceInfo } from '@/lib/ipc';
 import { DiscordIcon } from '../components/icons/DiscordIcon';
 import { formatBytes } from '../utils/format';
 import previewLogo from '../assets/images/preview_logo.png';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { Button, IconButton, LauncherActionButton, LinkButton } from '@/components/ui/Controls';
+import { pageVariants } from '@/constants/animations';
 
 interface DashboardPageProps {
   // Profile
@@ -23,7 +26,6 @@ interface DashboardPageProps {
   } | null;
   avatarRefreshTrigger: number;
   onOpenProfileEditor: () => void;
-  onLauncherUpdate: () => void;
   // Game state
   isDownloading: boolean;
   downloadState: 'downloading' | 'extracting' | 'launching';
@@ -53,15 +55,9 @@ interface DashboardPageProps {
   isOfficialServerMode: boolean;
 }
 
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-};
-
 export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
   const { t } = useTranslation();
-  const { accentColor, accentTextColor } = useAccentColor();
+  const { accentColor } = useAccentColor();
 
   const [localAvatar, setLocalAvatar] = useState<string | null>(null);
   const [showCancelButton, setShowCancelButton] = useState(false);
@@ -188,25 +184,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
     // Official servers with unofficial profile — block play
     if (props.officialServerBlocked) {
       return (
-        <button
-          disabled
-          className="h-full px-8 flex items-center gap-2 font-black text-base rounded-2xl cursor-not-allowed opacity-50 bg-white/5 text-white/40"
-        >
+        <LauncherActionButton variant="play" disabled className="h-full px-8 text-base">
           <ShieldAlert size={16} />
           <span>{t('main.play')}</span>
-        </button>
+        </LauncherActionButton>
       );
     }
 
     if (props.isGameRunning) {
       return (
-        <button
-          onClick={props.onStopGame}
-          className="h-full px-8 flex items-center gap-2 font-black text-base tracking-tight bg-gradient-to-r from-red-600 to-red-500 text-white rounded-2xl hover:brightness-110 active:scale-[0.98] transition-all"
-        >
+        <LauncherActionButton variant="stop" onClick={props.onStopGame} className="h-full px-8 text-base">
           <X size={16} />
           <span>{t('main.stop')}</span>
-        </button>
+        </LauncherActionButton>
       );
     }
 
@@ -240,10 +230,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
 
     if (props.isCheckingInstance) {
       return (
-        <button disabled className="h-full px-8 flex items-center gap-2 font-black text-base bg-white/10 text-white/50 cursor-not-allowed rounded-2xl">
+        <Button
+          disabled
+          className="h-full px-8 rounded-2xl font-black tracking-tight text-base bg-white/10 text-white/50 border border-transparent"
+        >
           <Loader2 size={16} className="animate-spin" />
           <span>{t('main.checking')}</span>
-        </button>
+        </Button>
       );
     }
 
@@ -251,22 +244,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
     if (props.selectedInstance && props.hasUpdateAvailable) {
       return (
         <div className="flex items-center h-full">
-          <button
+          <LauncherActionButton
+            variant="update"
             onClick={props.onUpdate}
-            className="h-full px-5 flex items-center gap-2 font-black text-sm bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-l-2xl hover:brightness-110 active:scale-[0.98] transition-all"
+            className="h-full px-5 rounded-l-2xl rounded-r-none text-sm"
           >
             <RefreshCw size={14} />
             <span>{t('main.update')}</span>
-          </button>
+          </LauncherActionButton>
           <div className="w-px h-6 bg-white/10" />
-          <button
-            onClick={props.onPlay}
-            className="h-full px-6 flex items-center gap-2 font-black text-base rounded-r-2xl hover:brightness-110 active:scale-[0.98] transition-all"
-            style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`, color: accentTextColor }}
-          >
+          <LauncherActionButton variant="play" onClick={props.onPlay} className="h-full px-6 rounded-r-2xl rounded-l-none text-base">
             <Play size={16} fill="currentColor" />
             <span>{t('main.play')}</span>
-          </button>
+          </LauncherActionButton>
         </div>
       );
     }
@@ -276,49 +266,36 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
       // Not installed - show download button
       if (!props.selectedInstance.isInstalled) {
         return (
-          <button
-            onClick={props.onPlay}
-            className="h-full px-8 flex items-center gap-2 font-black text-base rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:brightness-110 active:scale-[0.98] transition-all"
-          >
+          <LauncherActionButton variant="download" onClick={props.onPlay} className="h-full px-8 text-base">
             <Download size={16} />
             <span>{t('main.download')}</span>
-          </button>
+          </LauncherActionButton>
         );
       }
       // Installed - show play button
       return (
-        <button
-          onClick={props.onPlay}
-          className="h-full px-8 flex items-center gap-2 font-black text-lg rounded-2xl hover:brightness-110 active:scale-[0.98] transition-all"
-          style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`, color: accentTextColor }}
-        >
+        <LauncherActionButton variant="play" onClick={props.onPlay} className="h-full px-8 text-lg">
           <Play size={18} fill="currentColor" />
           <span>{t('main.play')}</span>
-        </button>
+        </LauncherActionButton>
       );
     }
 
     // No instance selected but instances exist - go to instances page
     if (props.hasInstances) {
       return (
-        <button
-          onClick={props.onNavigateToInstances}
-          className="h-full px-8 flex items-center gap-2 font-black text-base rounded-2xl bg-gradient-to-r from-purple-500 to-violet-600 text-white hover:brightness-110 active:scale-[0.98] transition-all"
-        >
+        <LauncherActionButton variant="select" onClick={props.onNavigateToInstances} className="h-full px-8 text-base">
           <span>{t('main.selectInstance')}</span>
-        </button>
+        </LauncherActionButton>
       );
     }
 
     // No instances - download
     return (
-      <button
-        onClick={props.onDownload}
-        className="h-full px-8 flex items-center gap-2 font-black text-base rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white hover:brightness-110 active:scale-[0.98] transition-all"
-      >
+      <LauncherActionButton variant="download" onClick={props.onDownload} className="h-full px-8 text-base">
         <Download size={16} />
         <span>{t('main.download')}</span>
-      </button>
+      </LauncherActionButton>
     );
   };
 
@@ -329,8 +306,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
       animate="animate"
       exit="exit"
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="h-full flex flex-col items-center px-8 pt-6 pb-28"
+      className="h-full w-full"
     >
+      <PageContainer contentClassName="h-full">
+      <div className="h-full flex flex-col items-center">
       {/* Top Row: Profile left, Social right */}
       <div className="w-full flex justify-between items-start">
         {/* Profile Section */}
@@ -359,17 +338,45 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
               <span className="text-lg font-bold text-white">{props.username}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-white/30">HyPrism {props.launcherVersion}</span>
+              {props.updateAvailable && props.launcherUpdateInfo?.releaseUrl ? (
+                <LinkButton 
+                  onClick={() => ipc.browser.open(props.launcherUpdateInfo!.releaseUrl!)}
+                  className="text-xs font-medium hover:underline cursor-pointer"
+                  style={{ color: accentColor }}
+                  title={t('main.clickToOpenRelease', 'Click to view release on GitHub')}
+                >
+                  HyPrism {props.launcherVersion}
+                </LinkButton>
+              ) : (
+                <span className="text-xs text-white/30">HyPrism {props.launcherVersion}</span>
+              )}
               {props.updateAvailable && (
-                <motion.button whileTap={{ scale: 0.95 }} onClick={props.onLauncherUpdate}
-                  className="text-[10px] font-medium transition-colors hover:opacity-80" style={{ color: accentColor }}>
+                <LinkButton 
+                  onClick={() => {
+                    if (props.launcherUpdateInfo?.releaseUrl) {
+                      ipc.browser.open(props.launcherUpdateInfo.releaseUrl);
+                    }
+                  }}
+                  className="text-[10px] font-medium" 
+                  style={{ color: accentColor }}
+                  title={t('main.clickToOpenRelease', 'Click to view release on GitHub')}
+                >
                   <Download size={10} className="inline mr-1" />{t('main.updateAvailable')}
-                </motion.button>
+                </LinkButton>
               )}
             </div>
 
             {props.updateAvailable && props.launcherUpdateInfo?.latestVersion && (
-              <div className="mt-0.5 flex items-center gap-1 text-[10px] animate-rgb" style={{ color: accentColor }}>
+              <LinkButton 
+                onClick={() => {
+                  if (props.launcherUpdateInfo?.releaseUrl) {
+                    ipc.browser.open(props.launcherUpdateInfo.releaseUrl);
+                  }
+                }}
+                className="mt-0.5 flex items-center gap-1 text-[10px] animate-rgb cursor-pointer hover:underline" 
+                style={{ color: accentColor }}
+                title={t('main.clickToOpenRelease', 'Click to view release on GitHub')}
+              >
                 <span className="font-medium">
                   {props.launcherUpdateInfo.currentVersion || props.launcherVersion}
                 </span>
@@ -377,7 +384,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
                 <span className="font-medium">
                   {props.launcherUpdateInfo.latestVersion}
                 </span>
-              </div>
+              </LinkButton>
             )}
           </div>
         </motion.div>
@@ -389,20 +396,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
           transition={{ delay: 0.1 }}
           className="flex items-center gap-2"
         >
-          <button
+          <IconButton
+            variant="ghost"
             onClick={async () => { ipc.browser.open('https://discord.gg/ekZqTtynjp'); }}
-            className="p-2 rounded-xl hover:bg-[#5865F2]/20 transition-all active:scale-95"
+            className="rounded-xl hover:bg-[#5865F2]/20"
             title={t('main.joinDiscord')}
           >
             <DiscordIcon size={22} className="drop-shadow-lg" />
-          </button>
-          <button
+          </IconButton>
+          <IconButton
+            variant="ghost"
             onClick={() => ipc.browser.open('https://github.com/yyyumeniku/HyPrism')}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+            className="rounded-xl"
             title={t('main.gitHubRepository')}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-          </button>
+          </IconButton>
         </motion.div>
       </div>
 
@@ -547,6 +556,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
         </motion.div>
       </div>
 
+      </div>
+      </PageContainer>
     </motion.div>
   );
 });

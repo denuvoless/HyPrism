@@ -382,6 +382,8 @@
     "instanceNamePlaceholder": "Введіть назву для цього екземпляра",
     "selectIcon": "Вибрати іконку",
     "uploadIcon": "Завантажити іконку",
+    "versionChangeWarning": "Changing version will remove game files",
+    "versionChangeWarningHint": "The game client will be deleted and you will need to re-download this version. User data (saves, mods) will be kept.",
     "creating": "Створення...",
     "create": "Створити",
     "downloadFromDashboard": "Завантажити версію гри з панелі інструментів",

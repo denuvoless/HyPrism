@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { RefreshCw, Copy, Check, Download, Search } from 'lucide-react';
 import { useAccentColor } from '../contexts/AccentColorContext';
 import { invoke } from '@/lib/ipc';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { SettingsHeader } from '@/components/ui/SettingsHeader';
+import { AccentSegmentedControl, Button, IconButton } from '@/components/ui/Controls';
 
 type LogLevel = 'all' | 'INF' | 'SUC' | 'WRN' | 'ERR' | 'DBG';
 
@@ -45,8 +48,6 @@ const getLevelColor = (level: string): string => {
     default: return 'text-gray-300';
   }
 };
-
-// No longer using getLevelBgColor - logs have transparent background
 
 interface LogsPageProps {
   embedded?: boolean;
@@ -207,172 +208,128 @@ export const LogsPage: React.FC<LogsPageProps> = ({ embedded = false }) => {
     { value: 'DBG', label: t('logs.filter.debug'), color: 'text-gray-500' },
   ];
 
-  // Background style matching navigation menu
-  const panelStyle: React.CSSProperties = {
-    background: 'rgba(28, 28, 30, 0.98)',
-    border: '1px solid rgba(255,255,255,0.08)',
-  };
-
-  const logsBlockStyle: React.CSSProperties = {
-    background: 'rgba(44, 44, 46, 0.92)',
-    border: '1px solid rgba(255,255,255,0.08)',
-  };
-
-  return (
-    <div className={`h-full flex flex-col ${embedded ? 'p-0' : 'px-8 pt-6 pb-28'}`}>
-      {/* Header */}
-      <div className={`${embedded ? 'flex items-center justify-between p-4 border-b border-white/[0.06]' : 'flex items-center justify-between mb-4'} flex-shrink-0`}>
-        <div className="flex items-center gap-3">
-          {embedded ? (
-            <h3 className="text-white font-medium">{t('logs.title')}</h3>
-          ) : (
-            <h1 className="text-xl font-semibold text-white/90">{t('logs.title')}</h1>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {/* Auto-refresh toggle */}
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-              autoRefresh 
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-                : 'text-white/40 hover:bg-white/10'
-            }`}
-            style={!autoRefresh ? panelStyle : undefined}
-          >
-            {t('logs.auto')}
-          </button>
-
-          {/* Manual refresh */}
-          <button
-            onClick={fetchLogs}
-            disabled={isRefreshing}
-            className="p-2 rounded-lg text-white/60 hover:text-white/80 transition-all disabled:opacity-50"
-            style={panelStyle}
-            title={t('logs.refresh')}
-          >
-            <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
-          </button>
-
-          {/* Copy (selected or all) */}
-          <button
-            onClick={handleCopy}
-            className="p-2 rounded-lg text-white/60 hover:text-white/80 transition-all"
-            style={panelStyle}
-            title={selectedIndices.size > 0 ? t('logs.copySelected') : t('logs.copy')}
-          >
-            {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
-          </button>
-
-          {/* Export */}
-          <button
-            onClick={handleExport}
-            className="p-2 rounded-lg text-white/60 hover:text-white/80 transition-all"
-            style={panelStyle}
-            title={t('logs.export')}
-          >
-            <Download size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Filters and Search */}
-      <div className={`flex items-center gap-4 flex-shrink-0 ${embedded ? 'px-6 pt-4 mb-4' : 'mb-4'}`}>
-        {/* Search */}
-        <div className="relative flex-1 max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('logs.searchPlaceholder')}
-            className="w-full h-10 pl-9 pr-4 rounded-lg text-white/80 placeholder-white/30 text-sm focus:outline-none"
-            style={{ ...panelStyle, border: '1px solid rgba(255,255,255,0.1)' }}
-          />
-        </div>
-
-        {/* Level filters - same height as search */}
-        <div className="flex items-center gap-1 h-10 rounded-lg px-1" style={panelStyle}>
-          {levelFilters.map(({ value, label, color }) => (
-            <button
-              key={value}
-              onClick={() => setFilter(value)}
-              className={`px-3 h-8 rounded-md text-xs font-medium transition-all ${
-                filter === value
-                  ? 'bg-white/15'
-                  : 'hover:bg-white/10'
-              } ${color}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Log count and selection info */}
-      <div className={`text-xs text-white/40 mb-2 flex items-center gap-2 ${embedded ? 'px-6' : ''}`}>
-        <span>
-          {t('logs.showing', {
-            count: filteredLogs.length,
-            total: logs.length
-          })}
-        </span>
-        {selectedIndices.size > 0 && (
-          <span className="text-white/60">
-            • {t('logs.selected', { count: selectedIndices.size })}
-          </span>
-        )}
-      </div>
-
-      {/* Logs container */}
-      <div className={`flex-1 rounded-xl overflow-hidden ${embedded ? 'mx-6 mb-5' : ''}`} style={logsBlockStyle}>
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="h-full overflow-y-auto font-mono text-xs"
+  const headerActions = (
+    <>
+      <Button
+        size="sm"
+        onClick={() => setAutoRefresh(!autoRefresh)}
+        className="h-10"
+        style={
+          autoRefresh
+            ? { backgroundColor: `${accentColor}20`, borderColor: `${accentColor}40`, color: accentColor }
+            : undefined
+        }
       >
-        {loading && logs.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-white/40">
-            <RefreshCw size={20} className="animate-spin mr-2" />
-            {t('logs.loading')}
-          </div>
-        ) : filteredLogs.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-white/40">
-            {searchQuery || filter !== 'all' 
-              ? t('logs.noResults')
-              : t('logs.empty')}
-          </div>
-        ) : (
-          <div className="p-2 space-y-0.5 select-none">
-            {filteredLogs.map((log, i) => (
-              <div
-                key={i}
-                onMouseDown={(e) => handleLogMouseDown(i, e)}
-                onMouseEnter={() => handleLogMouseEnter(i)}
-                className={`flex items-start gap-2 px-2 py-1 rounded border cursor-pointer transition-colors ${
-                  selectedIndices.has(i)
-                    ? 'bg-white/15 border-white/20'
-                    : 'border-transparent hover:bg-white/5'
-                }`}
-              >
-                <span className="text-white/30 shrink-0 w-16">{log.timestamp}</span>
-                <span className={`shrink-0 w-8 font-semibold ${getLevelColor(log.level)}`}>
-                  {log.level}
-                </span>
-                <span 
-                  className="shrink-0 w-24 truncate"
-                  style={{ color: accentColor }}
-                >
-                  {log.category}
-                </span>
-                <span className="text-white/80 break-all flex-1">{log.message}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {t('logs.auto')}
+      </Button>
+
+      <IconButton onClick={fetchLogs} disabled={isRefreshing} title={t('logs.refresh')}>
+        <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+      </IconButton>
+
+      <IconButton onClick={handleCopy} title={selectedIndices.size > 0 ? t('logs.copySelected') : t('logs.copy')}>
+        {copied ? <Check size={16} style={{ color: accentColor }} /> : <Copy size={16} />}
+      </IconButton>
+
+      <IconButton onClick={handleExport} title={t('logs.export')}>
+        <Download size={16} />
+      </IconButton>
+    </>
+  );
+
+
+  const content = (
+    <div className="h-full flex flex-col">
+      <div className={embedded ? 'p-4 border-b border-white/[0.06] flex-shrink-0' : 'flex-shrink-0 mb-4'}>
+        <SettingsHeader title={t('logs.title')} actions={headerActions} size="sm" />
       </div>
+
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        <div className="p-4 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('logs.searchPlaceholder')}
+                className="w-full h-10 pl-10 pr-4 rounded-xl bg-[#2c2c2e] border border-white/[0.08] text-white text-sm placeholder-white/40 focus:outline-none focus:border-white/20"
+              />
+            </div>
+
+            <AccentSegmentedControl
+              value={filter}
+              onChange={setFilter}
+              items={levelFilters.map((f) => ({
+                value: f.value,
+                label: f.label,
+                className: f.color,
+              }))}
+            />
+          </div>
+
+          <div className="mt-2 text-xs text-white/40 flex items-center gap-2">
+            <span>
+              {t('logs.showing', {
+                count: filteredLogs.length,
+                total: logs.length,
+              })}
+            </span>
+            {selectedIndices.size > 0 ? (
+              <span className="text-white/60">• {t('logs.selected', { count: selectedIndices.size })}</span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 mx-4 mb-4 rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden">
+          <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-auto font-mono text-xs">
+            {loading && logs.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-white/40">
+                <RefreshCw size={20} className="animate-spin mr-2" />
+                {t('logs.loading')}
+              </div>
+            ) : filteredLogs.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-white/40">
+                {searchQuery || filter !== 'all' ? t('logs.noResults') : t('logs.empty')}
+              </div>
+            ) : (
+              <div className="p-2 space-y-0.5 select-none min-w-max">
+                {filteredLogs.map((log, i) => (
+                  <div
+                    key={i}
+                    onMouseDown={(e) => handleLogMouseDown(i, e)}
+                    onMouseEnter={() => handleLogMouseEnter(i)}
+                    className={`flex items-start gap-2 px-2 py-1 rounded border cursor-pointer transition-colors ${
+                      selectedIndices.has(i)
+                        ? 'bg-white/15 border-white/20'
+                        : 'border-transparent hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="text-white/30 shrink-0 w-16">{log.timestamp}</span>
+                    <span className={`shrink-0 w-8 font-semibold ${getLevelColor(log.level)}`}>{log.level}</span>
+                    <span className="shrink-0 w-24 truncate" style={{ color: accentColor }}>
+                      {log.category}
+                    </span>
+                    <span className="text-white/80 whitespace-pre">{log.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
+  );
+
+  if (embedded) {
+    return <div className="h-full">{content}</div>;
+  }
+
+  return (
+    <PageContainer contentClassName="h-full">
+      {content}
+    </PageContainer>
   );
 };

@@ -382,6 +382,8 @@
     "instanceNamePlaceholder": "이 인스턴스의 이름을 입력하세요",
     "selectIcon": "아이콘 선택",
     "uploadIcon": "아이콘 업로드",
+    "versionChangeWarning": "Changing version will remove game files",
+    "versionChangeWarningHint": "The game client will be deleted and you will need to re-download this version. User data (saves, mods) will be kept.",
     "creating": "생성 중...",
     "create": "생성",
     "downloadFromDashboard": "대시보드에서 게임 버전 다운로드",

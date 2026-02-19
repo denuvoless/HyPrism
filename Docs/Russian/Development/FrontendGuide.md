@@ -33,6 +33,55 @@
 | Sidebar | `components/Sidebar.tsx` | Боковая панель навигации с иконками |
 | GlassCard | `components/GlassCard.tsx` | Обёртка карточки в стиле glass-morphism |
 
+## UI-примитивы
+
+Чтобы интерфейс оставался единообразным и поддерживаемым, используйте общие примитивы из `Frontend/src/components/ui/`:
+
+- **PageContainer** (`components/ui/PageContainer.tsx`) — единая максимальная ширина, центрирование и адаптивные отступы для основных страниц
+- **SettingsHeader** (`components/ui/SettingsHeader.tsx`) — унифицированный заголовок секции/страницы (title + опциональное описание, опциональный слот для действий)
+- **SelectionCard** (`components/ui/SelectionCard.tsx`) — переиспользуемая карточка-выбор с вариантами оформления, слотом иконки, состоянием selected и обработчиком клика
+
+### Общие Controls (единый источник правды)
+
+Для большинства интерактивных элементов (кнопки, иконки-кнопки, таб-переключатели, скролл-области и lightbox) используйте:
+
+- **Controls** (`components/ui/Controls.tsx`) — стабильный barrel-export (реализации лежат в `components/ui/controls/`)
+
+Этот файл специально централизует внешний вид/поведение UI, чтобы не плодить множество одноразовых стилей кнопок.
+
+**Что использовать**
+- `Button` — базовая кнопка для большинства действий
+- `IconButton` — квадратные действия только с иконкой (refresh/copy/export и т.д.)
+- `LinkButton` — кнопка в стиле ссылки для текстовых действий (без одноразовых `className` кнопок)
+- `LauncherActionButton` — градиентные основные действия (Play/Stop/Download/Update/Select) с "лаунчерным" шрифтом/весом
+- `SegmentedControl` — переключатели в стиле табов с бегунком (как в Instances)
+- `AccentSegmentedControl` — обёртка над `SegmentedControl`, автоматически применяющая текущий accent-стиль (используется для фильтров в Logs и табов Instances)
+- `Switch` — accent-reactive переключатель
+- `ScrollArea` — единообразный overflow + опциональный `thin-scrollbar`
+- `ImageLightbox` — просмотр скриншотов по центру с навигацией `1/3 < >`
+- `DropdownTriggerButton` — стандартный триггер dropdown (label + chevron + состояние open)
+- `MenuActionButton` — полноширинные пункты меню для hover-меню (например, Worlds overlay)
+- `MenuItemButton` — полноширинные пункты для context/popover меню (заменяет одноразовые `button className="..."` в меню)
+- `ModalFooterActions` — стандартная строка действий в футере модалки (отступы + граница + фон)
+
+**Размеры IconButton**
+- Используйте `IconButton size="sm" | "md" | "lg"` вместо ручных `h-/w-` классов.
+
+**Варианты IconButton**
+- Используйте `variant="overlay"` для навигации в скриншотах/lightbox (без glass hover).
+
+**Правило**
+- Если хочется написать новую кнопку с кастомным `className="...rounded...hover..."` — лучше использовать `Button`/`IconButton` из `@/components/ui/Controls`.
+
+**Правки controls**
+- Если нужно поменять конкретный элемент, правьте роль-модуль в `components/ui/controls/`, а `Controls.tsx` держите как тонкий re-export.
+
+## Разделение больших страниц
+
+Если файл страницы становится слишком большим, выносите связные блоки UI в отдельную папку рядом со страницей и переносите общие типы туда же.
+
+- Пример: `InstancesPage` использует `Frontend/src/pages/instances/` для вынесенных компонентов и общих типов.
+
 ## Создание компонента
 
 ```tsx

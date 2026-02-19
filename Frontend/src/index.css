@@ -25,6 +25,7 @@ html, body, #root {
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 /* Thin scrollbar (used for horizontal thumbnail strips) */
@@ -49,6 +50,10 @@ html, body, #root {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.5);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Wails drag region */

@@ -4,6 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { RefreshCw, ExternalLink, Calendar, User, Newspaper, Github } from 'lucide-react';
 import { useAccentColor } from '../contexts/AccentColorContext';
 import { ipc } from '@/lib/ipc';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { Button, LinkButton } from '@/components/ui/Controls';
+import { pageVariants } from '@/constants/animations';
 
 type NewsFilter = 'all' | 'hytale' | 'hyprism';
 
@@ -20,12 +23,6 @@ interface EnrichedNewsItem {
 interface NewsPageProps {
   getNews: (count: number) => Promise<EnrichedNewsItem[]>;
 }
-
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-};
 
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
@@ -92,8 +89,10 @@ export const NewsPage: React.FC<NewsPageProps> = memo(({ getNews }) => {
       animate="animate"
       exit="exit"
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="h-full flex flex-col px-8 pt-6 pb-28"
+      className="h-full w-full"
     >
+      <PageContainer contentClassName="h-full">
+      <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -125,7 +124,6 @@ export const NewsPage: React.FC<NewsPageProps> = memo(({ getNews }) => {
           ))}
         </div>
       </div>
-
       {/* Content */}
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
@@ -135,10 +133,9 @@ export const NewsPage: React.FC<NewsPageProps> = memo(({ getNews }) => {
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <p className="text-red-400 mb-4">{error}</p>
-            <button onClick={() => fetchNews(limit, true)}
-              className="px-6 py-2 bg-white/10 hover:bg-white/15 rounded-xl transition-colors">
+            <Button onClick={() => fetchNews(limit, true)}>
               {t('news.tryAgain')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : filteredNews.length === 0 ? (
@@ -238,16 +235,18 @@ export const NewsPage: React.FC<NewsPageProps> = memo(({ getNews }) => {
 
           {/* Load more link */}
           <div className="text-center py-4 mt-2">
-            <button
+            <LinkButton
               onClick={() => openLink("https://hytale.com/news")}
-              className="font-semibold hover:underline cursor-pointer text-xs"
+              className="font-semibold text-xs"
               style={{ color: accentColor }}
             >
               {t('news.readMore')} →
-            </button>
+            </LinkButton>
           </div>
         </div>
       )}
+      </div>
+      </PageContainer>
     </motion.div>
   );
 });

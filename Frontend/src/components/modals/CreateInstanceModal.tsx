@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { X, ChevronDown, Check, Image, Box, Loader2, GitBranch, Lock } from 'lucide-react';
 import { useAccentColor } from '../../contexts/AccentColorContext';
+import { Button, IconButton } from '@/components/ui/Controls';
 
 import { ipc, invoke, VersionInfo } from '@/lib/ipc';
 import { GameBranch } from '@/constants/enums';
@@ -19,7 +20,7 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
   onCreateStart,
 }) => {
   const { t } = useTranslation();
-  const { accentColor, accentTextColor } = useAccentColor();
+  const { accentColor } = useAccentColor();
 
   // Form state
   const [selectedBranch, setSelectedBranch] = useState<string>(GameBranch.RELEASE);
@@ -227,12 +228,9 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
                 <p className="text-xs text-white/40">{t('instances.createInstanceHint')}</p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition-colors"
-            >
+            <IconButton variant="ghost" onClick={onClose}>
               <X size={20} />
-            </button>
+            </IconButton>
           </div>
 
           {/* Content */}
@@ -242,7 +240,7 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
               {/* Icon Preview - compact */}
               <div className="flex flex-col items-center gap-1 flex-shrink-0">
                 <div 
-                  className="w-14 h-10 rounded-xl border-2 border-dashed flex items-center justify-center overflow-hidden cursor-pointer hover:border-white/40 transition-colors"
+                  className="w-14 h-14 rounded-2xl border-2 border-dashed flex items-center justify-center overflow-hidden cursor-pointer hover:border-white/40 transition-colors"
                   style={{ borderColor: iconPreview ? accentColor : 'rgba(255,255,255,0.2)' }}
                   onClick={() => fileInputRef.current?.click()}
                 >
@@ -397,17 +395,13 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
 
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 p-4 border-t border-white/[0.06]">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl text-sm text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-            >
+            <Button onClick={onClose}>
               {t('common.cancel')}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="primary"
               onClick={handleCreate}
               disabled={isCreating || !customName.trim()}
-              className="px-5 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              style={{ backgroundColor: accentColor, color: accentTextColor }}
             >
               {isCreating ? (
                 <>
@@ -420,7 +414,7 @@ export const CreateInstanceModal: React.FC<CreateInstanceModalProps> = ({
                   {t('instances.create')}
                 </>
               )}
-            </button>
+            </Button>
           </div>
         </motion.div>
       </motion.div>

@@ -382,6 +382,8 @@
     "instanceNamePlaceholder": "このインスタンスの名前を入力",
     "selectIcon": "アイコンを選択",
     "uploadIcon": "アイコンをアップロード",
+    "versionChangeWarning": "Changing version will remove game files",
+    "versionChangeWarningHint": "The game client will be deleted and you will need to re-download this version. User data (saves, mods) will be kept.",
     "creating": "作成中...",
     "create": "作成",
     "downloadFromDashboard": "ダッシュボードからゲームバージョンをダウンロード",

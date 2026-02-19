@@ -145,6 +145,20 @@ public class SettingsService : ISettingsService
         return true;
     }
 
+    // ========== Launch After Download Setting ==========
+
+    /// <inheritdoc/>
+    public bool GetLaunchAfterDownload() => _configService.Configuration.LaunchAfterDownload;
+
+    /// <inheritdoc/>
+    public bool SetLaunchAfterDownload(bool enabled)
+    {
+        _configService.Configuration.LaunchAfterDownload = enabled;
+        _configService.SaveConfig();
+        Logger.Info("Config", $"Launch after download set to: {enabled}");
+        return true;
+    }
+
     // ========== Discord Announcements Settings ==========
     
     /// <inheritdoc/>

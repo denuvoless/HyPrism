@@ -64,6 +64,7 @@ Access settings through the **Settings** page (gear icon in sidebar).
 | Launcher branch | Release or pre-release channel | release |
 | Data directory | Custom data storage path | Platform default |
 | Download source | Managed automatically by launcher (official first, mirrors as fallback) | auto |
+| Launch after download | Automatically start the game after install/download completes | true |
 
 - Changing **Launcher branch** triggers an immediate launcher update check. If you switch between channels (release ↔ beta), HyPrism will offer the latest build from the selected channel and may reinstall or downgrade to match it.
 

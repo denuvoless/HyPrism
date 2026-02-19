@@ -382,6 +382,8 @@
     "instanceNamePlaceholder": "Digite um nome para esta instância",
     "selectIcon": "Selecionar Ícone",
     "uploadIcon": "Enviar Ícone",
+    "versionChangeWarning": "Changing version will remove game files",
+    "versionChangeWarningHint": "The game client will be deleted and you will need to re-download this version. User data (saves, mods) will be kept.",
     "creating": "Criando...",
     "create": "Criar",
     "downloadFromDashboard": "Baixe uma versão do jogo no Dashboard",

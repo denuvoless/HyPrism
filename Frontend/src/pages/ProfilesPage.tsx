@@ -2,14 +2,10 @@ import React, { Suspense, lazy } from 'react';
 import { motion } from 'framer-motion';
 import { Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { pageVariants } from '@/constants/animations';
 
 const ProfileEditor = lazy(() => import('../components/ProfileEditor'));
-
-const pageVariants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -12 },
-};
 
 interface ProfilesPageProps {
   onProfileUpdate?: () => void;
@@ -25,8 +21,10 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ onProfileUpdate }) =
       animate="animate"
       exit="exit"
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="h-full flex flex-col px-4 pt-6 pb-28"
+      className="h-full w-full"
     >
+      <PageContainer contentClassName="h-full">
+      <div className="h-full flex flex-col">
       {/* Page Header */}
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -34,7 +32,6 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ onProfileUpdate }) =
           <h1 className="text-xl font-bold text-white">{t('profiles.title')}</h1>
         </div>
       </div>
-
       {/* Content */}
       <div className="flex-1 min-h-0">
         <Suspense fallback={
@@ -50,6 +47,8 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ onProfileUpdate }) =
           />
         </Suspense>
       </div>
+      </div>
+      </PageContainer>
     </motion.div>
   );
 };

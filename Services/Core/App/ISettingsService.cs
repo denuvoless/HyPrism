@@ -87,6 +87,16 @@ public interface ISettingsService
     /// <param name="close">Whether to close after launch.</param>
     /// <returns><c>true</c> if the setting was successfully saved.</returns>
     bool SetCloseAfterLaunch(bool close);
+
+    /// <summary>
+    /// Gets whether the launcher should automatically launch the game after download/install.
+    /// </summary>
+    bool GetLaunchAfterDownload();
+
+    /// <summary>
+    /// Sets whether the launcher should automatically launch the game after download/install.
+    /// </summary>
+    bool SetLaunchAfterDownload(bool enabled);
     
     /// <summary>
     /// Gets whether Discord announcement notifications are shown.

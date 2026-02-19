@@ -382,6 +382,8 @@
     "instanceNamePlaceholder": "输入此实例的名称",
     "selectIcon": "选择图标",
     "uploadIcon": "上传图标",
+    "versionChangeWarning": "Changing version will remove game files",
+    "versionChangeWarningHint": "The game client will be deleted and you will need to re-download this version. User data (saves, mods) will be kept.",
     "creating": "创建中...",
     "create": "创建",
     "downloadFromDashboard": "从主页下载游戏版本",

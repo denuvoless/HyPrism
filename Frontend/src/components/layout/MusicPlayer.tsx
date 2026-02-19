@@ -1,7 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
-import { Volume2, VolumeX } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { useAccentColor } from '../../contexts/AccentColorContext';
 
 // Import music tracks
 import menu01 from '../../assets/music/menu_01.ogg';
@@ -20,16 +17,12 @@ const musicTracks = [
   menu06, menu07, menu08, menu09, menu10
 ];
 
-import { ipc } from '@/lib/ipc';
-
 interface MusicPlayerProps {
-  className?: string; // Kept for compatibility but unused
   muted?: boolean;
   forceMuted?: boolean;
 }
 
-export const MusicPlayer: React.FC<MusicPlayerProps> = memo(({ className = '', muted = false, forceMuted = false }) => {
-  const { t } = useTranslation();
+export const MusicPlayer: React.FC<MusicPlayerProps> = memo(({ muted = false, forceMuted = false }) => {
   const [currentTrack, setCurrentTrack] = useState(() => 
     Math.floor(Math.random() * musicTracks.length)
   );

@@ -382,6 +382,8 @@
     "instanceNamePlaceholder": "Увядзіце назву для гэтага экзэмпляра",
     "selectIcon": "Выбраць іконку",
     "uploadIcon": "Загрузіць іконку",
+    "versionChangeWarning": "Changing version will remove game files",
+    "versionChangeWarningHint": "The game client will be deleted and you will need to re-download this version. User data (saves, mods) will be kept.",
     "creating": "Стварэнне...",
     "create": "Стварыць",
     "downloadFromDashboard": "Спампуйце версію гульні з галоўнай старонкі",

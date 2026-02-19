@@ -89,7 +89,7 @@ export interface NewsItem {
   publishedAt?: string;
   author?: string;
   imageUrl?: string;
-  source?: string;
+  source?: 'hytale' | 'hyprism';
 }
 
 export interface Profile {
@@ -119,7 +119,10 @@ export interface SettingsSnapshot {
   language: string;
   musicEnabled: boolean;
   launcherBranch: string;
+  versionType: string;
+  selectedVersion: number;
   closeAfterLaunch: boolean;
+  launchAfterDownload: boolean;
   showDiscordAnnouncements: boolean;
   disableNews: boolean;
   backgroundMode: string;
@@ -135,7 +138,10 @@ export interface SettingsSnapshot {
   dataDirectory: string;
   instanceDirectory: string;
   gpuPreference?: string;
+  gameEnvironmentVariables?: Record<string, string>;
   useDualAuth?: boolean;
+  showAlphaMods: boolean;
+  launcherVersion: string;
   launchOnStartup?: boolean;
   minimizeToTray?: boolean;
   animations?: boolean;
@@ -148,6 +154,16 @@ export interface SettingsSnapshot {
   verboseLogging?: boolean;
   preRelease?: boolean;
   [key: string]: unknown;
+}
+
+export interface MirrorInfo {
+  id: string;
+  name: string;
+  description?: string;
+  priority: number;
+  enabled: boolean;
+  sourceType: string;
+  hostname: string;
 }
 
 export interface MirrorSpeedTestResult {
@@ -359,6 +375,7 @@ const _instance = {
   select: (data?: unknown) => invoke<boolean>('hyprism:instance:select', data),
   getSelected: (data?: unknown) => invoke<InstanceInfo | null>('hyprism:instance:getSelected', data),
   list: () => invoke<InstanceInfo[]>('hyprism:instance:list'),
+  changeVersion: (data?: unknown) => invoke<boolean>('hyprism:instance:changeVersion', data),
 };
 
 const _news = {
@@ -391,6 +408,10 @@ const _settings = {
   update: (data?: unknown) => invoke<{ success: boolean }>('hyprism:settings:update', data),
   testMirrorSpeed: (data?: unknown) => invoke<MirrorSpeedTestResult>('hyprism:settings:testMirrorSpeed', data),
   testOfficialSpeed: (data?: unknown) => invoke<MirrorSpeedTestResult>('hyprism:settings:testOfficialSpeed', data),
+  getMirrors: (data?: unknown) => invoke<MirrorInfo[]>('hyprism:settings:getMirrors', data),
+  addMirror: (data?: unknown) => invoke<{ success: boolean; error?: string; mirror?: MirrorInfo; }>('hyprism:settings:addMirror', data),
+  deleteMirror: (data?: unknown) => invoke<{ success: boolean; }>('hyprism:settings:deleteMirror', data),
+  toggleMirror: (data?: unknown) => invoke<{ success: boolean; }>('hyprism:settings:toggleMirror', data),
   launcherPath: (data?: unknown) => invoke<string>('hyprism:settings:launcherPath', data),
   defaultInstanceDir: (data?: unknown) => invoke<string>('hyprism:settings:defaultInstanceDir', data),
   setInstanceDir: (data?: unknown) => invoke<{ success: boolean, path: string, noop?: boolean, reason?: string, error?: string }>('hyprism:settings:setInstanceDir', data, 300000),

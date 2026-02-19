@@ -4,7 +4,6 @@ import { AnimatePresence } from 'framer-motion';
 import { ipc, on, send, NewsItem, InstanceInfo } from '@/lib/ipc';
 import { BackgroundImage } from './components/layout/BackgroundImage';
 import { MusicPlayer } from './components/layout/MusicPlayer';
-import { UpdateOverlay } from './components/layout/UpdateOverlay';
 import { DockMenu } from './components/layout/DockMenu';
 import type { PageType } from './components/layout/DockMenu';
 import { DashboardPage } from './pages/DashboardPage';
@@ -13,16 +12,17 @@ import { ProfilesPage } from './pages/ProfilesPage';
 import { InstancesPage } from './pages/InstancesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LogsPage } from './pages/LogsPage';
+import { Button, LauncherActionButton } from '@/components/ui/Controls';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 // Controller detection removed - not using floating indicator
 
 // Lazy load heavy modals for better initial load performance
 const NewsPreview = lazy(() => import('./components/NewsPreview').then(m => ({ default: m.NewsPreview })));
 const ErrorModal = lazy(() => import('./components/modals/ErrorModal').then(m => ({ default: m.ErrorModal })));
 const DeleteConfirmationModal = lazy(() => import('./components/modals/DeleteConfirmationModal').then(m => ({ default: m.DeleteConfirmationModal })));
-const OnboardingModal = lazy(() => import('./components/modals/OnboardingModal').then(m => ({ default: m.OnboardingModal })));
+const OnboardingModal = lazy(() => import('./pages/onboarding').then(m => ({ default: m.OnboardingModal })));
 
 // Functions that map to real IPC channels
-const _BrowserOpenURL = (url: string) => ipc.browser.open(url);
 const WindowClose = () => ipc.windowCtl.close();
 const CancelDownload = () => ipc.game.cancel();
 const StopGame = () => ipc.game.stop();
@@ -43,8 +43,8 @@ function EventsOn(event: string, cb: (...args: any[]) => void): () => void {
 // Settings-backed getters
 async function GetBackgroundMode(): Promise<string> { return (await ipc.settings.get()).backgroundMode ?? 'image'; }
 async function GetMusicEnabled(): Promise<boolean> { return (await ipc.settings.get()).musicEnabled ?? true; }
-async function GetAccentColor(): Promise<string> { return (await ipc.settings.get()).accentColor ?? '#FF6B2B'; }
 async function GetCloseAfterLaunch(): Promise<boolean> { return (await ipc.settings.get()).closeAfterLaunch ?? false; }
+async function GetLaunchAfterDownload(): Promise<boolean> { return (await ipc.settings.get()).launchAfterDownload ?? true; }
 async function GetHasCompletedOnboarding(): Promise<boolean> { return (await ipc.settings.get()).hasCompletedOnboarding ?? false; }
 async function GetLauncherBranch(): Promise<string> { return (await ipc.settings.get()).launcherBranch ?? 'release'; }
 async function GetLauncherVersion(): Promise<string> { return (await ipc.settings.get()).launcherVersion ?? ''; }
@@ -61,9 +61,6 @@ const stub = <T,>(name: string, fallback: T) => async (..._args: any[]): Promise
   console.warn(`[IPC] ${name}: no IPC channel yet`);
   return fallback;
 };
-const _OpenInstanceFolder = stub('OpenInstanceFolder', undefined as void);
-const DeleteGame = stub('DeleteGame', false);
-const Update = async (): Promise<boolean> => ipc.update.install();
 const GetRecentLogs = stub<string[]>('GetRecentLogs', []);
 
 // Real IPC call to check if game is running
@@ -95,27 +92,18 @@ async function GetInstances(): Promise<InstanceInfo[]> {
   }
 }
 
-const GetCustomInstanceDir = stub('GetCustomInstanceDir', '');
-const SetInstanceDirectory = stub('SetInstanceDirectory', '');
 const GetWrapperStatus = stub<null>('GetWrapperStatus', null);
 const WrapperInstallLatest = stub('WrapperInstallLatest', true);
 const WrapperLaunch = stub('WrapperLaunch', true);
 const SetLauncherBranch = stub<void>('SetLauncherBranch', undefined as void);
 const CheckRosettaStatus = stub<{ NeedsInstall: boolean; Message: string; Command: string; TutorialUrl?: string } | null>('CheckRosettaStatus', null);
-const _GetDiscordLink = stub('GetDiscordLink', 'https://discord.gg/hyprism');
-import appIcon from './assets/images/logo.png';
 
 // Modal loading fallback - minimal spinner
 const ModalFallback = () => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-    <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+    <LoadingSpinner />
   </div>
 );
-
-const withLatest = (versions: number[] | null | undefined): number[] => {
-  const base = Array.isArray(versions) ? versions : [];
-  return base.includes(0) ? base : [0, ...base];
-};
 
 const parseDateMs = (dateValue: string | number | Date | undefined): number => {
   if (!dateValue) return 0;
@@ -140,33 +128,6 @@ const formatDateConsistent = (dateMs: number, locale = 'en-US') => {
     month: 'long',
     year: 'numeric'
   });
-};
-
-const fetchLauncherReleases = async (locale: string) => {
-  try {
-    const res = await fetch('https://api.github.com/repos/yyyumeniku/HyPrism/releases?per_page=100');
-    if (!res.ok) return [] as Array<{ item: any; dateMs: number }>;
-    const data = await res.json();
-    return (Array.isArray(data) ? data : []).map((r: any) => {
-      const rawName = (r?.name || r?.tag_name || '').toString();
-      const cleaned = rawName.replace(/[()]/g, '').trim();
-      const dateMs = parseDateMs(r?.published_at || r?.created_at);
-      return {
-        item: {
-          title: `Hyprism ${cleaned || 'Release'} release`,
-          excerpt: `Hyprism ${cleaned || 'Release'} release — click to see changelog.`,
-          url: r?.html_url || 'https://github.com/yyyumeniku/HyPrism/releases',
-          date: formatDateConsistent(dateMs || Date.now(), locale),
-          author: 'HyPrism',
-          imageUrl: appIcon,
-          source: 'hyprism' as const,
-        },
-        dateMs
-      };
-    });
-  } catch {
-    return [] as Array<{ item: any; dateMs: number }>;
-  }
 };
 
 const App: React.FC = () => {
@@ -198,12 +159,8 @@ const App: React.FC = () => {
     setDownloadingVersion(undefined);
   }, []);
 
-  // Update state
+  // Update state - only track if update is available
   const [updateAsset, setUpdateAsset] = useState<any>(null);
-  const [isUpdatingLauncher, setIsUpdatingLauncher] = useState<boolean>(false);
-  const [updateStats, setUpdateStats] = useState({ d: 0, t: 0 });
-  const [launcherUpdateStatus, setLauncherUpdateStatus] = useState<string>('');
-  const [launcherUpdateFailed, setLauncherUpdateFailed] = useState<boolean>(false);
 
   // Modal state
   const [showDelete, setShowDelete] = useState<boolean>(false);
@@ -216,7 +173,7 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<PageType>('dashboard');
 
   // Instance sub-tab state (persisted across page navigations)
-  const [instanceTab, setInstanceTab] = useState<'content' | 'browse' | 'worlds' | 'logs'>('content');
+  const [instanceTab, setInstanceTab] = useState<'content' | 'browse' | 'worlds'>('content');
 
   // Settings state
   const [launcherBranch, setLauncherBranch] = useState<string>('release');
@@ -232,7 +189,6 @@ const App: React.FC = () => {
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
   // Refs to track current instance for event listeners
   const selectedInstanceRef = useRef<InstanceInfo | null>(null);
-  const [customInstanceDir, setCustomInstanceDir] = useState<string>("");
 
   // Official server blocked state: true when using official servers with an unofficial profile in online mode
   const [isOfficialProfile, setIsOfficialProfile] = useState<boolean>(false);
@@ -242,7 +198,6 @@ const App: React.FC = () => {
   // Background, news, and accent color settings
   // Initialize as null to prevent flash — don't render background until config is loaded
   const [backgroundMode, setBackgroundMode] = useState<string | null>(null);
-  const [_accentColor, setAccentColor] = useState<string>('#FFA845'); // Used only for SettingsModal callback
   const [isMuted, setIsMuted] = useState<boolean>(false);
   
   const handleToggleMute = useCallback(() => {
@@ -479,11 +434,6 @@ const App: React.FC = () => {
     localStorage.setItem('hyprism_onboarding_done', '1');
     // Reload profile data after onboarding
     await reloadProfile();
-    // Reload instance directory
-    try {
-      const dir = await GetCustomInstanceDir();
-      if (dir) setCustomInstanceDir(dir);
-    } catch { /* ignore */ }
     // Reload background mode (user may have changed it in onboarding)
     try {
       const mode = await GetBackgroundMode();
@@ -496,7 +446,6 @@ const App: React.FC = () => {
     GetNick().then((n: string) => n && setUsername(n));
     GetUUID().then((u: string) => u && setUuid(u));
     GetLauncherVersion().then((v: string) => setLauncherVersion(v));
-    GetCustomInstanceDir().then((dir: string) => dir && setCustomInstanceDir(dir));
 
     // Compute official server/profile status for play-button blocking
     refreshOfficialStatus();
@@ -511,7 +460,6 @@ const App: React.FC = () => {
 
     // Load background mode, news settings, and accent color
     GetBackgroundMode().then((mode: string) => setBackgroundMode(mode || 'slideshow'));
-    GetAccentColor().then((color: string) => setAccentColor(color || '#FFA845'));
     GetMusicEnabled().then((enabled: boolean) => setIsMuted(!enabled));
 
     // Load launcher branch and other settings
@@ -693,31 +641,8 @@ const App: React.FC = () => {
 
     const unsubUpdate = EventsOn('update:available', (asset: any) => {
       setUpdateAsset(asset);
-      // Don't auto-update - let user click the update button
+      // Don't auto-update - user clicks version to open GitHub release
       console.log('Update available:', asset);
-    });
-
-    const unsubUpdateProgress = EventsOn('update:progress', (data: any) => {
-      const pct = typeof data?.progress === 'number' ? data.progress : 0;
-      const downloadedBytes = typeof data?.downloadedBytes === 'number' ? data.downloadedBytes : 0;
-      const totalBytes = typeof data?.totalBytes === 'number' ? data.totalBytes : 0;
-      const message = typeof data?.message === 'string' ? data.message : '';
-      const stage = typeof data?.stage === 'string' ? data.stage : '';
-
-      setProgress(pct);
-      setUpdateStats({ d: downloadedBytes, t: totalBytes });
-      setLauncherUpdateStatus(message);
-
-      if (stage === 'error') {
-        setLauncherUpdateFailed(true);
-
-        const hasDownloadedFile = !!data?.hasDownloadedFile;
-        if (hasDownloadedFile) {
-          setLauncherUpdateStatus('DONT WORRY! the launcher is downloaded in the download folders, u can do a manual install!');
-        } else if (!message?.trim()) {
-          setLauncherUpdateStatus('Failed updating');
-        }
-      }
     });
 
     const unsubError = EventsOn('error', (err: any) => {
@@ -735,32 +660,9 @@ const App: React.FC = () => {
       unsubProgress();
       unsubGameState();
       unsubUpdate();
-      unsubUpdateProgress();
       unsubError();
     };
   }, []);
-
-  const handleUpdate = async () => {
-    setIsUpdatingLauncher(true);
-    setProgress(0);
-    setUpdateStats({ d: 0, t: 0 });
-    setLauncherUpdateStatus('');
-    setLauncherUpdateFailed(false);
-
-    try {
-      const ok = await Update();
-      // On success the app will restart; keep overlay visible until exit.
-      if (ok) return;
-      setLauncherUpdateFailed(true);
-      setLauncherUpdateStatus((prev) => prev?.trim() ? prev : 'Failed updating');
-    } catch (err) {
-      console.error('Update failed:', err);
-      setLauncherUpdateFailed(true);
-      setLauncherUpdateStatus((prev) => prev?.trim() ? prev : 'Failed updating');
-    } finally {
-      // No-op: handled above so successful update doesn't flash-hide the overlay.
-    }
-  };
 
   const handlePlay = async () => {
     // Prevent launching if game is already running or download is in progress
@@ -835,8 +737,10 @@ const App: React.FC = () => {
   };
 
   // Launch a specific instance from the Instances page — properly tracks download state
-  const handleLaunchFromInstances = (branch: string, version: number, instanceId?: string) => {
+  const handleLaunchFromInstances = async (branch: string, version: number, instanceId?: string) => {
     if (isGameRunning || isDownloading) return;
+
+    const launchAfterDownload = await GetLaunchAfterDownload();
 
     const launchingInstance = instanceId
       ? (instances.find(inst => inst.id === instanceId) ?? null)
@@ -856,7 +760,7 @@ const App: React.FC = () => {
     send('hyprism:game:launch', {
       branch,
       version,
-      launchAfterDownload: false,
+      launchAfterDownload,
       ...(launchingInstance?.id ? { instanceId: launchingInstance.id } : {})
     });
   };
@@ -978,9 +882,25 @@ const App: React.FC = () => {
             </div>
 
             <div className="flex gap-3 mb-4">
-              <button className="px-4 py-2 bg-slate-700 rounded" onClick={refreshWrapperStatusLocal} disabled={isWrapperWorking}>Check for updates</button>
-              <button className="px-4 py-2 bg-amber-500 rounded" onClick={doInstallWrapper} disabled={!wrapperStatus?.updateAvailable || isWrapperWorking}>Download & Install</button>
-              <button className="px-4 py-2 bg-emerald-500 rounded" onClick={doLaunchWrapper} disabled={!wrapperStatus?.installed || isWrapperWorking}>Launch</button>
+              <Button onClick={refreshWrapperStatusLocal} disabled={isWrapperWorking}>
+                Check for updates
+              </Button>
+              <LauncherActionButton
+                variant="update"
+                onClick={doInstallWrapper}
+                disabled={!wrapperStatus?.updateAvailable || isWrapperWorking}
+                className="h-10 px-4 rounded-xl text-sm"
+              >
+                Download & Install
+              </LauncherActionButton>
+              <LauncherActionButton
+                variant="play"
+                onClick={doLaunchWrapper}
+                disabled={!wrapperStatus?.installed || isWrapperWorking}
+                className="h-10 px-4 rounded-xl text-sm"
+              >
+                Launch
+              </LauncherActionButton>
             </div>
 
             <div className="mt-6">
@@ -1038,23 +958,6 @@ const App: React.FC = () => {
       {/* Music Player - invisible, controlled by DockMenu */}
       <MusicPlayer muted={isMuted} forceMuted={isGameRunning} />
 
-      {isUpdatingLauncher && (
-        <UpdateOverlay
-          progress={progress}
-          downloaded={updateStats.d}
-          total={updateStats.t}
-          status={launcherUpdateStatus}
-          failed={launcherUpdateFailed}
-          onClose={launcherUpdateFailed ? () => {
-            setIsUpdatingLauncher(false);
-            setLauncherUpdateFailed(false);
-            setLauncherUpdateStatus('');
-            setProgress(0);
-            setUpdateStats({ d: 0, t: 0 });
-          } : undefined}
-        />
-      )}
-
       {/* Page Content with Transitions */}
       <main className="relative z-10 h-full">
         {currentPage === 'logs' ? (
@@ -1071,7 +974,6 @@ const App: React.FC = () => {
               launcherUpdateInfo={updateAsset}
               avatarRefreshTrigger={avatarRefreshTrigger}
               onOpenProfileEditor={() => setCurrentPage('profiles')}
-              onLauncherUpdate={handleUpdate}
               isDownloading={isDownloading}
               downloadState={downloadState}
               canCancel={isDownloading && !isGameRunning}
@@ -1146,7 +1048,6 @@ const App: React.FC = () => {
               onLauncherBranchChange={handleLauncherBranchChange}
               rosettaWarning={rosettaWarning}
               onBackgroundModeChange={(mode) => setBackgroundMode(mode)}
-              onAccentColorChange={(color) => setAccentColor(color)}
               onInstanceDeleted={handleInstanceDeleted}
               onAuthSettingsChange={refreshOfficialStatus}
               onNavigateToMods={() => {

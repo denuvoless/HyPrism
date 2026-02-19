@@ -2156,6 +2156,75 @@ public class InstanceService : IInstanceService
         }
     }
 
+    /// <summary>
+    /// Changes the version/branch of an existing instance.
+    /// Removes game client files (Client/, game/ sub-directories) while keeping
+    /// UserData and meta.json, then updates meta.json with the new branch/version
+    /// and marks IsLatest = false so the launcher never suggests updates.
+    /// </summary>
+    public bool ChangeInstanceVersion(string instanceId, string branch, int version)
+    {
+        try
+        {
+            var instancePath = GetInstancePathById(instanceId);
+            if (string.IsNullOrEmpty(instancePath) || !Directory.Exists(instancePath))
+            {
+                Logger.Warning("InstanceService", $"ChangeInstanceVersion: instance path not found for {instanceId}");
+                return false;
+            }
+
+            var meta = GetInstanceMeta(instancePath);
+            if (meta == null)
+            {
+                Logger.Warning("InstanceService", $"ChangeInstanceVersion: meta.json not found for {instanceId}");
+                return false;
+            }
+
+            // Remove game client directories while keeping UserData and meta.json
+            var clientDir = Path.Combine(instancePath, "Client");
+            var gameDir = Path.Combine(instancePath, "game");
+
+            if (Directory.Exists(clientDir))
+            {
+                Directory.Delete(clientDir, true);
+                Logger.Info("InstanceService", $"Removed Client directory for {instanceId}");
+            }
+
+            if (Directory.Exists(gameDir))
+            {
+                Directory.Delete(gameDir, true);
+                Logger.Info("InstanceService", $"Removed game directory for {instanceId}");
+            }
+
+            // Update meta.json with new branch, version, and mark as non-latest
+            var normalizedBranch = UtilityService.NormalizeVersionType(branch);
+            meta.Branch = normalizedBranch;
+            meta.Version = version;
+            meta.InstalledVersion = 0;
+            meta.PendingVersion = 0;
+            meta.IsLatest = false;
+
+            SaveInstanceMeta(instancePath, meta);
+
+            // Update Config.Instances entry as well
+            var config = GetConfig();
+            var configInstance = config.Instances?.FirstOrDefault(i => i.Id == instanceId);
+            if (configInstance != null)
+            {
+                configInstance.Branch = normalizedBranch;
+                configInstance.Version = version;
+            }
+
+            Logger.Success("InstanceService", $"Changed instance {instanceId} to {normalizedBranch} v{version} (non-latest)");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("InstanceService", $"Failed to change instance version: {ex.Message}");
+            return false;
+        }
+    }
+
     #endregion
 }
 
