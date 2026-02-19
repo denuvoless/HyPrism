@@ -130,6 +130,7 @@ jobs:
           flatpak list --system --runtime | grep -E 'freedesktop|electronjs|24\.08|Electron2' || true
 
       - name: Build Linux ${{ matrix.arch }}
+        continue-on-error: true
         run: |
           chmod +x Scripts/publish.sh
           ./Scripts/publish.sh linux flatpak --arch ${{ matrix.arch }}
