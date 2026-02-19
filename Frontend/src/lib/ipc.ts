@@ -89,7 +89,7 @@ export interface NewsItem {
   publishedAt?: string;
   author?: string;
   imageUrl?: string;
-  source?: string;
+  source?: 'hytale' | 'hyprism';
 }
 
 export interface Profile {
@@ -119,7 +119,10 @@ export interface SettingsSnapshot {
   language: string;
   musicEnabled: boolean;
   launcherBranch: string;
+  versionType: string;
+  selectedVersion: number;
   closeAfterLaunch: boolean;
+  launchAfterDownload: boolean;
   showDiscordAnnouncements: boolean;
   disableNews: boolean;
   backgroundMode: string;
@@ -128,9 +131,17 @@ export interface SettingsSnapshot {
   hasCompletedOnboarding: boolean;
   onlineMode: boolean;
   authDomain: string;
+  javaArguments?: string;
+  useCustomJava?: boolean;
+  customJavaPath?: string;
+  systemMemoryMb?: number;
   dataDirectory: string;
   instanceDirectory: string;
   gpuPreference?: string;
+  gameEnvironmentVariables?: Record<string, string>;
+  useDualAuth?: boolean;
+  showAlphaMods: boolean;
+  launcherVersion: string;
   launchOnStartup?: boolean;
   minimizeToTray?: boolean;
   animations?: boolean;
@@ -143,6 +154,26 @@ export interface SettingsSnapshot {
   verboseLogging?: boolean;
   preRelease?: boolean;
   [key: string]: unknown;
+}
+
+export interface MirrorInfo {
+  id: string;
+  name: string;
+  description?: string;
+  priority: number;
+  enabled: boolean;
+  sourceType: string;
+  hostname: string;
+}
+
+export interface MirrorSpeedTestResult {
+  mirrorId: string;
+  mirrorUrl: string;
+  mirrorName: string;
+  pingMs: number;
+  speedMBps: number;
+  isAvailable: boolean;
+  testedAt: string;
 }
 
 export interface ModScreenshot {
@@ -282,9 +313,36 @@ export interface VersionListResponse {
   officialSourceAvailable: boolean;
 }
 
+export interface LauncherUpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  changelog?: string;
+  downloadUrl?: string;
+  assetName?: string;
+  releaseUrl?: string;
+  isBeta?: boolean;
+}
+
+export interface LauncherUpdateProgress {
+  stage: string;
+  progress: number;
+  message: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  downloadedFilePath?: string;
+  hasDownloadedFile?: boolean;
+}
+
 // #endregion
 
 // #region Typed IPC API (from @ipc annotations)
+
+const _update = {
+  check: (data?: unknown) => invoke<{ success: boolean }>('hyprism:update:check', data),
+  install: (data?: unknown) => invoke<boolean>('hyprism:update:install', data, 300000),
+  onAvailable: (cb: (data: LauncherUpdateInfo) => void) => on('hyprism:update:available', cb as (d: unknown) => void),
+  onProgress: (cb: (data: LauncherUpdateProgress) => void) => on('hyprism:update:progress', cb as (d: unknown) => void),
+};
 
 const _config = {
   get: () => invoke<AppConfig>('hyprism:config:get'),
@@ -317,6 +375,7 @@ const _instance = {
   select: (data?: unknown) => invoke<boolean>('hyprism:instance:select', data),
   getSelected: (data?: unknown) => invoke<InstanceInfo | null>('hyprism:instance:getSelected', data),
   list: () => invoke<InstanceInfo[]>('hyprism:instance:list'),
+  changeVersion: (data?: unknown) => invoke<boolean>('hyprism:instance:changeVersion', data),
 };
 
 const _news = {
@@ -347,6 +406,12 @@ const _auth = {
 const _settings = {
   get: () => invoke<SettingsSnapshot>('hyprism:settings:get'),
   update: (data?: unknown) => invoke<{ success: boolean }>('hyprism:settings:update', data),
+  testMirrorSpeed: (data?: unknown) => invoke<MirrorSpeedTestResult>('hyprism:settings:testMirrorSpeed', data),
+  testOfficialSpeed: (data?: unknown) => invoke<MirrorSpeedTestResult>('hyprism:settings:testOfficialSpeed', data),
+  getMirrors: (data?: unknown) => invoke<MirrorInfo[]>('hyprism:settings:getMirrors', data),
+  addMirror: (data?: unknown) => invoke<{ success: boolean; error?: string; mirror?: MirrorInfo; }>('hyprism:settings:addMirror', data),
+  deleteMirror: (data?: unknown) => invoke<{ success: boolean; }>('hyprism:settings:deleteMirror', data),
+  toggleMirror: (data?: unknown) => invoke<{ success: boolean; }>('hyprism:settings:toggleMirror', data),
   launcherPath: (data?: unknown) => invoke<string>('hyprism:settings:launcherPath', data),
   defaultInstanceDir: (data?: unknown) => invoke<string>('hyprism:settings:defaultInstanceDir', data),
   setInstanceDir: (data?: unknown) => invoke<{ success: boolean, path: string, noop?: boolean, reason?: string, error?: string }>('hyprism:settings:setInstanceDir', data, 300000),
@@ -391,6 +456,7 @@ const _mods = {
 
 const _system = {
   gpuAdapters: () => invoke<GpuAdapterInfo[]>('hyprism:system:gpuAdapters'),
+  platform: (data?: unknown) => invoke<{ os: string; isLinux: boolean; isWindows: boolean; isMacOS: boolean }>('hyprism:system:platform', data),
 };
 
 const _console = {
@@ -405,7 +471,9 @@ const _logs = {
 
 const _file = {
   browseFolder: (data?: unknown) => invoke<string | null>('hyprism:file:browseFolder', data, 300000),
+  browseJavaExecutable: (data?: unknown) => invoke<string | null>('hyprism:file:browseJavaExecutable', data, 300000),
   browseModFiles: (data?: unknown) => invoke<string[]>('hyprism:file:browseModFiles', data),
+  exists: (data?: unknown) => invoke<boolean>('hyprism:file:exists', data),
 };
 
 // #endregion
@@ -413,6 +481,7 @@ const _file = {
 // #region Unified export
 
 export const ipc = {
+  update: _update,
   config: _config,
   game: _game,
   instance: _instance,

@@ -8,6 +8,7 @@ using HyPrism.Models;
 using HyPrism.Services.Core.Infrastructure;
 using HyPrism.Services.Core.App;
 using HyPrism.Services.Core.Integration;
+using HyPrism.Services.Core.Platform;
 using HyPrism.Services.Game.Asset;
 using HyPrism.Services.Game.Auth;
 using HyPrism.Services.Game.Instance;
@@ -38,6 +39,8 @@ public class GameLauncher : IGameLauncher
     private readonly AvatarService _avatarService;
     private readonly HttpClient _httpClient;
     private readonly HytaleAuthService _hytaleAuthService;
+    private readonly GpuDetectionService _gpuDetectionService;
+    private readonly string _appDir;
     
     private Config _config => _configService.Configuration;
 
@@ -60,6 +63,8 @@ public class GameLauncher : IGameLauncher
     /// <param name="avatarService">Service for avatar backup.</param>
     /// <param name="httpClient">HTTP client for authentication requests.</param>
     /// <param name="hytaleAuthService">Service for official Hytale OAuth authentication.</param>
+    /// <param name="gpuDetectionService">Service for GPU detection.</param>
+    /// <param name="appPath">Application path configuration.</param>
     public GameLauncher(
         IConfigService configService,
         ILaunchService launchService,
@@ -71,7 +76,9 @@ public class GameLauncher : IGameLauncher
         IUserIdentityService userIdentityService,
         AvatarService avatarService,
         HttpClient httpClient,
-        HytaleAuthService hytaleAuthService)
+        HytaleAuthService hytaleAuthService,
+        GpuDetectionService gpuDetectionService,
+        AppPathConfiguration appPath)
     {
         _configService = configService;
         _launchService = launchService;
@@ -84,8 +91,11 @@ public class GameLauncher : IGameLauncher
         _avatarService = avatarService;
         _httpClient = httpClient;
         _hytaleAuthService = hytaleAuthService;
+        _gpuDetectionService = gpuDetectionService;
+        _appDir = appPath.AppDir;
         _gameProcessService.ProcessExited += OnGameProcessExited;
     }
+
 
     private void OnGameProcessExited(object? sender, EventArgs e)
     {
@@ -152,13 +162,13 @@ public class GameLauncher : IGameLauncher
         var (identityToken, sessionToken, authPlayerName) = await AuthenticateAsync(sessionUuid);
         string launchPlayerName = ResolveLaunchPlayerName(authPlayerName, identityToken);
 
-        string javaPath = _launchService.GetJavaPath();
+        string javaPath = ResolveJavaPath();
         if (!File.Exists(javaPath)) throw new Exception($"Java not found at {javaPath}");
 
         string userDataDir = _instanceService.GetInstanceUserDataPath(versionPath);
         Directory.CreateDirectory(userDataDir);
 
-        QuarantineIncompatibleServerMods(userDataDir);
+        InvalidateAotCacheIfNeeded(versionPath);
 
         RestoreProfileSkinData(sessionUuid, userDataDir);
 
@@ -193,6 +203,30 @@ public class GameLauncher : IGameLauncher
             Path.Combine(versionPath, "Client", "HytaleClient"),
             Path.Combine(versionPath, "Client")
         );
+    }
+
+    private string ResolveJavaPath()
+    {
+        if (_config.UseCustomJava)
+        {
+            var customJavaPath = _config.CustomJavaPath?.Trim();
+            if (string.IsNullOrWhiteSpace(customJavaPath))
+            {
+                throw new Exception("Custom Java is enabled, but no executable path is configured.");
+            }
+
+            if (!File.Exists(customJavaPath))
+            {
+                throw new Exception($"Custom Java executable was not found: {customJavaPath}");
+            }
+
+            Logger.Info("Game", $"Using custom Java executable: {customJavaPath}");
+            return customJavaPath;
+        }
+
+        var bundledJavaPath = _launchService.GetJavaPath();
+        Logger.Info("Game", $"Using bundled Java executable: {bundledJavaPath}");
+        return bundledJavaPath;
     }
 
     /// <summary>
@@ -279,6 +313,8 @@ public class GameLauncher : IGameLauncher
         var effectiveAuthDomain = GetEffectiveCustomAuthDomain(logFallback: true);
         if (string.IsNullOrWhiteSpace(effectiveAuthDomain)) return;
 
+        bool useDualAuth = _config.UseDualAuth;
+
         _progressService.ReportDownloadProgress("patching", 0, "launch.detail.patching_init", null, 0, 0);
         try
         {
@@ -289,68 +325,127 @@ public class GameLauncher : IGameLauncher
             }
 
             Logger.Info("Game", $"Patching binary: hytale.com -> {baseDomain}");
+            Logger.Info("Game", $"Server patching mode: {(useDualAuth ? "DualAuth (experimental)" : "Legacy JAR patching")}");
             _progressService.ReportDownloadProgress("patching", 10, "launch.detail.patching_client", null, 0, 0);
 
             var patcher = new ClientPatcher(baseDomain);
 
-            // Patch only client binary.
-            // Server authentication is handled by DualAuth agent at runtime.
-            var patchResult = patcher.EnsureClientPatched(versionPath, (msg, progress) =>
+            if (useDualAuth)
             {
-                Logger.Info("Patcher", progress.HasValue ? $"{msg} ({progress}%)" : msg);
-                if (progress.HasValue)
+                // ── DualAuth mode (experimental): patch client only, use Java Agent for server ──
+
+                // If server JAR was previously patched by legacy mode, restore it first
+                // so DualAuth agent works with the original (unmodified) JAR.
+                if (ClientPatcher.IsServerJarPatched(versionPath))
                 {
-                    int mapped = 10 + (int)(progress.Value * 0.5);
-                    _progressService.ReportDownloadProgress("patching", mapped, msg, null, 0, 0);
+                    Logger.Info("Game", "Restoring server JAR from legacy patch before applying DualAuth");
+                    ClientPatcher.RestoreServerJarFromBackup(versionPath, (msg, progress) =>
+                    {
+                        Logger.Info("Patcher", progress.HasValue ? $"{msg} ({progress}%)" : msg);
+                    });
                 }
-            });
 
-            // DualAuth agent handles server-side auth flow.
-            Logger.Info("Game", $"Setting up DualAuth agent for auth domain: {baseDomain}");
-            _progressService.ReportDownloadProgress("patching", 65, "launch.detail.dualauth_setup", null, 0, 0);
-
-            try
-            {
-                var dualAuthResult = await DualAuthService.EnsureAgentAvailableAsync(versionPath, (msg, progress) =>
+                var patchResult = patcher.EnsureClientPatched(versionPath, (msg, progress) =>
                 {
-                    Logger.Info("DualAuth", progress.HasValue ? $"{msg} ({progress}%)" : msg);
+                    Logger.Info("Patcher", progress.HasValue ? $"{msg} ({progress}%)" : msg);
                     if (progress.HasValue)
                     {
-                        int mapped = 65 + (int)(progress.Value * 0.25);
+                        int mapped = 10 + (int)(progress.Value * 0.5);
                         _progressService.ReportDownloadProgress("patching", mapped, msg, null, 0, 0);
                     }
                 });
 
-                if (dualAuthResult.Success)
+                // DualAuth agent handles server-side auth flow at runtime.
+                Logger.Info("Game", $"Setting up DualAuth agent for auth domain: {baseDomain}");
+                _progressService.ReportDownloadProgress("patching", 65, "launch.detail.dualauth_setup", null, 0, 0);
+
+                try
                 {
-                    _dualAuthAgentPath = dualAuthResult.AgentPath;
-                    Logger.Success("Game", $"DualAuth agent ready: {_dualAuthAgentPath}");
+                    var dualAuthResult = await DualAuthService.EnsureAgentAvailableAsync(_appDir, (msg, progress) =>
+                    {
+                        Logger.Info("DualAuth", progress.HasValue ? $"{msg} ({progress}%)" : msg);
+                        if (progress.HasValue)
+                        {
+                            int mapped = 65 + (int)(progress.Value * 0.25);
+                            _progressService.ReportDownloadProgress("patching", mapped, msg, null, 0, 0);
+                        }
+                    });
+
+                    if (dualAuthResult.Success)
+                    {
+                        _dualAuthAgentPath = dualAuthResult.AgentPath;
+                        Logger.Success("Game", $"DualAuth agent ready: {_dualAuthAgentPath}");
+                    }
+                    else
+                    {
+                        Logger.Warning("Game", $"DualAuth agent setup failed: {dualAuthResult.Error}");
+                        Logger.Warning("Game", "Server authentication may not work correctly without DualAuth");
+                    }
+                }
+                catch (Exception dualAuthEx)
+                {
+                    Logger.Warning("Game", $"Error setting up DualAuth: {dualAuthEx.Message}");
+                }
+
+                if (patchResult.Success && patchResult.PatchCount > 0 && RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    try
+                    {
+                        _progressService.ReportDownloadProgress("patching", 95, "launch.detail.resigning", null, 0, 0);
+                        Logger.Info("Game", "Re-signing patched binary...");
+                        string appBundle = Path.Combine(versionPath, "Client", "Hytale.app");
+                        bool signed = ClientPatcher.SignMacOSBinary(appBundle);
+                        if (signed) Logger.Success("Game", "Binary re-signed successfully");
+                        else Logger.Warning("Game", "Binary signing failed - game may not launch");
+                    }
+                    catch (Exception signEx)
+                    {
+                        Logger.Warning("Game", $"Error re-signing binary: {signEx.Message}");
+                    }
+                }
+            }
+            else
+            {
+                // ── Legacy mode (default/stable): patch both client binary AND server JAR ──
+                // This is the proven approach — statically modifies the JAR to replace
+                // sessions.hytale.com with sessions.<custom-domain>.
+                // Also clear DualAuth agent path to prevent agent injection.
+                _dualAuthAgentPath = null;
+
+                var patchResult = patcher.EnsureAllPatched(versionPath, (msg, progress) =>
+                {
+                    Logger.Info("Patcher", progress.HasValue ? $"{msg} ({progress}%)" : msg);
+                    if (progress.HasValue)
+                    {
+                        int mapped = 10 + (int)(progress.Value * 0.85);
+                        _progressService.ReportDownloadProgress("patching", mapped, msg, null, 0, 0);
+                    }
+                });
+
+                if (!patchResult.Success)
+                {
+                    Logger.Warning("Game", $"Legacy patching had issues: {patchResult.Error}");
                 }
                 else
                 {
-                    Logger.Warning("Game", $"DualAuth agent setup failed: {dualAuthResult.Error}");
-                    Logger.Warning("Game", "Server authentication may not work correctly without DualAuth");
+                    Logger.Success("Game", $"Legacy patching complete (client + server JAR). Patches applied: {patchResult.PatchCount}");
                 }
-            }
-            catch (Exception dualAuthEx)
-            {
-                Logger.Warning("Game", $"Error setting up DualAuth: {dualAuthEx.Message}");
-            }
 
-            if (patchResult.Success && patchResult.PatchCount > 0 && RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                try
+                if (patchResult.Success && patchResult.PatchCount > 0 && RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 {
-                    _progressService.ReportDownloadProgress("patching", 95, "launch.detail.resigning", null, 0, 0);
-                    Logger.Info("Game", "Re-signing patched binary...");
-                    string appBundle = Path.Combine(versionPath, "Client", "Hytale.app");
-                    bool signed = ClientPatcher.SignMacOSBinary(appBundle);
-                    if (signed) Logger.Success("Game", "Binary re-signed successfully");
-                    else Logger.Warning("Game", "Binary signing failed - game may not launch");
-                }
-                catch (Exception signEx)
-                {
-                    Logger.Warning("Game", $"Error re-signing binary: {signEx.Message}");
+                    try
+                    {
+                        _progressService.ReportDownloadProgress("patching", 95, "launch.detail.resigning", null, 0, 0);
+                        Logger.Info("Game", "Re-signing patched binary...");
+                        string appBundle = Path.Combine(versionPath, "Client", "Hytale.app");
+                        bool signed = ClientPatcher.SignMacOSBinary(appBundle);
+                        if (signed) Logger.Success("Game", "Binary re-signed successfully");
+                        else Logger.Warning("Game", "Binary signing failed - game may not launch");
+                    }
+                    catch (Exception signEx)
+                    {
+                        Logger.Warning("Game", $"Error re-signing binary: {signEx.Message}");
+                    }
                 }
             }
 
@@ -524,57 +619,84 @@ public class GameLauncher : IGameLauncher
         }
     }
 
-    private void QuarantineIncompatibleServerMods(string userDataDir)
+    /// <summary>
+    /// Deletes the AOT (Ahead-Of-Time) cache in the Server directory when JVM flags have changed.
+    /// The AOT cache can become invalid if the JRE version or JVM flags change
+    /// (e.g., UseCompactObjectHeaders enabled vs disabled), causing the server to fail at startup.
+    /// We store a hash of the current JVM flags and invalidate when it changes.
+    /// </summary>
+    private void InvalidateAotCacheIfNeeded(string versionPath)
     {
-        return;
-    }
+        string serverDir = Path.Combine(versionPath, "Server");
+        if (!Directory.Exists(serverDir))
+            return;
 
-    private static bool TryReadServerVersionFromManifest(string jarPath, out string? serverVersion)
-    {
-        serverVersion = null;
+        string markerPath = Path.Combine(serverDir, ".jvm-flags-hash");
+        string currentFlags = _config.JavaArguments?.Trim() ?? "";
+        string currentHash = ComputeSimpleHash(currentFlags);
 
+        if (File.Exists(markerPath))
+        {
+            try
+            {
+                string storedHash = File.ReadAllText(markerPath).Trim();
+                if (storedHash == currentHash)
+                    return; // No change in JVM flags
+            }
+            catch { /* If we can't read, re-invalidate */ }
+        }
+
+        // Delete AOT cache files
         try
         {
-            using var archive = ZipFile.OpenRead(jarPath);
-            var manifestEntry = archive.Entries.FirstOrDefault(e =>
-                e.FullName.Equals("manifest.json", StringComparison.OrdinalIgnoreCase));
-            if (manifestEntry == null)
-                return false;
-
-            using var stream = manifestEntry.Open();
-            using var doc = JsonDocument.Parse(stream);
-            foreach (var property in doc.RootElement.EnumerateObject())
+            int deletedCount = 0;
+            foreach (var aotFile in Directory.EnumerateFiles(serverDir, "*.aot", SearchOption.AllDirectories))
             {
-                if (!property.Name.Equals("ServerVersion", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (property.Value.ValueKind == JsonValueKind.String)
+                try
                 {
-                    serverVersion = property.Value.GetString();
-                    return !string.IsNullOrWhiteSpace(serverVersion);
+                    File.Delete(aotFile);
+                    deletedCount++;
                 }
-
-                return false;
+                catch (Exception ex)
+                {
+                    Logger.Warning("Game", $"Failed to delete AOT cache file '{Path.GetFileName(aotFile)}': {ex.Message}");
+                }
             }
-        }
-        catch
-        {
-            return false;
-        }
 
-        return false;
+            // Also look for AOT-related directories (e.g., ".jsa" shared archives)
+            foreach (var jsaFile in Directory.EnumerateFiles(serverDir, "*.jsa", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    File.Delete(jsaFile);
+                    deletedCount++;
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning("Game", $"Failed to delete shared archive '{Path.GetFileName(jsaFile)}': {ex.Message}");
+                }
+            }
+
+            if (deletedCount > 0)
+                Logger.Info("Game", $"Invalidated {deletedCount} AOT/shared archive cache file(s) due to JVM flags change");
+
+            // Store current hash
+            File.WriteAllText(markerPath, currentHash);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Game", $"AOT cache invalidation failed: {ex.Message}");
+        }
     }
 
-    private static bool IsKnownInvalidServerVersion(string? serverVersion)
+    /// <summary>
+    /// Computes a simple deterministic hash string for JVM flags comparison.
+    /// </summary>
+    private static string ComputeSimpleHash(string input)
     {
-        if (string.IsNullOrWhiteSpace(serverVersion))
-            return false;
-
-        string normalized = serverVersion.Trim();
-        if (normalized == "*")
-            return false;
-
-        return Regex.IsMatch(normalized, @"^\d{4}\.\d{2}\.\d{2}-[a-zA-Z0-9]+$");
+        var bytes = Encoding.UTF8.GetBytes(input);
+        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+        return Convert.ToHexString(hash)[..16]; // 16 hex chars is sufficient for comparison
     }
 
     private void LogLaunchInfo(string executable, string javaPath, string gameDir, string userDataDir, string sessionUuid, string launchPlayerName)
@@ -598,26 +720,98 @@ public class GameLauncher : IGameLauncher
             var startInfo = BuildWindowsStartInfo(executable, workingDir, versionPath, userDataDir, javaPath, sessionUuid, identityToken, sessionToken, launchPlayerName);
             ApplyGpuEnvironment(startInfo);
             ApplyDualAuthEnvironment(startInfo);
+            ApplyUserJavaArguments(startInfo);
             return startInfo;
         }
 
-        return BuildUnixStartInfo(executable, workingDir, versionPath, userDataDir, javaPath, sessionUuid, identityToken, sessionToken, launchPlayerName);
+        var unixStartInfo = BuildUnixStartInfo(executable, workingDir, versionPath, userDataDir, javaPath, sessionUuid, identityToken, sessionToken, launchPlayerName);
+        ApplyUserJavaArguments(unixStartInfo);
+        return unixStartInfo;
+    }
+
+    private static string MergeJavaToolOptions(string? existing, string additional)
+    {
+        if (string.IsNullOrWhiteSpace(existing))
+            return additional;
+
+        return $"{existing} {additional}";
+    }
+
+    /// <summary>
+    /// Applies user-provided Java arguments via JAVA_TOOL_OPTIONS.
+    /// This affects Java processes started by the game client while preserving existing flags (for example DualAuth javaagent).
+    /// </summary>
+    private void ApplyUserJavaArguments(ProcessStartInfo startInfo)
+    {
+        var userJavaArgs = _config.JavaArguments?.Trim();
+        if (string.IsNullOrWhiteSpace(userJavaArgs))
+            return;
+
+        var sanitized = SanitizeUserJavaArguments(userJavaArgs);
+        if (string.IsNullOrWhiteSpace(sanitized))
+            return;
+
+        startInfo.Environment.TryGetValue("JAVA_TOOL_OPTIONS", out var current);
+        startInfo.Environment["JAVA_TOOL_OPTIONS"] = MergeJavaToolOptions(current, sanitized);
+        Logger.Info("Game", "Applied custom Java arguments from settings");
+    }
+
+    private static string SanitizeUserJavaArguments(string args)
+    {
+        var sanitized = args;
+
+        var blockedPatterns = new[]
+        {
+            @"(?:^|\s)-javaagent:\S+",
+            @"(?:^|\s)-agentlib:\S+",
+            @"(?:^|\s)-agentpath:\S+",
+            @"(?:^|\s)-Xbootclasspath(?::\S+)?",
+            @"(?:^|\s)-jar(?:\s+\S+)?",
+            @"(?:^|\s)-cp(?:\s+\S+)?",
+            @"(?:^|\s)-classpath(?:\s+\S+)?",
+            @"(?:^|\s)--class-path(?:\s+\S+)?",
+            @"(?:^|\s)--module-path(?:\s+\S+)?",
+            @"(?:^|\s)-Djava\.home=\S+",
+        };
+
+        foreach (var pattern in blockedPatterns)
+        {
+            sanitized = Regex.Replace(sanitized, pattern, " ", RegexOptions.IgnoreCase);
+        }
+
+        sanitized = Regex.Replace(sanitized, @"\s+", " ").Trim();
+        return sanitized;
     }
 
     /// <summary>
     /// Applies DualAuth environment variables for custom auth server authentication.
+    /// Only applies when DualAuth mode is enabled in settings.
     /// </summary>
     private void ApplyDualAuthEnvironment(ProcessStartInfo startInfo)
     {
-        if (string.IsNullOrEmpty(_dualAuthAgentPath) || IsOfficialServerMode())
+        if (!_config.UseDualAuth || string.IsNullOrEmpty(_dualAuthAgentPath) || IsOfficialServerMode())
             return;
 
-        string baseDomain = GetEffectiveCustomAuthDomain(logFallback: false) ?? "";
+        string authDomain = DeriveAuthDomain(GetEffectiveCustomAuthDomain(logFallback: false));
+
+        DualAuthService.ApplyToProcess(startInfo, _dualAuthAgentPath, authDomain, trustOfficialIssuers: true);
+        Logger.Info("Game", $"DualAuth environment applied to process (auth domain: {authDomain})");
+    }
+
+    /// <summary>
+    /// Derives the DualAuth domain (used for JWKS discovery) from the sessions domain.
+    /// For example, "sessions.sanasol.ws" → "auth.sanasol.ws".
+    /// </summary>
+    private static string DeriveAuthDomain(string? sessionsDomain)
+    {
+        if (string.IsNullOrWhiteSpace(sessionsDomain))
+            return "";
+
+        string baseDomain = sessionsDomain;
         if (baseDomain.StartsWith("sessions."))
             baseDomain = baseDomain["sessions.".Length..];
 
-        DualAuthService.ApplyToProcess(startInfo, _dualAuthAgentPath, baseDomain, trustOfficialIssuers: true);
-        Logger.Info("Game", $"DualAuth environment applied to process");
+        return $"auth.{baseDomain}";
     }
 
     /// <summary>
@@ -740,6 +934,7 @@ public class GameLauncher : IGameLauncher
 CLIENT_DIR=""{clientDir}""
 
 {BuildGpuEnvLines()}{BuildDualAuthEnvLines()}
+{BuildUserJavaEnvLines()}
 # Build env args for a clean process environment
 ENV_ARGS=()
 ENV_ARGS+=(HOME=""{homeDir}"")
@@ -749,14 +944,26 @@ ENV_ARGS+=(SHELL=""/bin/zsh"")
 ENV_ARGS+=(TMPDIR=""{Path.GetTempPath().TrimEnd('/')}"")
 ENV_ARGS+=(LD_LIBRARY_PATH=""$CLIENT_DIR:$LD_LIBRARY_PATH"")
 
-# Add DualAuth env vars if set (JAVA_TOOL_OPTIONS needs special handling for paths with spaces)
+# Add Java tool options (DualAuth + user-defined args)
+COMBINED_JAVA_TOOL_OPTIONS=
 if [[ -n ""$DUALAUTH_JAVA_TOOL_OPTIONS"" ]]; then
-    ENV_ARGS+=(""JAVA_TOOL_OPTIONS=$DUALAUTH_JAVA_TOOL_OPTIONS"")
+    COMBINED_JAVA_TOOL_OPTIONS=""$DUALAUTH_JAVA_TOOL_OPTIONS""
+fi
+if [[ -n ""$USER_JAVA_TOOL_OPTIONS"" ]]; then
+    if [[ -n ""$COMBINED_JAVA_TOOL_OPTIONS"" ]]; then
+        COMBINED_JAVA_TOOL_OPTIONS=""$COMBINED_JAVA_TOOL_OPTIONS $USER_JAVA_TOOL_OPTIONS""
+    else
+        COMBINED_JAVA_TOOL_OPTIONS=""$USER_JAVA_TOOL_OPTIONS""
+    fi
+fi
+if [[ -n ""$COMBINED_JAVA_TOOL_OPTIONS"" ]]; then
+    ENV_ARGS+=(""JAVA_TOOL_OPTIONS=$COMBINED_JAVA_TOOL_OPTIONS"")
 fi
 [[ -n ""$DUALAUTH_AUTH_DOMAIN"" ]] && ENV_ARGS+=(""HYTALE_AUTH_DOMAIN=$DUALAUTH_AUTH_DOMAIN"")
 [[ -n ""$DUALAUTH_TRUST_ALL"" ]] && ENV_ARGS+=(""HYTALE_TRUST_ALL_ISSUERS=$DUALAUTH_TRUST_ALL"")
 [[ -n ""$DUALAUTH_TRUST_OFFICIAL"" ]] && ENV_ARGS+=(""HYTALE_TRUST_OFFICIAL=$DUALAUTH_TRUST_OFFICIAL"")
 
+{BuildCustomEnvLines()}
 exec env ""${{ENV_ARGS[@]}}"" ""{executable}"" {argsString}
 ";
         File.WriteAllText(launchScript, scriptContent);
@@ -788,26 +995,66 @@ exec env ""${{ENV_ARGS[@]}}"" ""{executable}"" {argsString}
     /// <summary>
     /// Builds GPU environment variable lines for the Unix launch script.
     /// Returns a string with export lines to be placed before 'exec env'.
+    /// Detects the GPU vendor and applies appropriate environment variables.
     /// </summary>
     private string BuildGpuEnvLines()
     {
         var gpuPref = _config.GpuPreference?.ToLowerInvariant() ?? "dedicated";
-        if (gpuPref == "auto") return "";
+        if (gpuPref == "auto") return "# GPU preference: auto (system decides)\n\n";
 
         if (gpuPref == "dedicated")
         {
-            Logger.Info("Game", "GPU preference: dedicated (NVIDIA/AMD env vars in launch script)");
             var sb = new StringBuilder();
             sb.AppendLine("# GPU preference: dedicated (discrete GPU)");
-            sb.AppendLine("export __NV_PRIME_RENDER_OFFLOAD=1");
-            sb.AppendLine("export __GLX_VENDOR_LIBRARY_NAME=nvidia");
-            sb.AppendLine("export DRI_PRIME=1");
+            
+            // Detect the vendor of the dedicated GPU
+            var adapters = _gpuDetectionService.GetAdapters();
+            var dedicatedGpu = adapters.FirstOrDefault(a => a.Type == "dedicated");
 
-            var nvidiaEglVendorJson = TryGetLinuxNvidiaEglVendorJsonPath();
-            if (!string.IsNullOrWhiteSpace(nvidiaEglVendorJson))
+            if (dedicatedGpu != null && !string.IsNullOrEmpty(dedicatedGpu.PciId))
             {
-                sb.AppendLine($"export __EGL_VENDOR_LIBRARY_FILENAMES=\"{nvidiaEglVendorJson}\"");
-                Logger.Info("Game", $"Applied NVIDIA EGL vendor override: {nvidiaEglVendorJson}");
+                // Use explicit PCI ID for DRI_PRIME if available for more precise selection
+                Logger.Info("Game", $"Using dedicated GPU PCI ID for DRI_PRIME: {dedicatedGpu.PciId}");
+                sb.AppendLine($"export DRI_PRIME=pci:{dedicatedGpu.PciId}");
+            }
+            else
+            {
+                // Fallback to DRI_PRIME=1 if PCI ID detection failed or not applicable
+                Logger.Info("Game", "Using generic DRI_PRIME=1 for dedicated GPU");
+                sb.AppendLine("export DRI_PRIME=1");
+            }
+
+            var vendor = dedicatedGpu?.Vendor?.ToUpperInvariant() ?? "";
+            
+            if (vendor == "NVIDIA")
+            {
+                Logger.Info("Game", "GPU preference: dedicated (NVIDIA env vars in launch script)");
+                sb.AppendLine("export __NV_PRIME_RENDER_OFFLOAD=1");
+                sb.AppendLine("export __GLX_VENDOR_LIBRARY_NAME=nvidia");
+                
+                var nvidiaEglVendorJson = TryGetLinuxNvidiaEglVendorJsonPath();
+                if (!string.IsNullOrWhiteSpace(nvidiaEglVendorJson))
+                {
+                    sb.AppendLine($"export __EGL_VENDOR_LIBRARY_FILENAMES=\"{nvidiaEglVendorJson}\"");
+                    Logger.Info("Game", $"Applied NVIDIA EGL vendor override: {nvidiaEglVendorJson}");
+                }
+            }
+            else if (vendor == "AMD")
+            {
+                Logger.Info("Game", "GPU preference: dedicated (AMD env vars in launch script)");
+            }
+            else
+            {
+                // Unknown vendor — apply both NVIDIA and AMD variables as fallback
+                Logger.Info("Game", "GPU preference: dedicated (generic env vars, unknown vendor)");
+                sb.AppendLine("export __NV_PRIME_RENDER_OFFLOAD=1");
+                sb.AppendLine("export __GLX_VENDOR_LIBRARY_NAME=nvidia");
+                
+                var nvidiaEglVendorJson = TryGetLinuxNvidiaEglVendorJsonPath();
+                if (!string.IsNullOrWhiteSpace(nvidiaEglVendorJson))
+                {
+                    sb.AppendLine($"export __EGL_VENDOR_LIBRARY_FILENAMES=\"{nvidiaEglVendorJson}\"");
+                }
             }
 
             sb.AppendLine();
@@ -865,20 +1112,99 @@ export __NV_PRIME_RENDER_OFFLOAD=0
     }
 
     /// <summary>
+    /// Builds custom environment variable lines for the Unix launch script.
+    /// Parses KEY=VALUE pairs from config and adds them to ENV_ARGS.
+    /// </summary>
+    private string BuildCustomEnvLines()
+    {
+        var customEnv = _config.GameEnvironmentVariables?.Trim();
+        if (string.IsNullOrWhiteSpace(customEnv))
+            return "# No custom environment variables\n\n";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("# Custom environment variables from Settings");
+        
+        var lines = customEnv.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        var validCount = 0;
+        
+        // Regex for parsing space-separated KEY=VALUE pairs (supports quotes)
+        // Matches: KEY="VALUE" OR KEY='VALUE' OR KEY=VALUE
+        var envVarRegex = new Regex(@"(?<key>[A-Za-z_][A-Za-z0-9_]*)=(?<value>""[^""]*""|'[^']*'|[^""'\s]+)", RegexOptions.Compiled);
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            // Skip comments and empty lines
+            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith("#"))
+                continue;
+            
+            // Check if line contains multiple assignments (heuristic: "KEY=" appearing after whitespace)
+            // If so, use regex parsing to robustly extract multiple variables from one line
+            bool isMultiVarLine = Regex.IsMatch(trimmed, @"\s+[A-Za-z_][A-Za-z0-9_]*=");
+
+            if (isMultiVarLine)
+            {
+                var matches = envVarRegex.Matches(trimmed);
+                foreach (Match match in matches)
+                {
+                    var key = match.Groups["key"].Value;
+                    var val = match.Groups["value"].Value;
+
+                    // Remove surrounding quotes if present
+                    if ((val.StartsWith('"') && val.EndsWith('"')) || (val.StartsWith('\'') && val.EndsWith('\'')))
+                    {
+                        if (val.Length >= 2) val = val.Substring(1, val.Length - 2);
+                    }
+
+                    var escaped = EscapeForBashDoubleQuoted(val);
+                    sb.AppendLine($"ENV_ARGS+=({key}=\"{escaped}\")");
+                    validCount++;
+                }
+            }
+            else
+            {
+                // Classic parsing: treat entire remainder of line as value
+                // Validate KEY=VALUE format
+                var eqIndex = trimmed.IndexOf('=');
+                if (eqIndex <= 0) continue;
+                
+                var key = trimmed[..eqIndex].Trim();
+                var value = trimmed[(eqIndex + 1)..].Trim();
+                
+                // Validate key is a valid env var name (alphanumeric + underscore, starts with letter/underscore)
+                if (!Regex.IsMatch(key, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+                    continue;
+                
+                // Escape value for bash
+                var escapedValue = EscapeForBashDoubleQuoted(value);
+                sb.AppendLine($"ENV_ARGS+=({key}=\"{escapedValue}\")");
+                validCount++;
+            }
+        }
+        
+        if (validCount > 0)
+        {
+            Logger.Info("Game", $"Applied {validCount} custom environment variable(s) from settings");
+        }
+        
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Builds DualAuth environment variable lines for the Unix launch script.
     /// Returns a string with variable assignments to be placed before 'exec env'.
     /// Each variable is quoted individually to handle paths with spaces.
+    /// Only active when DualAuth mode is enabled in settings.
     /// </summary>
     private string BuildDualAuthEnvLines()
     {
-        if (string.IsNullOrEmpty(_dualAuthAgentPath) || IsOfficialServerMode())
-            return "# No DualAuth (official server mode or agent unavailable)\nDUALAUTH_JAVA_TOOL_OPTIONS=\"\"\nDUALAUTH_AUTH_DOMAIN=\"\"\nDUALAUTH_TRUST_ALL=\"\"\nDUALAUTH_TRUST_OFFICIAL=\"\"\n\n";
+        if (!_config.UseDualAuth || string.IsNullOrEmpty(_dualAuthAgentPath) || IsOfficialServerMode())
+            return "# No DualAuth (legacy patching mode, official server, or agent unavailable)\nDUALAUTH_JAVA_TOOL_OPTIONS=\"\"\nDUALAUTH_AUTH_DOMAIN=\"\"\nDUALAUTH_TRUST_ALL=\"\"\nDUALAUTH_TRUST_OFFICIAL=\"\"\n\n";
 
-        string baseDomain = GetEffectiveCustomAuthDomain(logFallback: false) ?? "";
-        if (baseDomain.StartsWith("sessions."))
-            baseDomain = baseDomain["sessions.".Length..];
+        string authDomain = DeriveAuthDomain(GetEffectiveCustomAuthDomain(logFallback: false));
 
-        Logger.Info("Game", $"DualAuth env lines for Unix script: {baseDomain}");
+        Logger.Info("Game", $"DualAuth env lines for Unix script: {authDomain}");
         
         // Store DualAuth values in separate shell variables, then compose the
         // JAVA_TOOL_OPTIONS=KEY=VALUE pair when building ENV_ARGS.
@@ -889,11 +1215,37 @@ export __NV_PRIME_RENDER_OFFLOAD=0
         // the path contains spaces.
         return $@"# DualAuth Agent Configuration
 DUALAUTH_JAVA_TOOL_OPTIONS=""\""-javaagent:{_dualAuthAgentPath}\""""
-DUALAUTH_AUTH_DOMAIN=""{baseDomain}""
+DUALAUTH_AUTH_DOMAIN=""{authDomain}""
 DUALAUTH_TRUST_ALL=""true""
 DUALAUTH_TRUST_OFFICIAL=""true""
 
 ";
+    }
+
+    private string BuildUserJavaEnvLines()
+    {
+        var userJavaArgs = _config.JavaArguments?.Trim();
+        if (string.IsNullOrWhiteSpace(userJavaArgs))
+            return "# No custom user Java args\nUSER_JAVA_TOOL_OPTIONS=\"\"\n\n";
+
+        userJavaArgs = SanitizeUserJavaArguments(userJavaArgs);
+        if (string.IsNullOrWhiteSpace(userJavaArgs))
+            return "# No custom user Java args\nUSER_JAVA_TOOL_OPTIONS=\"\"\n\n";
+
+        var escaped = EscapeForBashDoubleQuoted(userJavaArgs);
+        return $@"# Custom user Java arguments from Settings
+USER_JAVA_TOOL_OPTIONS=""{escaped}""
+
+";
+    }
+
+    private static string EscapeForBashDoubleQuoted(string value)
+    {
+        return value
+            .Replace("\\", "\\\\")
+            .Replace("\"", "\\\"")
+            .Replace("$", "\\$")
+            .Replace("`", "\\`");
     }
 
     private async Task StartAndMonitorProcessAsync(ProcessStartInfo startInfo, string sessionUuid)
@@ -962,7 +1314,11 @@ DUALAUTH_TRUST_OFFICIAL=""true""
                 }
             };
 
-            process.ErrorDataReceived += (_, _) => { };
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(e.Data)) return;
+                Logger.Warning("Game", $"stderr: {e.Data}");
+            };
 
             if (!process.Start())
             {

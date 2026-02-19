@@ -80,7 +80,7 @@
 
 - **Auto-updates** — Launcher self-update via GitHub releases
 - **Pre-release channel** — Opt-in to receive pre-release builds
-- **Release notes** — View changelog before updating
+- **Release notes** —before updating
 
 ## Developer Features
 

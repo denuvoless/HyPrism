@@ -20,7 +20,9 @@
 - [Стандарты кода](Development/CodingStandards.md) — Соглашения C# и TypeScript
 - [Руководство по фронтенду](Development/FrontendGuide.md) — React компоненты, темы, маршрутизация
 - [Вклад в проект](Development/Contributing.md) — Руководство для контрибьюторов
+- [Добавление зеркала](Development/AddingMirror.md) — Как добавить встроенное зеркало сообщества
 
 ### Пользователю
 - [Установка](User/Installation.md) — Установка HyPrism
 - [Настройка](User/Configuration.md) — Параметры и конфигурация
+- [Руководство по зеркалам](User/Mirrors.md) — Пользовательские зеркала: настройка, схемы и примеры

@@ -71,8 +71,8 @@ public class PatchManager : IPatchManager
         // Ensure Butler is available
         await _butlerService.EnsureButlerInstalledAsync((_, _) => { });
 
-        // Mirror + release: each file is a full standalone game copy.
-        // No need for intermediate patches — just download the latest version.
+        // Mirror + release: use a single full standalone game copy.
+        // Differential release updates are intentionally not used here.
         if (officialDown && !_versionService.IsDiffBasedBranch(normalizedBranch))
         {
             Logger.Info("Download", $"Mirror release: downloading full copy v{latestVersion}");

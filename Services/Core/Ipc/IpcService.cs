@@ -3,8 +3,10 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Runtime.InteropServices;
 using ElectronNET.API;
 using Microsoft.Extensions.DependencyInjection;
 using SixLabors.ImageSharp;
@@ -18,6 +20,7 @@ using HyPrism.Services.Game;
 using HyPrism.Services.Game.Instance;
 using HyPrism.Services.Game.Launch;
 using HyPrism.Services.Game.Mod;
+using HyPrism.Services.Game.Sources;
 using HyPrism.Services.Game.Version;
 using HyPrism.Services.User;
 
@@ -39,11 +42,13 @@ namespace HyPrism.Services.Core.Ipc;
 /// @type ProgressUpdate { state: string; progress: number; messageKey: string; args?: unknown[]; downloadedBytes: number; totalBytes: number; }
 /// @type GameState { state: 'starting' | 'started' | 'running' | 'stopped'; exitCode: number; }
 /// @type GameError { type: string; message: string; technical?: string; }
-/// @type NewsItem { title: string; excerpt?: string; url?: string; date?: string; publishedAt?: string; author?: string; imageUrl?: string; source?: string; }
+/// @type NewsItem { title: string; excerpt?: string; url?: string; date?: string; publishedAt?: string; author?: string; imageUrl?: string; source?: 'hytale' | 'hyprism'; }
 /// @type Profile { id: string; name: string; uuid?: string; isOfficial?: boolean; avatar?: string; folderName?: string; }
 /// @type HytaleAuthStatus { loggedIn: boolean; username?: string; uuid?: string; error?: string; errorType?: string; }
 /// @type ProfileSnapshot { nick: string; uuid: string; avatarPath?: string; }
-/// @type SettingsSnapshot { language: string; musicEnabled: boolean; launcherBranch: string; closeAfterLaunch: boolean; showDiscordAnnouncements: boolean; disableNews: boolean; backgroundMode: string; availableBackgrounds: string[]; accentColor: string; hasCompletedOnboarding: boolean; onlineMode: boolean; authDomain: string; dataDirectory: string; instanceDirectory: string; gpuPreference?: string; launchOnStartup?: boolean; minimizeToTray?: boolean; animations?: boolean; transparency?: boolean; resolution?: string; ramMb?: number; sound?: boolean; closeOnLaunch?: boolean; developerMode?: boolean; verboseLogging?: boolean; preRelease?: boolean; [key: string]: unknown; }
+/// @type SettingsSnapshot { language: string; musicEnabled: boolean; launcherBranch: string; versionType: string; selectedVersion: number; closeAfterLaunch: boolean; launchAfterDownload: boolean; showDiscordAnnouncements: boolean; disableNews: boolean; backgroundMode: string; availableBackgrounds: string[]; accentColor: string; hasCompletedOnboarding: boolean; onlineMode: boolean; authDomain: string; javaArguments?: string; useCustomJava?: boolean; customJavaPath?: string; systemMemoryMb?: number; dataDirectory: string; instanceDirectory: string; gpuPreference?: string; gameEnvironmentVariables?: Record<string, string>; useDualAuth?: boolean; showAlphaMods: boolean; launcherVersion: string; launchOnStartup?: boolean; minimizeToTray?: boolean; animations?: boolean; transparency?: boolean; resolution?: string; ramMb?: number; sound?: boolean; closeOnLaunch?: boolean; developerMode?: boolean; verboseLogging?: boolean; preRelease?: boolean; [key: string]: unknown; }
+/// @type MirrorInfo { id: string; name: string; description?: string; priority: number; enabled: boolean; sourceType: string; hostname: string; }
+/// @type MirrorSpeedTestResult { mirrorId: string; mirrorUrl: string; mirrorName: string; pingMs: number; speedMBps: number; isAvailable: boolean; testedAt: string; }
 /// @type ModScreenshot { id: number; title: string; thumbnailUrl: string; url: string; }
 /// @type ModInfo { id: string; name: string; slug: string; summary: string; author: string; downloadCount: number; iconUrl: string; thumbnailUrl: string; categories: string[]; dateUpdated: string; latestFileId: string; screenshots: ModScreenshot[]; }
 /// @type ModSearchResult { mods: ModInfo[]; totalCount: number; }
@@ -60,6 +65,8 @@ namespace HyPrism.Services.Core.Ipc;
 /// @type GpuAdapterInfo { name: string; vendor: string; type: string; }
 /// @type VersionInfo { version: number; source: 'Official' | 'Mirror'; isLatest: boolean; }
 /// @type VersionListResponse { versions: VersionInfo[]; hasOfficialAccount: boolean; officialSourceAvailable: boolean; }
+/// @type LauncherUpdateInfo { currentVersion: string; latestVersion: string; changelog?: string; downloadUrl?: string; assetName?: string; releaseUrl?: string; isBeta?: boolean; }
+/// @type LauncherUpdateProgress { stage: string; progress: number; message: string; downloadedBytes?: number; totalBytes?: number; downloadedFilePath?: string; hasDownloadedFile?: boolean; }
 public class IpcService
 {
     private readonly IServiceProvider _services;
@@ -129,6 +136,91 @@ public class IpcService
         Electron.IpcMain.Send(win, channel, raw);
     }
 
+    private static int GetSystemMemoryMb()
+    {
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                var memoryStatus = new MemoryStatusEx();
+                if (GlobalMemoryStatusEx(memoryStatus) && memoryStatus.ullTotalPhys > 0)
+                {
+                    return (int)(memoryStatus.ullTotalPhys / (1024 * 1024));
+                }
+            }
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                const string memInfoPath = "/proc/meminfo";
+                if (File.Exists(memInfoPath))
+                {
+                    var memTotalLine = File.ReadLines(memInfoPath).FirstOrDefault(line => line.StartsWith("MemTotal:", StringComparison.OrdinalIgnoreCase));
+                    if (!string.IsNullOrWhiteSpace(memTotalLine))
+                    {
+                        var parts = memTotalLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length >= 2 && long.TryParse(parts[1], out var kb) && kb > 0)
+                        {
+                            return (int)(kb / 1024);
+                        }
+                    }
+                }
+            }
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "/usr/sbin/sysctl",
+                    Arguments = "-n hw.memsize",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                using var process = System.Diagnostics.Process.Start(psi);
+                if (process != null)
+                {
+                    var output = process.StandardOutput.ReadToEnd().Trim();
+                    process.WaitForExit(2000);
+                    if (process.ExitCode == 0 && long.TryParse(output, out var bytes) && bytes > 0)
+                    {
+                        return (int)(bytes / (1024 * 1024));
+                    }
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        var fallback = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+        if (fallback > 0)
+        {
+            return (int)Math.Max(1024, fallback / (1024 * 1024));
+        }
+
+        return 8192;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private sealed class MemoryStatusEx
+    {
+        public uint dwLength = (uint)Marshal.SizeOf<MemoryStatusEx>();
+        public uint dwMemoryLoad;
+        public ulong ullTotalPhys;
+        public ulong ullAvailPhys;
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GlobalMemoryStatusEx([In, Out] MemoryStatusEx lpBuffer);
+
     public void RegisterAll()
     {
         if (Interlocked.Exchange(ref _hasRegisteredAll, 1) == 1)
@@ -146,6 +238,7 @@ public class IpcService
         RegisterProfileHandlers();
         RegisterAuthHandlers();
         RegisterSettingsHandlers();
+        RegisterUpdateHandlers();
         RegisterLocalizationHandlers();
         RegisterWindowHandlers();
         RegisterModHandlers();
@@ -155,6 +248,70 @@ public class IpcService
 
         Logger.Success("IPC", "All IPC handlers registered");
     }
+
+    // #region Launcher Update
+    // @ipc invoke hyprism:update:check -> { success: boolean }
+    // @ipc invoke hyprism:update:install -> boolean 300000
+    // @ipc event hyprism:update:available -> LauncherUpdateInfo
+    // @ipc event hyprism:update:progress -> LauncherUpdateProgress
+
+    private void RegisterUpdateHandlers()
+    {
+        var updateService = _services.GetRequiredService<IUpdateService>();
+
+        // Forward backend update notifications to renderer
+        updateService.LauncherUpdateAvailable += (info) =>
+        {
+            try { Reply("hyprism:update:available", info); } catch { /* swallow */ }
+        };
+
+        updateService.LauncherUpdateProgress += (progress) =>
+        {
+            try { Reply("hyprism:update:progress", progress); } catch { /* swallow */ }
+        };
+
+        // Explicit check (useful for manual refresh or debugging)
+        Electron.IpcMain.On("hyprism:update:check", async (_) =>
+        {
+            try
+            {
+                await updateService.CheckForLauncherUpdatesAsync();
+                Reply("hyprism:update:check:reply", new { success = true });
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Update check failed: {ex.Message}");
+                Reply("hyprism:update:check:reply", new { success = false, error = ex.Message });
+            }
+        });
+
+        // Install update (will usually terminate the current process after starting the replacement script)
+        Electron.IpcMain.On("hyprism:update:install", async (_) =>
+        {
+            try
+            {
+                var ok = await updateService.UpdateAsync(null);
+                Reply("hyprism:update:install:reply", ok);
+
+                if (ok)
+                {
+                    // Give IPC a moment to flush, then exit. The updater script will restart the app.
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(750);
+                        try { Electron.App.Exit(); } catch { Environment.Exit(0); }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Update install failed: {ex.Message}");
+                Reply("hyprism:update:install:reply", false);
+            }
+        });
+    }
+
+    // #endregion
 
     // #region Config
     // @ipc invoke hyprism:config:get -> AppConfig
@@ -232,6 +389,9 @@ public class IpcService
                 return;
             }
             
+            // Default behavior comes from persisted config.
+            var launchAfterDownload = configService.Configuration.LaunchAfterDownload;
+
             // Optionally accept branch and version to launch a specific instance
             if (args != null)
             {
@@ -274,14 +434,52 @@ public class IpcService
                                 }
                             }
                         }
+
+                        if (data.TryGetValue("launchAfterDownload", out var launchAfterEl) && launchAfterEl.ValueKind == JsonValueKind.True)
+                        {
+                            launchAfterDownload = true;
+                        }
+                        else if (data.TryGetValue("launchAfterDownload", out launchAfterEl) && launchAfterEl.ValueKind == JsonValueKind.False)
+                        {
+                            launchAfterDownload = false;
+                        }
                     }
                 }
                 catch { /* ignore parsing errors, use current config */ }
             }
             
             Logger.Info("IPC", "Game launch requested");
-            try { await gameSession.DownloadAndLaunchAsync(); }
-            catch (Exception ex) { Logger.Error("IPC", $"Game launch failed: {ex.Message}"); }
+            try
+            {
+                var result = await gameSession.DownloadAndLaunchAsync(() => launchAfterDownload);
+
+                if (result.Cancelled || string.Equals(result.Error, "Cancelled", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Cancellation is a normal operation — just reset state, no error.
+                    progressService.ReportGameStateChanged("stopped", 0);
+                    return;
+                }
+
+                // Download-only (no launch) completed successfully
+                if (result.Success && !launchAfterDownload)
+                {
+                    progressService.ReportGameStateChanged("stopped", 0);
+                    return;
+                }
+
+                if (!result.Success)
+                {
+                    var technical = result.Error ?? "Unknown download/install error";
+                    progressService.ReportError("download", "Failed to install game", technical);
+                    progressService.ReportGameStateChanged("stopped", 1);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Game launch failed: {ex.Message}");
+                progressService.ReportError("download", "Failed to install game", ex.ToString());
+                progressService.ReportGameStateChanged("stopped", 1);
+            }
         });
 
         Electron.IpcMain.On("hyprism:game:cancel", (_) =>
@@ -622,10 +820,7 @@ public class IpcService
                 
                 var modsPath = Path.Combine(instancePath, "UserData", "Mods");
                 
-                if (!Directory.Exists(modsPath))
-                {
-                    Directory.CreateDirectory(modsPath);
-                }
+                ModService.EnsureModsDirectory(modsPath);
                 
                 fileService.OpenFolder(modsPath);
                 Logger.Info("IPC", $"Opened mods folder: {modsPath}");
@@ -1073,6 +1268,37 @@ public class IpcService
                 Reply("hyprism:instance:rename:reply", false);
             }
         });
+
+        // @ipc invoke hyprism:instance:changeVersion -> boolean
+        // Change the version/branch of an existing instance.
+        // Clears game client files, updates meta.json, marks non-latest.
+        Electron.IpcMain.On("hyprism:instance:changeVersion", (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOpts);
+                var instanceId = data?["instanceId"].GetString();
+                var branch = data?["branch"].GetString();
+                var version = data?["version"].GetInt32() ?? 0;
+
+                if (string.IsNullOrEmpty(instanceId) || string.IsNullOrEmpty(branch))
+                {
+                    Logger.Warning("IPC", "Instance changeVersion failed: missing instanceId or branch");
+                    Reply("hyprism:instance:changeVersion:reply", false);
+                    return;
+                }
+
+                var result = instanceService.ChangeInstanceVersion(instanceId, branch, version);
+                Reply("hyprism:instance:changeVersion:reply", result);
+                Logger.Info("IPC", $"Changed instance {instanceId} version to {branch} v{version}: {result}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to change instance version: {ex.Message}");
+                Reply("hyprism:instance:changeVersion:reply", false);
+            }
+        });
     }
     // #endregion
 
@@ -1284,6 +1510,7 @@ public class IpcService
     {
         var settings = _services.GetRequiredService<ISettingsService>();
         var appPath = _services.GetRequiredService<AppPathConfiguration>();
+        var updateService = _services.GetRequiredService<IUpdateService>();
 
         Electron.IpcMain.On("hyprism:settings:get", (_) =>
         {
@@ -1296,6 +1523,7 @@ public class IpcService
                 versionType = settings.GetVersionType(),
                 selectedVersion = settings.GetSelectedVersion(),
                 closeAfterLaunch = settings.GetCloseAfterLaunch(),
+                launchAfterDownload = settings.GetLaunchAfterDownload(),
                 showDiscordAnnouncements = settings.GetShowDiscordAnnouncements(),
                 disableNews = settings.GetDisableNews(),
                 backgroundMode = settings.GetBackgroundMode(),
@@ -1304,9 +1532,16 @@ public class IpcService
                 hasCompletedOnboarding = settings.GetHasCompletedOnboarding(),
                 onlineMode = settings.GetOnlineMode(),
                 authDomain = settings.GetAuthDomain(),
+                javaArguments = settings.GetJavaArguments(),
+                useCustomJava = settings.GetUseCustomJava(),
+                customJavaPath = settings.GetCustomJavaPath(),
+                systemMemoryMb = GetSystemMemoryMb(),
                 dataDirectory = appPath.AppDir,
                 instanceDirectory = settings.GetInstanceDirectory(),
                 gpuPreference = settings.GetGpuPreference(),
+                gameEnvironmentVariables = settings.GetGameEnvironmentVariables(),
+                useDualAuth = settings.GetUseDualAuth(),
+                showAlphaMods = settings.GetShowAlphaMods(),
                 launcherVersion = UpdateService.GetCurrentVersion()
             });
         });
@@ -1315,11 +1550,24 @@ public class IpcService
         {
             try
             {
+                var oldLauncherBranch = settings.GetLauncherBranch();
                 var json = ArgsToJson(args);
                 var updates = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
                 if (updates != null)
                     foreach (var (key, value) in updates)
                         ApplySetting(settings, key, value);
+
+                // If the user changed the launcher branch, re-check updates immediately.
+                // This enables release ↔ beta switching without requiring restart.
+                var newLauncherBranch = settings.GetLauncherBranch();
+                if (!string.Equals(oldLauncherBranch, newLauncherBranch, StringComparison.OrdinalIgnoreCase))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try { await updateService.CheckForLauncherUpdatesAsync(); }
+                        catch (Exception ex) { Logger.Warning("Update", $"Update check after channel switch failed: {ex.Message}"); }
+                    });
+                }
 
                 Reply("hyprism:settings:update:reply", new { success = true });
             }
@@ -1329,6 +1577,249 @@ public class IpcService
                 Reply("hyprism:settings:update:reply", new { success = false, error = ex.Message });
             }
         });
+        
+        // @ipc invoke hyprism:settings:testMirrorSpeed -> MirrorSpeedTestResult
+        Electron.IpcMain.On("hyprism:settings:testMirrorSpeed", async (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                var request = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                var mirrorId = request?.GetValueOrDefault("mirrorId").GetString() ?? "estrogen";
+                var forceRefresh = request?.GetValueOrDefault("forceRefresh").ValueKind == JsonValueKind.True;
+                
+                var versionService = _services.GetRequiredService<IVersionService>();
+                var result = await versionService.TestMirrorSpeedAsync(mirrorId, forceRefresh);
+                
+                Reply("hyprism:settings:testMirrorSpeed:reply", result);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Mirror speed test failed: {ex.Message}");
+                Reply("hyprism:settings:testMirrorSpeed:reply", new { 
+                    mirrorId = "unknown",
+                    mirrorName = "Unknown",
+                    mirrorUrl = "",
+                    pingMs = 0L,
+                    speedMBps = 0.0,
+                    isAvailable = false,
+                    testedAt = DateTime.UtcNow
+                });
+            }
+        });
+        
+        // @ipc invoke hyprism:settings:testOfficialSpeed -> MirrorSpeedTestResult
+        Electron.IpcMain.On("hyprism:settings:testOfficialSpeed", async (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                var request = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                var forceRefresh = request?.GetValueOrDefault("forceRefresh").ValueKind == JsonValueKind.True;
+                
+                var versionService = _services.GetRequiredService<IVersionService>();
+                var result = await versionService.TestOfficialSpeedAsync(forceRefresh);
+                
+                Reply("hyprism:settings:testOfficialSpeed:reply", result);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Official speed test failed: {ex.Message}");
+                Reply("hyprism:settings:testOfficialSpeed:reply", new { 
+                    mirrorId = "official",
+                    mirrorName = "Hytale",
+                    mirrorUrl = "https://cdn.hytale.com",
+                    pingMs = -1L,
+                    speedMBps = 0.0,
+                    isAvailable = false,
+                    testedAt = DateTime.UtcNow
+                });
+            }
+        });
+
+        // @ipc invoke hyprism:settings:getMirrors -> MirrorInfo[]
+        Electron.IpcMain.On("hyprism:settings:getMirrors", async (_) =>
+        {
+            await Task.CompletedTask;
+            try
+            {
+                var appPath = _services.GetRequiredService<AppPathConfiguration>();
+                var mirrors = MirrorLoaderService.GetAllMirrorMetas(appPath.AppDir);
+                var result = mirrors.Select(m => new {
+                    id = m.Id,
+                    name = m.Name,
+                    description = m.Description,
+                    priority = m.Priority,
+                    enabled = m.Enabled,
+                    sourceType = m.SourceType,
+                    hostname = GetMirrorHostname(m)
+                }).ToList();
+                Reply("hyprism:settings:getMirrors:reply", result);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Get mirrors failed: {ex.Message}");
+                Reply("hyprism:settings:getMirrors:reply", Array.Empty<object>());
+            }
+        });
+
+        // @ipc invoke hyprism:settings:addMirror -> { success: boolean; error?: string; mirror?: MirrorInfo; }
+        Electron.IpcMain.On("hyprism:settings:addMirror", async (args) =>
+        {
+            try
+            {
+                var appPath = _services.GetRequiredService<AppPathConfiguration>();
+                var json = ArgsToJson(args);
+                var request = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                var url = request?.GetValueOrDefault("url").GetString() ?? "";
+                
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    Reply("hyprism:settings:addMirror:reply", new { success = false, error = "URL is required" });
+                    return;
+                }
+                
+                var httpClient = _services.GetRequiredService<HttpClient>();
+                var discoveryService = new MirrorDiscoveryService(httpClient);
+                var result = await discoveryService.DiscoverMirrorAsync(url);
+                
+                if (!result.Success || result.Mirror == null)
+                {
+                    Reply("hyprism:settings:addMirror:reply", new { success = false, error = result.Error ?? "Discovery failed" });
+                    return;
+                }
+                
+                // Check if mirror with same ID already exists
+                if (MirrorLoaderService.MirrorExists(appPath.AppDir, result.Mirror.Id))
+                {
+                    // Generate unique ID
+                    var baseId = result.Mirror.Id;
+                    var counter = 2;
+                    while (MirrorLoaderService.MirrorExists(appPath.AppDir, $"{baseId}-{counter}"))
+                    {
+                        counter++;
+                    }
+                    result.Mirror.Id = $"{baseId}-{counter}";
+                }
+                
+                MirrorLoaderService.SaveMirror(appPath.AppDir, result.Mirror);
+                
+                // Reload mirror sources in VersionService
+                var versionService = _services.GetRequiredService<IVersionService>();
+                versionService.ReloadMirrorSources();
+                
+                Reply("hyprism:settings:addMirror:reply", new { 
+                    success = true, 
+                    mirror = new {
+                        id = result.Mirror.Id,
+                        name = result.Mirror.Name,
+                        description = result.Mirror.Description,
+                        priority = result.Mirror.Priority,
+                        enabled = result.Mirror.Enabled,
+                        sourceType = result.Mirror.SourceType,
+                        hostname = GetMirrorHostname(result.Mirror),
+                        detectedType = result.DetectedType
+                    }
+                });
+                
+                Logger.Success("IPC", $"Added mirror: {result.Mirror.Name} ({result.Mirror.Id})");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Add mirror failed: {ex.Message}");
+                Reply("hyprism:settings:addMirror:reply", new { success = false, error = ex.Message });
+            }
+        });
+
+        // @ipc invoke hyprism:settings:deleteMirror -> { success: boolean; }
+        Electron.IpcMain.On("hyprism:settings:deleteMirror", async (args) =>
+        {
+            await Task.CompletedTask;
+            try
+            {
+                var appPath = _services.GetRequiredService<AppPathConfiguration>();
+                var json = ArgsToJson(args);
+                var request = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                var mirrorId = request?.GetValueOrDefault("mirrorId").GetString() ?? "";
+                
+                if (string.IsNullOrWhiteSpace(mirrorId))
+                {
+                    Reply("hyprism:settings:deleteMirror:reply", new { success = false, error = "Mirror ID is required" });
+                    return;
+                }
+                
+                var deleted = MirrorLoaderService.DeleteMirror(appPath.AppDir, mirrorId);
+                
+                if (deleted)
+                {
+                    // Reload mirror sources in VersionService
+                    var versionService = _services.GetRequiredService<IVersionService>();
+                    versionService.ReloadMirrorSources();
+                    Logger.Info("IPC", $"Deleted mirror: {mirrorId}");
+                }
+                
+                Reply("hyprism:settings:deleteMirror:reply", new { success = deleted });
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Delete mirror failed: {ex.Message}");
+                Reply("hyprism:settings:deleteMirror:reply", new { success = false, error = ex.Message });
+            }
+        });
+
+        // @ipc invoke hyprism:settings:toggleMirror -> { success: boolean; }
+        Electron.IpcMain.On("hyprism:settings:toggleMirror", async (args) =>
+        {
+            await Task.CompletedTask;
+            try
+            {
+                var appPath = _services.GetRequiredService<AppPathConfiguration>();
+                var json = ArgsToJson(args);
+                var request = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                var mirrorId = request?.GetValueOrDefault("mirrorId").GetString() ?? "";
+                var enabled = request?.GetValueOrDefault("enabled").GetBoolean() ?? true;
+                
+                var mirrors = MirrorLoaderService.GetAllMirrorMetas(appPath.AppDir);
+                var mirror = mirrors.FirstOrDefault(m => m.Id == mirrorId);
+                
+                if (mirror == null)
+                {
+                    Reply("hyprism:settings:toggleMirror:reply", new { success = false, error = "Mirror not found" });
+                    return;
+                }
+                
+                mirror.Enabled = enabled;
+                MirrorLoaderService.SaveMirror(appPath.AppDir, mirror);
+                
+                // Reload mirror sources in VersionService
+                var versionService = _services.GetRequiredService<IVersionService>();
+                versionService.ReloadMirrorSources();
+                
+                Reply("hyprism:settings:toggleMirror:reply", new { success = true });
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Toggle mirror failed: {ex.Message}");
+                Reply("hyprism:settings:toggleMirror:reply", new { success = false, error = ex.Message });
+            }
+        });
+    }
+
+    private static string GetMirrorHostname(MirrorMeta mirror)
+    {
+        try
+        {
+            if (mirror.SourceType == "json-index" && !string.IsNullOrEmpty(mirror.JsonIndex?.ApiUrl))
+            {
+                return new Uri(mirror.JsonIndex.ApiUrl).Host;
+            }
+            if (mirror.SourceType == "pattern" && !string.IsNullOrEmpty(mirror.Pattern?.BaseUrl))
+            {
+                return new Uri(mirror.Pattern.BaseUrl).Host;
+            }
+        }
+        catch { }
+        return "";
     }
 
     private static void ApplySetting(ISettingsService s, string key, JsonElement val)
@@ -1341,14 +1832,21 @@ public class IpcService
             case "versionType": s.SetVersionType(val.GetString() ?? "release"); break;
             case "selectedVersion": s.SetSelectedVersion(val.ValueKind == JsonValueKind.Number ? val.GetInt32() : 0); break;
             case "closeAfterLaunch": s.SetCloseAfterLaunch(val.GetBoolean()); break;
+            case "launchAfterDownload": s.SetLaunchAfterDownload(val.GetBoolean()); break;
             case "showDiscordAnnouncements": s.SetShowDiscordAnnouncements(val.GetBoolean()); break;
             case "disableNews": s.SetDisableNews(val.GetBoolean()); break;
             case "backgroundMode": s.SetBackgroundMode(val.GetString() ?? "default"); break;
             case "accentColor": s.SetAccentColor(val.GetString() ?? "#7C5CFC"); break;
             case "onlineMode": s.SetOnlineMode(val.GetBoolean()); break;
             case "authDomain": s.SetAuthDomain(val.GetString() ?? ""); break;
+            case "javaArguments": s.SetJavaArguments(val.GetString() ?? ""); break;
+            case "useCustomJava": s.SetUseCustomJava(val.GetBoolean()); break;
+            case "customJavaPath": s.SetCustomJavaPath(val.GetString() ?? ""); break;
             case "gpuPreference": s.SetGpuPreference(val.GetString() ?? "dedicated"); break;
+            case "gameEnvironmentVariables": s.SetGameEnvironmentVariables(val.GetString() ?? ""); break;
+            case "useDualAuth": s.SetUseDualAuth(val.GetBoolean()); break;
             case "hasCompletedOnboarding": s.SetHasCompletedOnboarding(val.GetBoolean()); break;
+            case "showAlphaMods": s.SetShowAlphaMods(val.GetBoolean()); break;
             default: Logger.Warning("IPC", $"Unknown setting key: {key}"); break;
         }
     }
@@ -1665,7 +2163,7 @@ public class IpcService
                 if (string.IsNullOrEmpty(instancePath))
                 {
                     Logger.Warning("IPC", "Mods install failed: no target instance selected");
-                    Reply("hyprism:mods:install:reply", false);
+                    Reply("hyprism:mods:install:reply", new { success = false, error = "No target instance selected" });
                     return;
                 }
                 
@@ -1840,7 +2338,7 @@ public class IpcService
                 }
                 
                 var modsPath = Path.Combine(instancePath, "UserData", "Mods");
-                Directory.CreateDirectory(modsPath);
+                ModService.EnsureModsDirectory(modsPath);
                 Electron.Shell.OpenPathAsync(modsPath);
             }
             catch (Exception ex)
@@ -1988,6 +2486,7 @@ public class IpcService
 
     // #region System Info
     // @ipc invoke hyprism:system:gpuAdapters -> GpuAdapterInfo[]
+    // @ipc invoke hyprism:system:platform -> { os: string; isLinux: boolean; isWindows: boolean; isMacOS: boolean }
 
     private void RegisterSystemHandlers()
     {
@@ -2005,6 +2504,16 @@ public class IpcService
                 Logger.Error("IPC", $"Failed to get GPU adapters: {ex.Message}");
                 Reply("hyprism:system:gpuAdapters:reply", new List<object>());
             }
+        });
+
+        Electron.IpcMain.On("hyprism:system:platform", (_) =>
+        {
+            var isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+            var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+            var isMacOS = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+            var os = isLinux ? "linux" : isWindows ? "windows" : isMacOS ? "macos" : "unknown";
+            
+            Reply("hyprism:system:platform:reply", new { os, isLinux, isWindows, isMacOS });
         });
     }
 
@@ -2061,7 +2570,9 @@ public class IpcService
 
     // #region File Dialog
     // @ipc invoke hyprism:file:browseFolder -> string | null 300000
+    // @ipc invoke hyprism:file:browseJavaExecutable -> string | null 300000
     // @ipc invoke hyprism:file:browseModFiles -> string[]
+    // @ipc invoke hyprism:file:exists -> boolean
     // @ipc invoke hyprism:mods:exportToFolder -> string
     // @ipc invoke hyprism:mods:importList -> number
     // @ipc invoke hyprism:settings:launcherPath -> string
@@ -2088,6 +2599,37 @@ public class IpcService
             {
                 Logger.Error("IPC", $"Failed to browse mod files: {ex.Message}");
                 Reply("hyprism:file:browseModFiles:reply", Array.Empty<string>());
+            }
+        });
+
+        // Browse Java executable
+        Electron.IpcMain.On("hyprism:file:browseJavaExecutable", async (_) =>
+        {
+            try
+            {
+                var selected = await fileDialog.BrowseJavaExecutableAsync();
+                Reply("hyprism:file:browseJavaExecutable:reply", selected ?? "");
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to browse Java executable: {ex.Message}");
+                Reply("hyprism:file:browseJavaExecutable:reply", "");
+            }
+        });
+
+        // Check file existence
+        Electron.IpcMain.On("hyprism:file:exists", (args) =>
+        {
+            try
+            {
+                var path = ArgsToString(args)?.Trim() ?? string.Empty;
+                var exists = !string.IsNullOrWhiteSpace(path) && File.Exists(path);
+                Reply("hyprism:file:exists:reply", exists);
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Failed to check file existence: {ex.Message}");
+                Reply("hyprism:file:exists:reply", false);
             }
         });
 

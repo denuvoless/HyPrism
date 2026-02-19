@@ -85,8 +85,11 @@ public static class Bootstrapper
                 new VersionService(
                     sp.GetRequiredService<AppPathConfiguration>().AppDir,
                     sp.GetRequiredService<IConfigService>(),
+                    sp.GetRequiredService<HttpClient>(),
                     sp.GetRequiredService<HytaleVersionSource>(),
-                    sp.GetRequiredService<MirrorVersionSource>()));
+                    MirrorLoaderService.LoadAll(
+                        sp.GetRequiredService<AppPathConfiguration>().AppDir,
+                        sp.GetRequiredService<HttpClient>())));
             services.AddSingleton<IVersionService>(sp => sp.GetRequiredService<VersionService>());
 
             #endregion
@@ -165,7 +168,9 @@ public static class Bootstrapper
                     sp.GetRequiredService<IUserIdentityService>(),
                     sp.GetRequiredService<AvatarService>(),
                     sp.GetRequiredService<HttpClient>(),
-                    sp.GetRequiredService<HytaleAuthService>()));
+                    sp.GetRequiredService<HytaleAuthService>(),
+                    sp.GetRequiredService<GpuDetectionService>(),
+                    sp.GetRequiredService<AppPathConfiguration>()));
             services.AddSingleton<IGameLauncher>(sp => sp.GetRequiredService<GameLauncher>());
 
             services.AddSingleton(sp =>
@@ -214,7 +219,7 @@ public static class Bootstrapper
                     sp.GetRequiredService<ConfigService>()));
             services.AddSingleton<IHytaleAuthService>(sp => sp.GetRequiredService<HytaleAuthService>());
 
-            // Version Sources (unified interface for official and mirrors)
+            // Version Sources — official source (requires auth)
             services.AddSingleton(sp =>
                 new HytaleVersionSource(
                     sp.GetRequiredService<AppPathConfiguration>().AppDir,
@@ -222,10 +227,8 @@ public static class Bootstrapper
                     sp.GetRequiredService<HytaleAuthService>(),
                     sp.GetRequiredService<IConfigService>()));
 
-            services.AddSingleton(sp =>
-                new MirrorVersionSource(
-                    sp.GetRequiredService<HttpClient>(),
-                    "default"));
+            // Mirror sources are loaded from JSON meta files by MirrorLoaderService
+            // (see VersionService registration above)
 
             #endregion
 

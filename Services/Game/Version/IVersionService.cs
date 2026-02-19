@@ -1,4 +1,5 @@
 using HyPrism.Models;
+using HyPrism.Services.Game.Sources;
 
 namespace HyPrism.Services.Game.Version;
 
@@ -138,6 +139,15 @@ public interface IVersionService
     Task ForceRefreshCacheAsync(string branch, CancellationToken ct = default);
 
     /// <summary>
+    /// Removes a specific version from the cache for a given mirror/source.
+    /// Call this when a download fails with 404 to prevent showing unavailable versions.
+    /// </summary>
+    /// <param name="branch">Branch name (e.g., "release", "pre-release").</param>
+    /// <param name="version">Version number to invalidate.</param>
+    /// <param name="sourceId">Source ID (mirror ID or "official"). If null, removes from all sources.</param>
+    void InvalidateVersionFromCache(string branch, int version, string? sourceId = null);
+
+    /// <summary>
     /// Returns true if the specified branch uses diff-based patching on mirrors.
     /// Pre-release branch uses diffs, release uses full copies.
     /// </summary>
@@ -168,4 +178,42 @@ public interface IVersionService
     /// <param name="ct">Cancellation token.</param>
     /// <returns>Diff patch URL from mirror, or null if not available.</returns>
     Task<string?> GetMirrorDiffUrlAsync(string os, string arch, string branch, int fromVersion, int toVersion, CancellationToken ct = default);
+    
+    /// <summary>
+    /// Tests the speed and availability of a mirror.
+    /// </summary>
+    /// <param name="mirrorId">The mirror identifier (e.g., "estrogen").</param>
+    /// <param name="forceRefresh">Whether to force a new speed test ignoring cache.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Speed test result including ping, download speed, and availability.</returns>
+    Task<MirrorSpeedTestResult> TestMirrorSpeedAsync(string mirrorId, bool forceRefresh = false, CancellationToken ct = default);
+    
+    /// <summary>
+    /// Tests the speed and availability of the official Hytale CDN.
+    /// </summary>
+    /// <param name="forceRefresh">Whether to force a new speed test ignoring cache.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Speed test result including ping, download speed, and availability.</returns>
+    Task<MirrorSpeedTestResult> TestOfficialSpeedAsync(bool forceRefresh = false, CancellationToken ct = default);
+    
+    /// <summary>
+    /// Gets a list of all available mirrors.
+    /// </summary>
+    /// <returns>List of tuples with mirror ID and display name.</returns>
+    List<(string Id, string Name)> GetAvailableMirrors();
+    
+    /// <summary>
+    /// Selects the best mirror based on speed tests.
+    /// Only called when official source is not available.
+    /// Tests all mirrors concurrently and selects the fastest available one.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The selected version source, or null if no mirrors available.</returns>
+    Task<IVersionSource?> SelectBestMirrorAsync(CancellationToken ct = default);
+    
+    /// <summary>
+    /// Reloads mirror sources from disk.
+    /// Call this after adding, deleting, or modifying mirror configurations.
+    /// </summary>
+    void ReloadMirrorSources();
 }

@@ -1,57 +1,27 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Download, Package, Loader2, AlertCircle,
-  Check, ChevronDown, Upload,
-  ArrowLeft, X
+  Check, Upload, ArrowLeft, X
 } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { useAccentColor } from '../contexts/AccentColorContext';
-import { ipc, type ModInfo, type ModCategory, type ModFileInfo } from '@/lib/ipc';
+import {
+  useModBrowser,
+  formatDownloads,
+  getReleaseTypeLabel,
+  type UseModBrowserOptions,
+} from '@/hooks/useModBrowser';
+import {
+  Button,
+  IconButton,
+  LinkButton,
+  DropdownTriggerButton,
+  MenuItemButton,
+  ImageLightbox,
+} from '@/components/ui/Controls';
 
-// ------- Helpers -------
+// ------- Props -------
 
-const formatDownloads = (count: number): string => {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K`;
-  return count.toString();
-};
-
-const getReleaseTypeLabel = (type: number, t: (key: string) => string) => {
-  switch (type) {
-    case 1: return t('modManager.releaseType.release');
-    case 2: return t('modManager.releaseType.beta');
-    case 3: return t('modManager.releaseType.alpha');
-    default: return t('modManager.releaseType.unknown');
-  }
-};
-
-const readFileAsBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const ab = reader.result as ArrayBuffer;
-      const bytes = new Uint8Array(ab);
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      resolve(btoa(binary));
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsArrayBuffer(file);
-  });
-};
-
-// ------- Types -------
-
-type DownloadJob = {
-  id: string;
-  name: string;
-  status: 'pending' | 'running' | 'success' | 'error';
-  attempts: number;
-  error?: string;
-};
-
-interface InlineModBrowserProps {
+export interface InlineModBrowserProps {
   currentInstanceId?: string;
   currentBranch: string;
   currentVersion: number;
@@ -59,373 +29,113 @@ interface InlineModBrowserProps {
   installedFileIds?: Set<string>;
   onModsInstalled?: () => void;
   onBack?: () => void;
+  refreshSignal?: number;
 }
 
 // ------- Component -------
 
-export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
-  currentInstanceId,
-  currentBranch,
-  currentVersion,
-  installedModIds,
-  installedFileIds,
-  onModsInstalled,
-  onBack,
-}) => {
-  const { t } = useTranslation();
-  const { accentColor, accentTextColor } = useAccentColor();
-  const normalizeId = (value: string | number | null | undefined) => String(value ?? '');
+export const InlineModBrowser: React.FC<InlineModBrowserProps> = (props) => {
+  const { onBack } = props;
 
-  // --- Search state ---
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<ModInfo[]>([]);
-  const [categories, setCategories] = useState<ModCategory[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState(0);
-  const [selectedSortField, setSelectedSortField] = useState(6);
-  const [isSearching, setIsSearching] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
-  const [isSortDropdownOpen, setIsSortDropdownOpen] = useState(false);
-  const [selectedMods, setSelectedMods] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
-  const browseSelectionAnchorRef = useRef<number | null>(null);
-
-  // --- Mod files cache ---
-  const [modFilesCache, setModFilesCache] = useState<Map<string, ModFileInfo[]>>(new Map());
-  const [selectedVersions, setSelectedVersions] = useState<Map<string, string>>(new Map());
-
-  // --- Detail panel ---
-  const [selectedMod, setSelectedMod] = useState<ModInfo | null>(null);
-  const [selectedModFiles, setSelectedModFiles] = useState<ModFileInfo[]>([]);
-  const [isLoadingModFiles, setIsLoadingModFiles] = useState(false);
-  const [detailSelectedFileId, setDetailSelectedFileId] = useState<string | undefined>();
-  const [activeScreenshot, setActiveScreenshot] = useState(0);
-  const [fullscreenImage, setFullscreenImage] = useState<{ url: string; title: string } | null>(null);
-
-  // --- Download ---
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number; currentMod: string } | null>(null);
-  const [downloadJobs, setDownloadJobs] = useState<DownloadJob[]>([]);
-
-  // --- Import ---
-  const [isDragging, setIsDragging] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<string | null>(null);
-
-  // --- Refs ---
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const categoryDropdownRef = useRef<HTMLDivElement>(null);
-  const sortDropdownRef = useRef<HTMLDivElement>(null);
-
-  // --- Sort options ---
-  const sortOptions = [
-    { id: 1, name: t('modManager.sortRelevancy') },
-    { id: 2, name: t('modManager.sortPopularity') },
-    { id: 3, name: t('modManager.sortLatestUpdate') },
-    { id: 11, name: t('modManager.sortCreationDate') },
-    { id: 6, name: t('modManager.sortTotalDownloads') },
-  ];
-
-  // ------- Data loading -------
-
-  useEffect(() => {
-    ipc.mods.categories().then(cats => setCategories(cats || [])).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target as Node))
-        setIsCategoryDropdownOpen(false);
-      if (sortDropdownRef.current && !sortDropdownRef.current.contains(e.target as Node))
-        setIsSortDropdownOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const handleSearch = useCallback(async (page = 0, append = false) => {
-    if (!append) setIsSearching(true);
-    else setIsLoadingMore(true);
-
-    try {
-      const pageSize = 20;
-      const cats = selectedCategory === 0 ? [] : [selectedCategory.toString()];
-
-      const result = await ipc.mods.search({
-        query: searchQuery,
-        page,
-        pageSize,
-        categories: cats,
-        sortField: selectedSortField,
-        sortOrder: 1, // desc
-      });
-
-      const mods: ModInfo[] = result?.mods ?? [];
-
-      if (append) {
-        setSearchResults(prev => [...prev, ...mods]);
-      } else {
-        setSearchResults(mods);
-      }
-      setTotalCount(result?.totalCount ?? 0);
-      setHasMore(mods.length >= pageSize);
-      setCurrentPage(page);
-    } catch (err: unknown) {
-      const e = err as Error;
-      setError(e.message || t('modManager.searchFailed'));
-      if (!append) setSearchResults([]);
-    }
-
-    setIsSearching(false);
-    setIsLoadingMore(false);
-    setHasSearched(true);
-  }, [searchQuery, selectedCategory, selectedSortField]);
-
-  // Debounced search on query/filter changes
-  useEffect(() => {
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
-    searchTimeoutRef.current = setTimeout(() => handleSearch(0, false), 300);
-    return () => { if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current); };
-  }, [searchQuery, selectedCategory, selectedSortField, handleSearch]);
-
-  // Infinite scroll handler
-  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement;
-    const scrollBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-    if (scrollBottom < 200 && !isLoadingMore && !isSearching && hasMore) {
-      handleSearch(currentPage + 1, true);
-    }
-  }, [isLoadingMore, isSearching, hasMore, currentPage, handleSearch]);
-
-  // ------- Mod files -------
-
-  const loadModFiles = async (modId: string): Promise<ModFileInfo[]> => {
-    if (modFilesCache.has(modId)) return modFilesCache.get(modId) || [];
-
-    try {
-      const result = await ipc.mods.files({ modId, pageSize: 50 });
-      let files = result?.files ?? [];
-      files.sort((a, b) => new Date(b.fileDate).getTime() - new Date(a.fileDate).getTime());
-      setModFilesCache(prev => new Map(prev).set(modId, files));
-      if (files.length > 0 && !selectedVersions.has(modId)) {
-        setSelectedVersions(prev => new Map(prev).set(modId, files[0].id));
-      }
-      return files;
-    } catch {
-      return [];
-    }
+  const options: UseModBrowserOptions = {
+    currentInstanceId: props.currentInstanceId,
+    currentBranch: props.currentBranch,
+    currentVersion: props.currentVersion,
+    installedModIds: props.installedModIds,
+    installedFileIds: props.installedFileIds,
+    onModsInstalled: props.onModsInstalled,
+    onBack: props.onBack,
+    refreshSignal: props.refreshSignal,
   };
 
-  const handleModClick = async (mod: ModInfo) => {
-    setSelectedMod(mod);
-    setActiveScreenshot(0);
-    setIsLoadingModFiles(true);
+  const {
+    t,
+    accentColor,
+    accentTextColor,
+    normalizeId,
 
-    const modId = normalizeId(mod.id);
-    if (modId) {
-      const files = await loadModFiles(modId);
-      const selectedFileId = selectedVersions.get(modId) || files[0]?.id;
-      setSelectedModFiles(files);
-      setDetailSelectedFileId(selectedFileId);
-      if (selectedFileId) setSelectedVersions(prev => new Map(prev).set(modId, selectedFileId));
-    } else {
-      setSelectedModFiles([]);
-      setDetailSelectedFileId(undefined);
-    }
-    setIsLoadingModFiles(false);
-  };
+    // Search & Results
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    selectedCategory,
+    setSelectedCategory,
+    selectedSortField,
+    setSelectedSortField,
+    isSearching,
+    hasSearched,
+    hasMore,
+    isLoadingMore,
+    sortOptions,
+    categories,
 
-  const getCurseForgeUrl = useCallback((mod: ModInfo): string => {
-    if (mod.slug) {
-      return `https://www.curseforge.com/hytale/mods/${mod.slug}`;
-    }
-    return `https://www.curseforge.com/hytale/mods/search?search=${encodeURIComponent(mod.name || String(mod.id))}`;
-  }, []);
+    // Detail Panel
+    selectedMod,
+    setSelectedMod,
+    selectedModFiles,
+    isLoadingModFiles,
+    activeScreenshot,
+    setActiveScreenshot,
+    lightboxIndex,
+    setLightboxIndex,
+    detailSelectedFileId,
+    setDetailSelectedFileId,
+    setSelectedVersions,
 
-  const handleOpenModPage = useCallback((e: React.MouseEvent, mod: ModInfo) => {
-    e.preventDefault();
-    e.stopPropagation();
-    ipc.browser.open(getCurseForgeUrl(mod));
-  }, [getCurseForgeUrl]);
+    // Batch Selection & Download
+    selectedMods,
+    setSelectedMods,
+    isDownloading,
+    downloadProgress,
+    downloadJobs,
 
-  const toggleModSelection = (mod: ModInfo, index: number) => {
-    const modId = normalizeId(mod.id);
-    let shouldPrefetch = false;
-    setSelectedMods((prev) => {
-      const next = new Set(prev);
-      if (next.has(modId)) {
-        next.delete(modId);
-      } else {
-        next.add(modId);
-        shouldPrefetch = true;
-      }
-      return next;
-    });
-    browseSelectionAnchorRef.current = index;
-    if (shouldPrefetch) {
-      void loadModFiles(modId);
-    }
-  };
+    // Drag & Drop
+    isDragging,
+    isImporting,
+    importProgress,
 
-  const handleBrowseShiftLeftClick = (e: React.MouseEvent, index: number) => {
-    if (!e.shiftKey) {
-      return;
-    }
+    // Dropdowns
+    isCategoryDropdownOpen,
+    setIsCategoryDropdownOpen,
+    isSortDropdownOpen,
+    setIsSortDropdownOpen,
+    categoryDropdownRef,
+    sortDropdownRef,
 
-    e.preventDefault();
+    // Error
+    error,
+    setError,
 
-    if (searchResults.length === 0) {
-      return;
-    }
+    // Refs
+    scrollContainerRef,
+    browseSelectionAnchorRef,
 
-    const anchor = browseSelectionAnchorRef.current ?? index;
-    const start = Math.min(anchor, index);
-    const end = Math.max(anchor, index);
-    const ids = searchResults.slice(start, end + 1).map((mod) => normalizeId(mod.id));
+    // Options
+    installedModIds,
+    installedFileIds,
 
-    setSelectedMods(new Set(ids));
-    ids.forEach((id) => { void loadModFiles(id); });
-  };
+    // Handlers
+    handleScroll,
+    handleModClick,
+    toggleModSelection,
+    handleBrowseShiftLeftClick,
+    handleDownloadSelected,
+    handleInstallSingleMod,
+    handleOpenModPage,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
 
-  // ------- Download -------
-
-  const runDownloadQueue = async (items: Array<{ id: string; name: string; fileId: string }>) => {
-    const maxRetries = 3;
-    setIsDownloading(true);
-    setDownloadProgress({ current: 0, total: items.length, currentMod: '' });
-    setDownloadJobs(items.map(i => ({ id: i.id, name: i.name, status: 'pending' as const, attempts: 0 })));
-
-    let completed = 0;
-    for (const item of items) {
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        setDownloadJobs(prev => prev.map(j => j.id === item.id ? { ...j, status: 'running', attempts: attempt } : j));
-        try {
-          const ok = await ipc.mods.install({ modId: item.id, fileId: item.fileId, branch: currentBranch, version: currentVersion, instanceId: currentInstanceId });
-          if (!ok) throw new Error(t('modManager.backendRefused'));
-          setDownloadJobs(prev => prev.map(j => j.id === item.id ? { ...j, status: 'success' } : j));
-          break;
-        } catch (err: unknown) {
-          const e = err as Error;
-          const isLast = attempt === maxRetries;
-          setDownloadJobs(prev => prev.map(j => j.id === item.id ? { ...j, status: isLast ? 'error' : 'pending', error: e?.message } : j));
-          if (!isLast) await new Promise(r => setTimeout(r, 500 * attempt));
-        }
-      }
-      completed++;
-      setDownloadProgress({ current: completed, total: items.length, currentMod: item.name });
-    }
-  };
-
-  const handleDownloadSelected = async () => {
-    if (selectedMods.size === 0) return;
-
-    const selectedIds = Array.from(selectedMods);
-    console.log('[ModBrowser] handleDownloadSelected called, selectedMods:', selectedIds);
-    const modsById = new Map(searchResults.map((m) => [normalizeId(m.id), m]));
-
-    const items: Array<{ id: string; name: string; fileId: string }> = [];
-    for (const modId of selectedIds) {
-      console.log('[ModBrowser] Processing mod:', modId);
-      const mod = modsById.get(modId);
-      console.log('[ModBrowser] Found mod in searchResults:', mod?.name || 'NOT FOUND');
-      let fileId = selectedVersions.get(modId);
-      console.log('[ModBrowser] Selected version fileId:', fileId || 'NOT SET');
-      if (!fileId) {
-        console.log('[ModBrowser] Loading files for mod:', modId);
-        const files = await loadModFiles(modId);
-        console.log('[ModBrowser] Loaded files:', files?.length || 0);
-        fileId = files?.[0]?.id;
-        console.log('[ModBrowser] Using first file:', fileId);
-      }
-      if (fileId) {
-        const name = mod?.name || `Mod ${modId}`;
-        items.push({ id: modId, name, fileId });
-        console.log('[ModBrowser] Added to items:', { id: modId, name, fileId });
-      } else {
-        console.log('[ModBrowser] SKIPPED mod (missing fileId):', { modId, hasFileId: !!fileId, hasMod: !!mod });
-      }
-    }
-
-    console.log('[ModBrowser] Final items array:', items);
-    if (items.length === 0) { setError(t('modManager.noDownloadableFiles')); return; }
-
-    try { await runDownloadQueue(items); }
-    catch (err: unknown) { setError((err as Error)?.message || t('modManager.downloadFailed')); }
-
-    setIsDownloading(false);
-    setDownloadProgress(null);
-    setDownloadJobs([]);
-    setSelectedMods(new Set());
-    onModsInstalled?.();
-  };
-
-  const handleInstallSingleMod = async (modId: string, fileId: string, name: string) => {
-    try {
-      await runDownloadQueue([{ id: modId, name, fileId }]);
-    } catch { /* handled in queue */ }
-    setIsDownloading(false);
-    setDownloadProgress(null);
-    setDownloadJobs([]);
-    onModsInstalled?.();
-  };
-
-  // ------- Drag & Drop -------
-
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (e.currentTarget === e.target) setIsDragging(false); };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
-    setIsImporting(true);
-    let successCount = 0;
-    try {
-      for (const file of files) {
-        setImportProgress(t('modManager.installingMod').replace('{{name}}', file.name));
-        const electronFile = file as unknown as { path?: string };
-        if (electronFile.path) {
-          const ok = await ipc.mods.installLocal({ sourcePath: electronFile.path, branch: currentBranch, version: currentVersion, instanceId: currentInstanceId });
-          if (ok) successCount++;
-        } else {
-          const base64 = await readFileAsBase64(file);
-          const ok = await ipc.mods.installBase64({ fileName: file.name, base64Content: base64, branch: currentBranch, version: currentVersion, instanceId: currentInstanceId });
-          if (ok) successCount++;
-        }
-      }
-      if (successCount > 0) {
-        setImportProgress(t('modManager.installedCount').replace('{{count}}', successCount.toString()));
-        setTimeout(() => setImportProgress(null), 3000);
-        onModsInstalled?.();
-      }
-    } catch {
-      setError(t('modManager.importFailed'));
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  // ------- Render -------
-
-  const getCategoryName = (id: number) => {
-    const cat = categories.find(c => c.id === id);
-    if (!cat) return t('modManager.allMods');
-    const key = `modManager.category.${cat.name.replace(/[\s\\/]+/g, '_').toLowerCase()}`;
-    const translated = t(key);
-    return translated !== key ? translated : cat.name;
-  };
-  const getSortName = (id: number) => sortOptions.find(s => s.id === id)?.name ?? '';
+    // Utilities
+    getCategoryName,
+    getSortName,
+  } = useModBrowser(options);
 
   return (
     <div
       className="h-full flex flex-col"
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -435,13 +145,14 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
         <div className="flex items-center gap-3">
           {/* Back button */}
           {onBack && (
-            <button
+            <IconButton
+              variant="ghost"
               onClick={onBack}
-              className="p-2 rounded-xl text-white/60 hover:text-white hover:bg-white/10 transition-all flex-shrink-0"
+              className="!rounded-xl flex-shrink-0"
               title={t('common.back')}
             >
               <ArrowLeft size={18} />
-            </button>
+            </IconButton>
           )}
 
           {/* Search input */}
@@ -459,30 +170,25 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
 
           {/* Category dropdown */}
           <div className="relative" ref={categoryDropdownRef}>
-            <button
+            <DropdownTriggerButton
+              label={getCategoryName(selectedCategory)}
+              open={isCategoryDropdownOpen}
               onClick={() => { setIsCategoryDropdownOpen(!isCategoryDropdownOpen); setIsSortDropdownOpen(false); }}
-              className="h-10 px-3 rounded-xl bg-[#2c2c2e] border border-white/[0.08] text-white/70 text-sm flex items-center gap-2 hover:border-white/20 transition-all whitespace-nowrap"
-            >
-              {getCategoryName(selectedCategory)}
-              <ChevronDown size={14} className={`transition-transform ${isCategoryDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
+            />
             {isCategoryDropdownOpen && (
               <div className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto">
                 {categories.map(cat => (
-                  <button
+                  <MenuItemButton
                     key={cat.id}
                     onClick={() => { setSelectedCategory(cat.id); setIsCategoryDropdownOpen(false); }}
-                    className={`w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors ${
-                      selectedCategory === cat.id ? 'text-white' : 'text-white/60'
-                    }`}
-                    style={selectedCategory === cat.id ? { backgroundColor: `${accentColor}20` } : undefined}
+                    className={selectedCategory === cat.id ? '!text-white bg-white/[0.08]' : ''}
                   >
                     {(() => {
                       const key = `modManager.category.${cat.name.replace(/[\s\\/]+/g, '_').toLowerCase()}`;
                       const translated = t(key);
                       return translated !== key ? translated : cat.name;
                     })()}
-                  </button>
+                  </MenuItemButton>
                 ))}
               </div>
             )}
@@ -490,26 +196,21 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
 
           {/* Sort dropdown */}
           <div className="relative" ref={sortDropdownRef}>
-            <button
+            <DropdownTriggerButton
+              label={getSortName(selectedSortField)}
+              open={isSortDropdownOpen}
               onClick={() => { setIsSortDropdownOpen(!isSortDropdownOpen); setIsCategoryDropdownOpen(false); }}
-              className="h-10 px-3 rounded-xl bg-[#2c2c2e] border border-white/[0.08] text-white/70 text-sm flex items-center gap-2 hover:border-white/20 transition-all whitespace-nowrap"
-            >
-              {getSortName(selectedSortField)}
-              <ChevronDown size={14} className={`transition-transform ${isSortDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
+            />
             {isSortDropdownOpen && (
               <div className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden">
                 {sortOptions.map(opt => (
-                  <button
+                  <MenuItemButton
                     key={opt.id}
                     onClick={() => { setSelectedSortField(opt.id); setIsSortDropdownOpen(false); }}
-                    className={`w-full px-4 py-2.5 text-sm text-left hover:bg-white/10 transition-colors ${
-                      selectedSortField === opt.id ? 'text-white' : 'text-white/60'
-                    }`}
-                    style={selectedSortField === opt.id ? { backgroundColor: `${accentColor}20` } : undefined}
+                    className={selectedSortField === opt.id ? '!text-white bg-white/[0.08]' : ''}
                   >
                     {opt.name}
-                  </button>
+                  </MenuItemButton>
                 ))}
               </div>
             )}
@@ -523,20 +224,20 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
               {selectedMods.size} {t('modManager.modsSelected')}
             </span>
             <div className="flex items-center gap-2">
-              <button
+              <LinkButton
                 onClick={() => setSelectedMods(new Set())}
-                className="px-3 py-1.5 rounded-lg text-xs text-white/60 hover:text-white hover:bg-white/10 transition-all"
+                className="text-xs"
               >
                 {t('common.clear')}
-              </button>
-              <button
+              </LinkButton>
+              <Button
+                size="sm"
+                variant="primary"
                 onClick={handleDownloadSelected}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all"
-                style={{ backgroundColor: accentColor, color: accentTextColor }}
               >
                 <Download size={12} />
                 {t('modManager.downloadSelected')}
-              </button>
+              </Button>
             </div>
           </div>
         )}
@@ -584,7 +285,9 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
           >
             <AlertCircle size={14} />
             <span className="flex-1 truncate">{error}</span>
-            <button onClick={() => setError(null)} className="p-0.5 hover:text-white transition-colors"><X size={14} /></button>
+            <IconButton variant="ghost" title={t('common.dismiss')} onClick={() => setError(null)} className="h-6 w-6">
+              <X size={14} />
+            </IconButton>
           </motion.div>
         )}
       </AnimatePresence>
@@ -681,13 +384,13 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <button
+                        <LinkButton
                           onClick={(e) => handleOpenModPage(e, mod)}
-                          className="text-white font-medium truncate hover:underline underline-offset-2 text-left"
+                          className="!text-white font-medium truncate text-left underline-offset-2"
                           title="Open CurseForge page"
                         >
                           {mod.name}
-                        </button>
+                        </LinkButton>
                         {isInstalled && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-400 flex-shrink-0">
                             {t('modManager.installedBadge')}
@@ -745,19 +448,21 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
             >
               {/* Close detail */}
               <div className="flex items-center justify-between p-4 border-b border-white/[0.06]">
-                <button
+                <LinkButton
                   onClick={(e) => handleOpenModPage(e, selectedMod)}
-                  className="text-white font-bold text-lg truncate flex-1 text-left hover:underline underline-offset-2"
+                  className="!text-white font-bold text-lg truncate flex-1 text-left underline-offset-2"
                   title="Open CurseForge page"
                 >
                   {selectedMod.name}
-                </button>
-                <button
+                </LinkButton>
+                <IconButton
+                  size="sm"
+                  variant="ghost"
                   onClick={() => setSelectedMod(null)}
-                  className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-all ml-2"
+                  className="ml-2"
                 >
                   <X size={16} />
-                </button>
+                </IconButton>
               </div>
 
               {/* Screenshots carousel */}
@@ -768,10 +473,7 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
                       src={selectedMod.screenshots[activeScreenshot]?.url || selectedMod.screenshots[activeScreenshot]?.thumbnailUrl}
                       alt={selectedMod.screenshots[activeScreenshot]?.title}
                       className="w-full h-full object-cover cursor-pointer"
-                      onClick={() => setFullscreenImage({
-                        url: selectedMod.screenshots![activeScreenshot].url,
-                        title: selectedMod.screenshots![activeScreenshot].title,
-                      })}
+                      onClick={() => setLightboxIndex(activeScreenshot)}
                     />
                   </div>
                   {selectedMod.screenshots.length > 1 && (
@@ -822,42 +524,42 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
                         const fileId = normalizeId(file.id);
                         const isFileInstalled = installedFileIds?.has(fileId) ?? false;
                         return (
-                        <button
-                          key={file.id}
-                          onClick={() => {
-                            const selectedModId = normalizeId(selectedMod.id);
-                            setDetailSelectedFileId(fileId);
-                            setSelectedVersions(prev => new Map(prev).set(selectedModId, fileId));
-                          }}
-                          className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all border ${
-                            isFileInstalled
-                              ? 'border-green-500/30 bg-green-500/10'
-                              : detailSelectedFileId === fileId
-                                ? 'border-white/20 bg-[#2c2c2e]'
-                                : 'border-transparent hover:bg-[#252527]'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-white/80 truncate flex-1">{file.displayName || file.fileName}</span>
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              {isFileInstalled && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-400">
-                                  {t('modManager.installedBadge')}
+                          <MenuItemButton
+                            key={file.id}
+                            onClick={() => {
+                              const selectedModId = normalizeId(selectedMod.id);
+                              setDetailSelectedFileId(fileId);
+                              setSelectedVersions(prev => new Map(prev).set(selectedModId, fileId));
+                            }}
+                            className={`!block !px-3 !py-2 !rounded-lg border ${
+                              isFileInstalled
+                                ? 'border-green-500/30 bg-green-500/10'
+                                : detailSelectedFileId === fileId
+                                  ? 'border-white/20 bg-[#2c2c2e]'
+                                  : 'border-transparent !hover:bg-[#252527]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-white/80 truncate flex-1">{file.displayName || file.fileName}</span>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {isFileInstalled && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-400">
+                                    {t('modManager.installedBadge')}
+                                  </span>
+                                )}
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  file.releaseType === 1 ? 'bg-green-500/20 text-green-400'
+                                    : file.releaseType === 2 ? 'bg-yellow-500/20 text-yellow-400'
+                                      : 'bg-red-500/20 text-red-400'
+                                }`}>
+                                  {getReleaseTypeLabel(file.releaseType, t)}
                                 </span>
-                              )}
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                file.releaseType === 1 ? 'bg-green-500/20 text-green-400'
-                                  : file.releaseType === 2 ? 'bg-yellow-500/20 text-yellow-400'
-                                    : 'bg-red-500/20 text-red-400'
-                              }`}>
-                                {getReleaseTypeLabel(file.releaseType, t)}
-                              </span>
+                              </div>
                             </div>
-                          </div>
-                          {file.gameVersions && file.gameVersions.length > 0 && (
-                            <span className="text-white/30 text-xs">{file.gameVersions.join(', ')}</span>
-                          )}
-                        </button>
+                            {file.gameVersions && file.gameVersions.length > 0 && (
+                              <span className="text-white/30 text-xs">{file.gameVersions.join(', ')}</span>
+                            )}
+                          </MenuItemButton>
                         );
                       })}
                     </div>
@@ -869,7 +571,8 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
                   const fileId = detailSelectedFileId || normalizeId(selectedModFiles[0]?.id);
                   const isSelectedFileInstalled = fileId ? (installedFileIds?.has(fileId) ?? false) : false;
                   return (
-                    <button
+                    <Button
+                      variant="primary"
                       onClick={() => {
                         const selectedModId = normalizeId(selectedMod.id);
                         if (fileId && !isSelectedFileInstalled && selectedModId) {
@@ -877,12 +580,12 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
                         }
                       }}
                       disabled={isDownloading || selectedModFiles.length === 0 || isSelectedFileInstalled}
-                      className={`w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-40 ${
+                      className={`w-full font-bold ${
                         isSelectedFileInstalled ? 'cursor-default' : ''
                       }`}
                       style={isSelectedFileInstalled
                         ? { backgroundColor: 'rgba(34, 197, 94, 0.15)', color: 'rgb(74, 222, 128)' }
-                        : { backgroundColor: accentColor, color: accentTextColor }
+                        : undefined
                       }
                     >
                       {isDownloading ? (
@@ -893,7 +596,7 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
                         <Download size={16} />
                       )}
                       {isSelectedFileInstalled ? t('modManager.installedBadge') : t('modManager.download')}
-                    </button>
+                    </Button>
                   );
                 })()}
               </div>
@@ -912,20 +615,15 @@ export const InlineModBrowser: React.FC<InlineModBrowserProps> = ({
         </div>
       )}
 
-      {/* Fullscreen image viewer */}
-      <AnimatePresence>
-        {fullscreenImage && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[500] bg-black/90 flex items-center justify-center cursor-pointer"
-            onClick={() => setFullscreenImage(null)}
-          >
-            <img src={fullscreenImage.url} alt={fullscreenImage.title} className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl" />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Screenshot lightbox */}
+      <ImageLightbox
+        isOpen={lightboxIndex !== null}
+        title={selectedMod?.name}
+        images={(selectedMod?.screenshots ?? []).map((ss) => ({ url: ss.url, title: ss.title }))}
+        index={lightboxIndex ?? 0}
+        onIndexChange={(next) => setLightboxIndex(next)}
+        onClose={() => setLightboxIndex(null)}
+      />
     </div>
   );
 };

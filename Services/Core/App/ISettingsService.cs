@@ -87,6 +87,16 @@ public interface ISettingsService
     /// <param name="close">Whether to close after launch.</param>
     /// <returns><c>true</c> if the setting was successfully saved.</returns>
     bool SetCloseAfterLaunch(bool close);
+
+    /// <summary>
+    /// Gets whether the launcher should automatically launch the game after download/install.
+    /// </summary>
+    bool GetLaunchAfterDownload();
+
+    /// <summary>
+    /// Sets whether the launcher should automatically launch the game after download/install.
+    /// </summary>
+    bool SetLaunchAfterDownload(bool enabled);
     
     /// <summary>
     /// Gets whether Discord announcement notifications are shown.
@@ -197,6 +207,24 @@ public interface ISettingsService
     /// </summary>
     /// <returns>The current authentication domain URL.</returns>
     string GetAuthDomain();
+
+    /// <summary>
+    /// Gets custom Java runtime arguments passed to Java processes during launch.
+    /// </summary>
+    /// <returns>The current Java arguments string.</returns>
+    string GetJavaArguments();
+
+    /// <summary>
+    /// Gets whether launcher should use a custom Java executable path.
+    /// </summary>
+    /// <returns><c>true</c> when custom Java is enabled; otherwise, <c>false</c>.</returns>
+    bool GetUseCustomJava();
+
+    /// <summary>
+    /// Gets custom Java executable path.
+    /// </summary>
+    /// <returns>Absolute executable path or empty string.</returns>
+    string GetCustomJavaPath();
     
     /// <summary>
     /// Sets the authentication domain for online mode.
@@ -204,6 +232,27 @@ public interface ISettingsService
     /// <param name="domain">The authentication domain URL.</param>
     /// <returns><c>true</c> if the setting was successfully saved.</returns>
     bool SetAuthDomain(string domain);
+
+    /// <summary>
+    /// Sets custom Java runtime arguments passed to Java processes during launch.
+    /// </summary>
+    /// <param name="args">A whitespace-separated Java arguments string.</param>
+    /// <returns><c>true</c> if the setting was successfully saved.</returns>
+    bool SetJavaArguments(string args);
+
+    /// <summary>
+    /// Enables or disables custom Java runtime usage.
+    /// </summary>
+    /// <param name="enabled">Whether custom Java should be used.</param>
+    /// <returns><c>true</c> if the setting was successfully saved.</returns>
+    bool SetUseCustomJava(bool enabled);
+
+    /// <summary>
+    /// Sets custom Java executable path.
+    /// </summary>
+    /// <param name="path">Absolute path to java/java.exe.</param>
+    /// <returns><c>true</c> if the setting was successfully saved.</returns>
+    bool SetCustomJavaPath(string path);
     
     /// <summary>
     /// Gets the GPU preference for game launch ("dedicated", "integrated", or "auto").
@@ -219,8 +268,44 @@ public interface ISettingsService
     bool SetGpuPreference(string preference);
     
     /// <summary>
+    /// Gets whether the experimental DualAuth Java Agent is enabled.
+    /// When false (default), uses stable legacy JAR patching.
+    /// </summary>
+    bool GetUseDualAuth();
+
+    /// <summary>
+    /// Sets whether the experimental DualAuth Java Agent is enabled.
+    /// </summary>
+    /// <param name="useDualAuth">Whether to enable DualAuth.</param>
+    /// <returns><c>true</c> if the setting was successfully saved.</returns>
+    bool SetUseDualAuth(bool useDualAuth);
+
+    /// <summary>
+    /// Gets the custom environment variables for game launch.
+    /// </summary>
+    /// <returns>Space-separated KEY=VALUE pairs.</returns>
+    string GetGameEnvironmentVariables();
+    
+    /// <summary>
+    /// Sets custom environment variables for game launch.
+    /// </summary>
+    /// <param name="envVars">Space-separated KEY=VALUE pairs.</param>
+    /// <returns><c>true</c> if the setting was successfully saved.</returns>
+    bool SetGameEnvironmentVariables(string envVars);
+    
+    /// <summary>
     /// Gets the current instance directory path.
     /// </summary>
     /// <returns>The absolute path to the instances directory.</returns>
     string GetInstanceDirectory();
+
+    /// <summary>
+    /// Gets whether alpha release type mods should be shown in the mod manager.
+    /// </summary>
+    bool GetShowAlphaMods();
+
+    /// <summary>
+    /// Sets whether alpha release type mods should be shown in the mod manager.
+    /// </summary>
+    bool SetShowAlphaMods(bool show);
 }

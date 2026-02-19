@@ -43,11 +43,25 @@ public class Config
     /// Beta releases are named like "beta3-3.0.0" on GitHub.
     /// </summary>
     public string LauncherBranch { get; set; } = "release";
+
+    /// <summary>
+    /// INTERNAL: Which launcher update channel is currently installed on disk.
+    /// Used to detect channel switches (release ↔ beta) and allow reinstall/downgrade
+    /// when the user changes <see cref="LauncherBranch"/>.
+    /// Empty means "unknown" and will be initialized at runtime.
+    /// </summary>
+    public string InstalledLauncherBranch { get; set; } = "";
     
     /// <summary>
     /// If true, the launcher will close after successfully launching the game.
     /// </summary>
     public bool CloseAfterLaunch { get; set; } = false;
+
+    /// <summary>
+    /// If true (default), the launcher will launch the game automatically after download/install completes.
+    /// If false, the launcher will only download/install and leave the game stopped.
+    /// </summary>
+    public bool LaunchAfterDownload { get; set; } = true;
     
     /// <summary>
     /// If true, Discord announcements will be shown in the launcher.
@@ -90,6 +104,22 @@ public class Config
     /// Auth server domain for online mode (e.g., "sessions.sanasol.ws").
     /// </summary>
     public string AuthDomain { get; set; } = "sessions.sanasol.ws";
+
+    /// <summary>
+    /// Custom JVM arguments passed through JAVA_TOOL_OPTIONS for Java processes started by the game client.
+    /// Example: "-Xmx4G -Dfile.encoding=UTF-8".
+    /// </summary>
+    public string JavaArguments { get; set; } = "";
+
+    /// <summary>
+    /// If true, launcher uses CustomJavaPath instead of bundled JRE.
+    /// </summary>
+    public bool UseCustomJava { get; set; } = false;
+
+    /// <summary>
+    /// Absolute path to custom Java executable (java/java.exe).
+    /// </summary>
+    public string CustomJavaPath { get; set; } = "";
     
     /// <summary>
     /// Last directory used for mod export. Defaults to Desktop.
@@ -123,8 +153,27 @@ public class Config
     public string GpuPreference { get; set; } = "dedicated";
     
     /// <summary>
+    /// Custom environment variables for game launch in KEY=VALUE format (one per line).
+    /// These are applied to the game process and can override default variables.
+    /// Example: "SDL_VIDEODRIVER=x11" or "VK_ICD_FILENAMES=/path/to/icd.json"
+    /// </summary>
+    public string GameEnvironmentVariables { get; set; } = "";
+    
+    /// <summary>
+    /// If true, uses DualAuth Java Agent for server authentication (experimental).
+    /// If false (default), uses legacy static JAR patching which is more stable.
+    /// </summary>
+    public bool UseDualAuth { get; set; } = false;
+
+    /// <summary>
     /// CurseForge API key for mod manager functionality.
     /// Automatically fetched on first launch if not set.
     /// </summary>
     public string CurseForgeKey { get; set; } = "";
+    
+    /// <summary>
+    /// Legacy field kept for backward compatibility with older configs.
+    /// Mirror selection is now automatic at runtime and this value is ignored.
+    /// </summary>
+    public string PreferredMirror { get; set; } = "estrogen";
 }

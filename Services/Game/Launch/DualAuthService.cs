@@ -11,24 +11,26 @@ namespace HyPrism.Services.Game.Launch;
 public static class DualAuthService
 {
     private const string AgentUrl = "https://github.com/sanasol/hytale-auth-server/releases/latest/download/dualauth-agent.jar";
+    private const string AgentDirName = "DualAuth";
     private const string AgentFilename = "dualauth-agent.jar";
     private const int MinAgentSizeBytes = 1024;
     private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(60) };
 
     /// <summary>
-    /// Gets the path where the DualAuth agent should be stored for an instance.
+    /// Gets the global path where the DualAuth agent is stored.
+    /// The agent is shared across all instances: appDir/DualAuth/dualauth-agent.jar
     /// </summary>
-    public static string GetAgentPath(string gameDir)
+    public static string GetAgentPath(string appDir)
     {
-        return Path.Combine(gameDir, "Server", AgentFilename);
+        return Path.Combine(appDir, AgentDirName, AgentFilename);
     }
 
     /// <summary>
     /// Checks if the DualAuth agent exists and appears valid.
     /// </summary>
-    public static bool IsAgentAvailable(string gameDir)
+    public static bool IsAgentAvailable(string appDir)
     {
-        var agentPath = GetAgentPath(gameDir);
+        var agentPath = GetAgentPath(appDir);
         if (!File.Exists(agentPath)) return false;
 
         try
@@ -44,26 +46,27 @@ public static class DualAuthService
 
     /// <summary>
     /// Downloads the DualAuth agent JAR if not already present or invalid.
+    /// The agent is stored globally in appDir/DualAuth/ and shared across all instances.
     /// </summary>
     public static async Task<DualAuthResult> EnsureAgentAvailableAsync(
-        string gameDir,
+        string appDir,
         Action<string, int?>? progressCallback = null,
         CancellationToken ct = default)
     {
-        var agentPath = GetAgentPath(gameDir);
-        var serverDir = Path.GetDirectoryName(agentPath)!;
+        var agentPath = GetAgentPath(appDir);
+        var agentDir = Path.GetDirectoryName(agentPath)!;
 
         // Check if already exists and valid
-        if (IsAgentAvailable(gameDir))
+        if (IsAgentAvailable(appDir))
         {
             Logger.Info("DualAuth", "Agent already available");
             return new DualAuthResult { Success = true, AgentPath = agentPath, AlreadyExists = true };
         }
 
-        // Ensure Server directory exists
-        if (!Directory.Exists(serverDir))
+        // Ensure DualAuth directory exists
+        if (!Directory.Exists(agentDir))
         {
-            Directory.CreateDirectory(serverDir);
+            Directory.CreateDirectory(agentDir);
         }
 
         progressCallback?.Invoke("Downloading DualAuth Agent...", 0);

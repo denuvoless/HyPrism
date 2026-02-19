@@ -42,6 +42,21 @@ public class InstanceMeta
     public bool IsLatest { get; set; } = false;
 
     /// <summary>
+    /// The actual installed version number.
+    /// For "latest" instances (Version == 0), this tracks which version is currently
+    /// on disk after download/update. Updated by SaveLatestInfo / PatchManager.
+    /// </summary>
+    public int InstalledVersion { get; set; }
+
+    /// <summary>
+    /// The version that was being installed/patched before an interruption.
+    /// If non-zero on next launch, the launcher will attempt to re-patch from
+    /// <see cref="InstalledVersion"/> to this version.
+    /// Reset to 0 after successful install/update.
+    /// </summary>
+    public int PendingVersion { get; set; }
+
+    /// <summary>
     /// Notes or description for this instance.
     /// </summary>
     public string? Notes { get; set; }

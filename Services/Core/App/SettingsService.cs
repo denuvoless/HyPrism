@@ -145,6 +145,20 @@ public class SettingsService : ISettingsService
         return true;
     }
 
+    // ========== Launch After Download Setting ==========
+
+    /// <inheritdoc/>
+    public bool GetLaunchAfterDownload() => _configService.Configuration.LaunchAfterDownload;
+
+    /// <inheritdoc/>
+    public bool SetLaunchAfterDownload(bool enabled)
+    {
+        _configService.Configuration.LaunchAfterDownload = enabled;
+        _configService.SaveConfig();
+        Logger.Info("Config", $"Launch after download set to: {enabled}");
+        return true;
+    }
+
     // ========== Discord Announcements Settings ==========
     
     /// <inheritdoc/>
@@ -279,6 +293,15 @@ public class SettingsService : ISettingsService
     
     /// <inheritdoc/>
     public string GetAuthDomain() => _configService.Configuration.AuthDomain;
+
+    /// <inheritdoc/>
+    public string GetJavaArguments() => _configService.Configuration.JavaArguments;
+
+    /// <inheritdoc/>
+    public bool GetUseCustomJava() => _configService.Configuration.UseCustomJava;
+
+    /// <inheritdoc/>
+    public string GetCustomJavaPath() => _configService.Configuration.CustomJavaPath;
     
     /// <inheritdoc/>
     public bool SetAuthDomain(string domain)
@@ -290,6 +313,30 @@ public class SettingsService : ISettingsService
         _configService.Configuration.AuthDomain = domain;
         _configService.SaveConfig();
         Logger.Info("Config", $"Auth domain set to: {domain}");
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool SetJavaArguments(string args)
+    {
+        _configService.Configuration.JavaArguments = args?.Trim() ?? "";
+        _configService.SaveConfig();
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool SetUseCustomJava(bool enabled)
+    {
+        _configService.Configuration.UseCustomJava = enabled;
+        _configService.SaveConfig();
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public bool SetCustomJavaPath(string path)
+    {
+        _configService.Configuration.CustomJavaPath = path?.Trim() ?? "";
+        _configService.SaveConfig();
         return true;
     }
 
@@ -313,5 +360,40 @@ public class SettingsService : ISettingsService
         return true;
     }
 
+    /// <inheritdoc/>
+    public bool GetUseDualAuth() => _configService.Configuration.UseDualAuth;
+
+    /// <inheritdoc/>
+    public bool SetUseDualAuth(bool useDualAuth)
+    {
+        _configService.Configuration.UseDualAuth = useDualAuth;
+        _configService.SaveConfig();
+        Logger.Info("Config", $"DualAuth mode set to: {useDualAuth}");
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public string GetGameEnvironmentVariables() => _configService.Configuration.GameEnvironmentVariables;
+    
+    /// <inheritdoc/>
+    public bool SetGameEnvironmentVariables(string envVars)
+    {
+        _configService.Configuration.GameEnvironmentVariables = envVars ?? "";
+        _configService.SaveConfig();
+        Logger.Info("Config", $"Game environment variables set to: {envVars}");
+        return true;
+    }
+
     public string GetInstanceDirectory() => _configService.Configuration.InstanceDirectory;
+
+    /// <inheritdoc/>
+    public bool GetShowAlphaMods() => _configService.Configuration.ShowAlphaMods;
+
+    /// <inheritdoc/>
+    public bool SetShowAlphaMods(bool show)
+    {
+        _configService.Configuration.ShowAlphaMods = show;
+        _configService.SaveConfig();
+        return true;
+    }
 }

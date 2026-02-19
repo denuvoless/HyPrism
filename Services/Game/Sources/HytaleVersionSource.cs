@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using HyPrism.Models;
 using HyPrism.Services.Core.Infrastructure;
+using HyPrism.Services.Core.Integration;
 using HyPrism.Services.User;
 
 namespace HyPrism.Services.Game.Sources;
@@ -26,7 +27,6 @@ internal class HytaleAuthExpiredException : Exception
 public class HytaleVersionSource : IVersionSource
 {
     private const string PatchesApiBaseUrl = "https://account-data.hytale.com/patches";
-    private const string PatchesCacheFileName = "patches.json";
     private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(15);
     private const int MaxAuthRetries = 2;
 
@@ -91,6 +91,14 @@ public class HytaleVersionSource : IVersionSource
     public int Priority => 0; // Highest priority
 
     /// <inheritdoc/>
+    public VersionSourceLayoutInfo LayoutInfo => new()
+    {
+        FullBuildLocation = "Official API: /patches/{os}/{arch}/{branch}/0 (latest full build)",
+        PatchLocation = "Official API: /patches/{os}/{arch}/{branch}/{fromBuild} (signed incremental steps)",
+        CachePolicy = "In-memory TTL 15m by key os:arch:branch:fromBuild; patches cached by VersionService in Cache/Game/patches.json"
+    };
+
+    /// <inheritdoc/>
     /// <remarks>
     /// Official Hytale API with from_build=0 returns the LATEST full version as a complete .pwr.
     /// This means for downloading the latest version, we DON'T need patch chains.
@@ -129,64 +137,21 @@ public class HytaleVersionSource : IVersionSource
             }
         };
 
-        // Also cache patches for future update functionality (from_build=1)
-        // This runs in background and doesn't block the version list
-        _ = CachePatchesAsync(os, arch, branch, ct);
-
         return entries;
     }
 
-    /// <summary>
-    /// Caches patch information for future update operations.
-    /// Called in background when fetching versions.
-    /// </summary>
-    private async Task CachePatchesAsync(string os, string arch, string branch, CancellationToken ct)
+    /// <inheritdoc/>
+    public async Task<List<CachedPatchStep>> GetPatchChainAsync(
+        string os, string arch, string branch, CancellationToken ct = default)
     {
         try
         {
             // from_build=1 returns the patch chain for updating from version 1 onwards
             var patches = await GetPatchesAsync(os, arch, branch, 1, ct);
-            if (patches != null && patches.Steps.Count > 0)
-            {
-                await SavePatchesToFileAsync(os, arch, branch, patches.Steps, ct);
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Debug("HytaleSource", $"Background patch caching failed: {ex.Message}");
-        }
-    }
+            if (patches == null || patches.Steps.Count == 0)
+                return new List<CachedPatchStep>();
 
-    /// <summary>
-    /// Saves patch steps to a separate patches.json file.
-    /// </summary>
-    private async Task SavePatchesToFileAsync(string os, string arch, string branch, List<OfficialPatchStep> steps, CancellationToken ct)
-    {
-        try
-        {
-            var cacheDir = Path.Combine(_appDir, "Cache", "Game");
-            Directory.CreateDirectory(cacheDir);
-            var patchesFile = Path.Combine(cacheDir, PatchesCacheFileName);
-
-            // Load existing cache or create new
-            PatchesCacheSnapshot cache;
-            if (File.Exists(patchesFile))
-            {
-                var json = await File.ReadAllTextAsync(patchesFile, ct);
-                cache = JsonSerializer.Deserialize<PatchesCacheSnapshot>(json) ?? new PatchesCacheSnapshot();
-            }
-            else
-            {
-                cache = new PatchesCacheSnapshot();
-            }
-
-            // Update cache metadata
-            cache.FetchedAtUtc = DateTime.UtcNow;
-            cache.Os = os;
-            cache.Arch = arch;
-
-            // Store patches for this branch
-            var patchSteps = steps.Select(s => new CachedPatchStep
+            return patches.Steps.Select(s => new CachedPatchStep
             {
                 From = s.From,
                 To = s.To,
@@ -194,19 +159,11 @@ public class HytaleVersionSource : IVersionSource
                 PwrHeadUrl = s.PwrHead,
                 SigUrl = s.Sig
             }).ToList();
-
-            cache.Patches[branch] = patchSteps;
-
-            // Save to file
-            var options = new JsonSerializerOptions { WriteIndented = true };
-            var jsonOut = JsonSerializer.Serialize(cache, options);
-            await File.WriteAllTextAsync(patchesFile, jsonOut, ct);
-
-            Logger.Debug("HytaleSource", $"Saved {patchSteps.Count} patch steps for {branch} to {patchesFile}");
         }
         catch (Exception ex)
         {
-            Logger.Warning("HytaleSource", $"Failed to save patches to file: {ex.Message}");
+            Logger.Debug("HytaleSource", $"GetPatchChainAsync failed: {ex.Message}");
+            return new List<CachedPatchStep>();
         }
     }
 
@@ -284,7 +241,7 @@ public class HytaleVersionSource : IVersionSource
 
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            await HytaleLauncherHeaderHelper.ApplyOfficialHeadersAsync(request, _httpClient, branch, ct);
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(30));
@@ -397,6 +354,159 @@ public class HytaleVersionSource : IVersionSource
     {
         _cache.Clear();
         Logger.Info("HytaleSource", "Cache cleared");
+    }
+
+    #endregion
+
+    #region Speed Testing
+
+    private static readonly TimeSpan SpeedTestCacheTtl = TimeSpan.FromMinutes(10);
+    private readonly SemaphoreSlim _speedTestLock = new(1, 1);
+    private MirrorSpeedTestResult? _speedTestResult;
+
+    /// <summary>
+    /// Returns cached speed test result if still valid.
+    /// </summary>
+    public MirrorSpeedTestResult? GetCachedSpeedTest()
+    {
+        if (_speedTestResult == null)
+            return null;
+
+        if (DateTime.UtcNow - _speedTestResult.TestedAt > SpeedTestCacheTtl)
+            return null;
+
+        return _speedTestResult;
+    }
+
+    /// <summary>
+    /// Tests official CDN speed (ping and download speed).
+    /// Uses authenticated requests to download real game data.
+    /// </summary>
+    public async Task<MirrorSpeedTestResult> TestSpeedAsync(CancellationToken ct = default)
+    {
+        // Return cached result if valid
+        var cached = GetCachedSpeedTest();
+        if (cached != null)
+        {
+            Logger.Debug("HytaleSource", $"Using cached speed test: {cached.PingMs}ms, {cached.SpeedMBps:F2} MB/s");
+            return cached;
+        }
+
+        await _speedTestLock.WaitAsync(ct);
+        try
+        {
+            // Double-check cache
+            cached = GetCachedSpeedTest();
+            if (cached != null)
+                return cached;
+
+            var result = new MirrorSpeedTestResult
+            {
+                MirrorId = SourceId,
+                MirrorUrl = "https://cdn.hytale.com",
+                MirrorName = "Hytale",
+                TestedAt = DateTime.UtcNow
+            };
+
+            try
+            {
+                // Test ping to account-data API (HEAD request to patches endpoint)
+                var pingStart = DateTime.UtcNow;
+                using var pingCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                pingCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+                // Simple HEAD request to check connectivity
+                var pingResponse = await _httpClient.SendAsync(
+                    new HttpRequestMessage(HttpMethod.Head, "https://account-data.hytale.com/"),
+                    pingCts.Token);
+
+                result.PingMs = (long)(DateTime.UtcNow - pingStart).TotalMilliseconds;
+
+                // Use UtilityService for correct OS/arch
+                var os = UtilityService.GetOS();
+                var arch = UtilityService.GetArch();
+
+                // Try to get a patch URL for speed testing
+                var patchesResponse = await GetPatchesAsync(os, arch, "pre-release", 0, ct);
+                
+                if (patchesResponse?.Steps == null || patchesResponse.Steps.Count == 0)
+                {
+                    Logger.Warning("HytaleSource", "No patches available for speed test");
+                    result.IsAvailable = pingResponse.IsSuccessStatusCode;
+                    _speedTestResult = result;
+                    return result;
+                }
+
+                var testPatch = patchesResponse.Steps.FirstOrDefault();
+                if (string.IsNullOrEmpty(testPatch?.Pwr))
+                {
+                    Logger.Warning("HytaleSource", "No valid patch URL for speed test");
+                    result.IsAvailable = pingResponse.IsSuccessStatusCode;
+                    _speedTestResult = result;
+                    return result;
+                }
+
+                result.IsAvailable = true;
+
+                // Download portion of file (up to 10 MB) to measure speed - target ~5-6 seconds
+                const int testSizeBytes = 10 * 1024 * 1024; // 10 MB
+                var speedStart = DateTime.UtcNow;
+                using var speedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                speedCts.CancelAfter(TimeSpan.FromSeconds(30));
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, testPatch.Pwr);
+                request.Headers.Range = new RangeHeaderValue(0, testSizeBytes - 1);
+
+                using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, speedCts.Token);
+
+                if (response.IsSuccessStatusCode || response.StatusCode == System.Net.HttpStatusCode.PartialContent)
+                {
+                    await using var stream = await response.Content.ReadAsStreamAsync(speedCts.Token);
+                    var buffer = new byte[81920]; // 80 KB buffer
+                    long totalRead = 0;
+                    int bytesRead;
+
+                    while ((bytesRead = await stream.ReadAsync(buffer, speedCts.Token)) > 0)
+                    {
+                        totalRead += bytesRead;
+                        if (totalRead >= testSizeBytes) break;
+                    }
+
+                    var elapsed = (DateTime.UtcNow - speedStart).TotalSeconds;
+
+                    if (elapsed > 0 && totalRead > 0)
+                    {
+                        // Speed in MB/s (megabytes per second)
+                        result.SpeedMBps = (totalRead / 1_048_576.0) / elapsed;
+                    }
+
+                    Logger.Debug("HytaleSource", $"Downloaded {totalRead / 1024.0:F1} KB in {elapsed:F2}s");
+                }
+                else
+                {
+                    Logger.Warning("HytaleSource", $"Speed test download failed: {response.StatusCode}");
+                }
+
+                Logger.Success("HytaleSource", $"Speed test: {result.PingMs}ms ping, {result.SpeedMBps:F2} MB/s");
+            }
+            catch (OperationCanceledException)
+            {
+                Logger.Warning("HytaleSource", "Speed test timed out");
+                result.IsAvailable = false;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("HytaleSource", $"Speed test error: {ex.Message}");
+                result.IsAvailable = false;
+            }
+
+            _speedTestResult = result;
+            return result;
+        }
+        finally
+        {
+            _speedTestLock.Release();
+        }
     }
 
     #endregion

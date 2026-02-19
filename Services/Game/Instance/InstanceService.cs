@@ -252,7 +252,7 @@ public class InstanceService : IInstanceService
     }
 
     /// <summary>
-    /// Get path for latest.json file.
+    /// Get path for latest.json file (legacy, used for migration only).
     /// </summary>
     public string GetLatestInfoPath(string branch)
     {
@@ -265,20 +265,50 @@ public class InstanceService : IInstanceService
         }
 
     /// <summary>
-    /// Load latest instance info from latest.json.
+    /// Load latest instance info.
+    /// Reads from the "latest" instance's meta.json (InstalledVersion field).
+    /// Falls back to legacy latest.json for migration.
     /// </summary>
     public LatestInstanceInfo? LoadLatestInfo(string branch)
     {
         try
         {
-                var path = GetLatestInfoPath(branch);
-                if (!File.Exists(path))
+            var normalizedBranch = NormalizeVersionType(branch);
+
+            // Primary: read from the "latest" instance's meta.json
+            var latestPath = GetLatestInstancePath(normalizedBranch);
+            if (Directory.Exists(latestPath))
+            {
+                var meta = GetInstanceMeta(latestPath);
+                if (meta != null && meta.InstalledVersion > 0)
                 {
-                    path = GetLegacyLatestInfoPath(branch);
-                    if (!File.Exists(path)) return null;
+                    return new LatestInstanceInfo { Version = meta.InstalledVersion, UpdatedAt = meta.LastPlayedAt ?? meta.CreatedAt };
                 }
+            }
+
+            // Fallback: legacy latest.json files (migration path)
+            var path = GetLatestInfoPath(normalizedBranch);
+            if (!File.Exists(path))
+            {
+                path = GetLegacyLatestInfoPath(normalizedBranch);
+                if (!File.Exists(path)) return null;
+            }
             var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<LatestInstanceInfo>(json, JsonOptions);
+            var info = JsonSerializer.Deserialize<LatestInstanceInfo>(json, JsonOptions);
+
+            // Migrate: write to instance meta so legacy file is no longer needed
+            if (info?.Version > 0 && Directory.Exists(latestPath))
+            {
+                var meta = GetInstanceMeta(latestPath);
+                if (meta != null && meta.InstalledVersion == 0)
+                {
+                    meta.InstalledVersion = info.Version;
+                    SaveInstanceMeta(latestPath, meta);
+                    Logger.Info("Instance", $"Migrated InstalledVersion={info.Version} from latest.json to instance meta for {branch}");
+                }
+            }
+
+            return info;
         }
         catch
         {
@@ -287,16 +317,35 @@ public class InstanceService : IInstanceService
     }
 
     /// <summary>
-    /// Save latest instance info to latest.json.
+    /// Save latest instance info.
+    /// Updates the "latest" instance's meta.json InstalledVersion field.
+    /// No longer creates latest.json files.
     /// </summary>
     public void SaveLatestInfo(string branch, int version)
     {
         try
         {
-            Directory.CreateDirectory(GetBranchPath(branch));
+            var normalizedBranch = NormalizeVersionType(branch);
+            var latestPath = GetLatestInstancePath(normalizedBranch);
+
+            if (Directory.Exists(latestPath))
+            {
+                var meta = GetInstanceMeta(latestPath);
+                if (meta != null)
+                {
+                    meta.InstalledVersion = version;
+                    SaveInstanceMeta(latestPath, meta);
+                    Logger.Debug("Instance", $"Updated InstalledVersion={version} in instance meta for {branch}");
+                    return;
+                }
+            }
+
+            // Fallback: write legacy latest.json if no instance meta exists yet
+            // (e.g. during initial install before meta is created)
+            Directory.CreateDirectory(GetBranchPath(normalizedBranch));
             var info = new LatestInstanceInfo { Version = version, UpdatedAt = DateTime.UtcNow };
             var json = JsonSerializer.Serialize(info, new JsonSerializerOptions(JsonOptions) { WriteIndented = true });
-            File.WriteAllText(GetLatestInfoPath(branch), json);
+            File.WriteAllText(GetLatestInfoPath(normalizedBranch), json);
         }
         catch (Exception ex)
         {
@@ -2104,6 +2153,75 @@ public class InstanceService : IInstanceService
         catch (Exception ex)
         {
             Logger.Error("Migrate", $"Failed to migrate version folders to ID folders: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Changes the version/branch of an existing instance.
+    /// Removes game client files (Client/, game/ sub-directories) while keeping
+    /// UserData and meta.json, then updates meta.json with the new branch/version
+    /// and marks IsLatest = false so the launcher never suggests updates.
+    /// </summary>
+    public bool ChangeInstanceVersion(string instanceId, string branch, int version)
+    {
+        try
+        {
+            var instancePath = GetInstancePathById(instanceId);
+            if (string.IsNullOrEmpty(instancePath) || !Directory.Exists(instancePath))
+            {
+                Logger.Warning("InstanceService", $"ChangeInstanceVersion: instance path not found for {instanceId}");
+                return false;
+            }
+
+            var meta = GetInstanceMeta(instancePath);
+            if (meta == null)
+            {
+                Logger.Warning("InstanceService", $"ChangeInstanceVersion: meta.json not found for {instanceId}");
+                return false;
+            }
+
+            // Remove game client directories while keeping UserData and meta.json
+            var clientDir = Path.Combine(instancePath, "Client");
+            var gameDir = Path.Combine(instancePath, "game");
+
+            if (Directory.Exists(clientDir))
+            {
+                Directory.Delete(clientDir, true);
+                Logger.Info("InstanceService", $"Removed Client directory for {instanceId}");
+            }
+
+            if (Directory.Exists(gameDir))
+            {
+                Directory.Delete(gameDir, true);
+                Logger.Info("InstanceService", $"Removed game directory for {instanceId}");
+            }
+
+            // Update meta.json with new branch, version, and mark as non-latest
+            var normalizedBranch = UtilityService.NormalizeVersionType(branch);
+            meta.Branch = normalizedBranch;
+            meta.Version = version;
+            meta.InstalledVersion = 0;
+            meta.PendingVersion = 0;
+            meta.IsLatest = false;
+
+            SaveInstanceMeta(instancePath, meta);
+
+            // Update Config.Instances entry as well
+            var config = GetConfig();
+            var configInstance = config.Instances?.FirstOrDefault(i => i.Id == instanceId);
+            if (configInstance != null)
+            {
+                configInstance.Branch = normalizedBranch;
+                configInstance.Version = version;
+            }
+
+            Logger.Success("InstanceService", $"Changed instance {instanceId} to {normalizedBranch} v{version} (non-latest)");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("InstanceService", $"Failed to change instance version: {ex.Message}");
+            return false;
         }
     }
 

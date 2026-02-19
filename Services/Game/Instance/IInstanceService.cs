@@ -226,4 +226,15 @@ public interface IInstanceService
     /// <param name="instanceId">The unique instance ID (will be folder name).</param>
     /// <returns>The absolute path to the new instance directory.</returns>
     string CreateInstanceDirectory(string branch, string instanceId);
+
+    /// <summary>
+    /// Changes the version/branch of an existing instance.
+    /// Clears the game client files (keeps UserData), updates meta.json,
+    /// and marks the instance as non-latest so it never suggests updates.
+    /// </summary>
+    /// <param name="instanceId">The unique instance ID.</param>
+    /// <param name="branch">The new game branch (e.g. "release").</param>
+    /// <param name="version">The new version number.</param>
+    /// <returns>True if the operation succeeded.</returns>
+    bool ChangeInstanceVersion(string instanceId, string branch, int version);
 }

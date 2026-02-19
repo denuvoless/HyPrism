@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using HyPrism.Models;
 using HyPrism.Services.Core.Infrastructure;
+using HyPrism.Services.Core.Integration;
 using HyPrism.Services.Core.Platform;
 
 namespace HyPrism.Services.User;
@@ -413,8 +414,10 @@ public class HytaleAuthService : IHytaleAuthService
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, LauncherDataUrl);
+            var profileUrl = HytaleLauncherHeaderHelper.BuildLauncherDataUrlWithClientId(LauncherDataUrl);
+            var request = new HttpRequestMessage(HttpMethod.Get, profileUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            await HytaleLauncherHeaderHelper.ApplyOfficialHeadersAsync(request, _httpClient, "release");
             
             var response = await _httpClient.SendAsync(request);
             var json = await response.Content.ReadAsStringAsync();
@@ -455,6 +458,7 @@ public class HytaleAuthService : IHytaleAuthService
         {
             var request = new HttpRequestMessage(HttpMethod.Post, SessionUrl);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            await HytaleLauncherHeaderHelper.ApplyOfficialHeadersAsync(request, _httpClient, "release");
             request.Content = new StringContent(
                 JsonSerializer.Serialize(new { uuid }),
                 Encoding.UTF8,

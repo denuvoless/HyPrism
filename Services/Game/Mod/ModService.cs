@@ -29,7 +29,27 @@ public class ModService : IModService
 
     // Lock for mod manifest operations to prevent concurrent writes
     private static readonly SemaphoreSlim _modManifestLock = new(1, 1);
-    
+
+    /// <summary>
+    /// Ensures the <paramref name="modsPath"/> exists as a directory.
+    /// The Hytale game sometimes creates a regular <b>file</b> named <c>Mods</c>
+    /// inside <c>UserData/</c>.  <see cref="Directory.CreateDirectory"/> throws
+    /// <see cref="IOException"/> when a file with the same name already exists,
+    /// so we delete the conflicting file first.
+    /// </summary>
+    internal static void EnsureModsDirectory(string modsPath)
+    {
+        if (File.Exists(modsPath))
+        {
+            // A plain file blocks Directory.CreateDirectory – remove it.
+            Logger.Warning("ModService",
+                $"Found a file where the Mods directory should be ({modsPath}), removing it");
+            File.Delete(modsPath);
+        }
+
+        Directory.CreateDirectory(modsPath);
+    }
+
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -92,17 +112,20 @@ public class ModService : IModService
             using var fileRequest = CreateCurseForgeRequest(HttpMethod.Get, fileEndpoint);
             using var fileResponse = await _httpClient.SendAsync(fileRequest);
 
-            if (!fileResponse.IsSuccessStatusCode)
+            if (fileResponse.IsSuccessStatusCode)
             {
-                Logger.Warning("ModService", $"Get file info returned {fileResponse.StatusCode} for mod {modId} file {fileId}");
-                return null;
+                var fileJson = await fileResponse.Content.ReadAsStringAsync();
+                var cfFileResp = JsonSerializer.Deserialize<CurseForgeFileResponse>(fileJson, _jsonOptions);
+                if (cfFileResp?.Data != null)
+                    return cfFileResp.Data;
             }
 
-            var fileJson = await fileResponse.Content.ReadAsStringAsync();
-            var cfFileResp = JsonSerializer.Deserialize<CurseForgeFileResponse>(fileJson, _jsonOptions);
-            return cfFileResp?.Data;
+            // Specific fileId not found (deleted / expired) — fall back to the latest available file.
+            Logger.Warning("ModService",
+                $"Get file info returned {fileResponse.StatusCode} for mod {modId} file {fileId}, falling back to latest file");
         }
 
+        // Fetch the most recent file for this mod.
         var filesEndpoint = $"/v1/mods/{modId}/files?pageSize=1";
         using var filesRequest = CreateCurseForgeRequest(HttpMethod.Get, filesEndpoint);
         using var filesResponse = await _httpClient.SendAsync(filesRequest);
@@ -115,7 +138,13 @@ public class ModService : IModService
 
         var filesJson = await filesResponse.Content.ReadAsStringAsync();
         var filesResp = JsonSerializer.Deserialize<CurseForgeFilesResponse>(filesJson, _jsonOptions);
-        return filesResp?.Data?.FirstOrDefault();
+        var latest = filesResp?.Data?.FirstOrDefault();
+        if (latest != null && !string.IsNullOrWhiteSpace(fileId))
+        {
+            Logger.Info("ModService",
+                $"Resolved mod {modId} to latest file {latest.Id} ('{latest.FileName}') instead of requested file {fileId}");
+        }
+        return latest;
     }
 
     private static string? BuildEdgeCdnFallbackUrl(string fileId, string? fileName)
@@ -339,7 +368,7 @@ public class ModService : IModService
             
             // Download the file to UserData/Mods folder (correct Hytale mod location)
             var modsPath = Path.Combine(instancePath, "UserData", "Mods");
-            Directory.CreateDirectory(modsPath);
+            EnsureModsDirectory(modsPath);
             
             var fallbackName = !string.IsNullOrWhiteSpace(resolvedFileId)
                 ? $"mod_{resolvedFileId}.jar"
@@ -442,7 +471,7 @@ public class ModService : IModService
         var manifestPath = Path.Combine(modsPath, "manifest.json");
         var legacyManifestPath = Path.Combine(instancePath, "Client", "mods", "manifest.json");
 
-        Directory.CreateDirectory(modsPath);
+        EnsureModsDirectory(modsPath);
 
         List<InstalledMod> mods;
         
@@ -665,7 +694,7 @@ public class ModService : IModService
         try
         {
             var modsPath = Path.Combine(instancePath, "UserData", "Mods");
-            Directory.CreateDirectory(modsPath);
+            EnsureModsDirectory(modsPath);
             var manifestPath = Path.Combine(modsPath, "manifest.json");
             
             var json = JsonSerializer.Serialize(mods, new JsonSerializerOptions { WriteIndented = true });
@@ -891,7 +920,7 @@ public class ModService : IModService
             }
             
             var modsPath = Path.Combine(instancePath, "UserData", "Mods");
-            Directory.CreateDirectory(modsPath);
+            EnsureModsDirectory(modsPath);
             
             var fileName = Path.GetFileName(sourcePath);
             var destPath = Path.Combine(modsPath, fileName);
@@ -931,7 +960,7 @@ public class ModService : IModService
         try
         {
             var modsPath = Path.Combine(instancePath, "UserData", "Mods");
-            Directory.CreateDirectory(modsPath);
+            EnsureModsDirectory(modsPath);
             
             var destPath = Path.Combine(modsPath, fileName);
             var bytes = Convert.FromBase64String(base64Content);
@@ -963,8 +992,7 @@ public class ModService : IModService
     }
     
     /// <summary>
-    /// <summary>
-    /// Extracts a clean version string from CurseForge DisplayName or FileName.
+    /// Tries to extract a semver-like version string from a display name or filename.
     /// Looks for semver-like patterns (e.g., "1.2.7", "0.3.1-beta") and returns the first match.
     /// Falls back to DisplayName or FileName if no version pattern is found.
     /// </summary>

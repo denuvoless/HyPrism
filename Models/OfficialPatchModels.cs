@@ -214,8 +214,8 @@ public class VersionsCacheData
 }
 
 /// <summary>
-/// Cache for patch steps used for updating existing installations.
-/// Stored separately from versions cache since patches expire quickly.
+/// Combined patch cache with data from all sources (official + mirrors).
+/// Mirrors the multi-source architecture of <see cref="VersionsCacheSnapshot"/>.
 /// </summary>
 public class PatchesCacheSnapshot
 {
@@ -235,10 +235,42 @@ public class PatchesCacheSnapshot
     public string Arch { get; set; } = "";
 
     /// <summary>
-    /// Patch chains by branch and from_build.
-    /// Key format: "{branch}:{fromBuild}"
+    /// Combined patch cache data from all sources.
     /// </summary>
-    public Dictionary<string, List<CachedPatchStep>> Patches { get; set; } = new();
+    public PatchesCacheData Data { get; set; } = new();
+}
+
+/// <summary>
+/// Container for patch data from different sources.
+/// </summary>
+public class PatchesCacheData
+{
+    /// <summary>
+    /// Patch chains from official Hytale servers (signed, expiring URLs).
+    /// Keyed by branch.
+    /// </summary>
+    public Dictionary<string, List<CachedPatchStep>>? Hytale { get; set; }
+
+    /// <summary>
+    /// Patch chains from community mirrors.
+    /// </summary>
+    public List<MirrorPatchCache> Mirrors { get; set; } = new();
+}
+
+/// <summary>
+/// Patch cache for a single mirror source.
+/// </summary>
+public class MirrorPatchCache
+{
+    /// <summary>
+    /// Mirror identifier matching the source ID.
+    /// </summary>
+    public string MirrorId { get; set; } = "";
+
+    /// <summary>
+    /// Patch chains from this mirror, keyed by branch.
+    /// </summary>
+    public Dictionary<string, List<CachedPatchStep>> Branches { get; set; } = new();
 }
 
 /// <summary>
@@ -257,7 +289,7 @@ public class CachedPatchStep
     public int To { get; set; }
 
     /// <summary>
-    /// URL to the PWR file (may contain expiring signature).
+    /// URL to the PWR file (may contain expiring signature for official source).
     /// </summary>
     public string PwrUrl { get; set; } = "";
 

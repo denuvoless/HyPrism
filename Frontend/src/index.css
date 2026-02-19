@@ -25,6 +25,7 @@ html, body, #root {
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 
 /* Thin scrollbar (used for horizontal thumbnail strips) */
@@ -49,6 +50,10 @@ html, body, #root {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(var(--accent-r), var(--accent-g), var(--accent-b), 0.5);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Wails drag region */
@@ -133,6 +138,15 @@ button:focus-visible {
   }
 }
 
+@keyframes hue-rotate {
+  0% {
+    filter: hue-rotate(0deg);
+  }
+  100% {
+    filter: hue-rotate(360deg);
+  }
+}
+
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
 }
@@ -146,6 +160,13 @@ button:focus-visible {
 .animate-gradient {
   background-size: 400% 400%;
   animation: gradient 15s ease infinite;
+}
+
+.animate-rgb {
+  display: inline-flex;
+  align-items: center;
+  animation: hue-rotate 2s linear infinite;
+  will-change: filter;
 }
 
 /* ── Page Layout ─────────────────────────────────────────── */
@@ -248,4 +269,45 @@ button:focus-visible {
   border-radius: 1rem;
   border: 1px solid rgba(255,255,255,0.06);
   background: rgba(38, 38, 40, 0.98);
+}
+
+.java-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  background: transparent;
+}
+
+.java-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.java-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: none;
+  background: currentColor;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25);
+}
+
+.java-range::-moz-range-track {
+  height: 8px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: none;
+}
+
+.java-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: none;
+  background: currentColor;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.25);
 }

@@ -75,9 +75,14 @@ HyPrism
 
 # Flatpak build artifacts
 flatpak-repo/
-flatpak-build/
 .flatpak-builder/
 *.flatpak
+Properties/linux/flatpak/bundle
+repo
+build-dir
+flathub-bundle.tar.gz
+# Generated Flathub manifest (do not commit a static copy)
+Properties/linux/flathub/io.github.HyPrismTeam.HyPrism.yml
 
 # scripts
 scripts/run.sh

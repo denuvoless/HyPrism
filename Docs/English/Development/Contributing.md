@@ -45,6 +45,10 @@
 
 See [IPC Code Generation](../Technical/IpcCodegen.md) for the full guide.
 
+### Adding a Built-in Mirror
+
+See [Adding a Mirror](AddingMirror.md) for the full guide on adding a community mirror to the default set.
+
 ## Critical Files
 
 | File | Impact | Rule |

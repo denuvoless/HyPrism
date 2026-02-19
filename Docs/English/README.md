@@ -20,7 +20,9 @@
 - [Coding Standards](Development/CodingStandards.md) — C# and TypeScript conventions
 - [Frontend Guide](Development/FrontendGuide.md) — React components, theming, routing
 - [Contributing](Development/Contributing.md) — Contribution guidelines
+- [Adding a Mirror](Development/AddingMirror.md) — How to add a built-in community mirror
 
 ### User
 - [Installation](User/Installation.md) — Installing HyPrism
 - [Configuration](User/Configuration.md) — Settings and configuration
+- [Mirrors Guide](User/Mirrors.md) — Custom download mirrors: setup, schemas, and examples

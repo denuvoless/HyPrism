@@ -3,6 +3,23 @@ using HyPrism.Models;
 namespace HyPrism.Services.Game.Sources;
 
 /// <summary>
+/// Cached mirror speed test result.
+/// </summary>
+public class MirrorSpeedTestResult
+{
+    public string MirrorId { get; set; } = "";
+    public string MirrorUrl { get; set; } = "";
+    public string MirrorName { get; set; } = "";
+    public long PingMs { get; set; } = 0;
+    /// <summary>
+    /// Download speed in MB/s (megabytes per second).
+    /// </summary>
+    public double SpeedMBps { get; set; } = 0;
+    public bool IsAvailable { get; set; }
+    public DateTime TestedAt { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
 /// Type of version source.
 /// </summary>
 public enum VersionSourceType
@@ -19,6 +36,28 @@ public enum VersionSourceType
 }
 
 /// <summary>
+/// Human-readable source layout descriptor used for diagnostics and debugging.
+/// Describes where full builds and patch files are fetched from, and how source-level caching works.
+/// </summary>
+public sealed class VersionSourceLayoutInfo
+{
+    /// <summary>
+    /// Description of full-build location/pattern.
+    /// </summary>
+    public string FullBuildLocation { get; init; } = "";
+
+    /// <summary>
+    /// Description of patch location/pattern.
+    /// </summary>
+    public string PatchLocation { get; init; } = "";
+
+    /// <summary>
+    /// Description of source-level cache policy and storage.
+    /// </summary>
+    public string CachePolicy { get; init; } = "";
+}
+
+/// <summary>
 /// Unified interface for version data sources.
 /// Both official Hytale API and community mirrors implement this interface,
 /// allowing the VersionService to treat them uniformly.
@@ -26,7 +65,7 @@ public enum VersionSourceType
 public interface IVersionSource
 {
     /// <summary>
-    /// Unique identifier for this source (e.g., "hytale", "mirror-default").
+    /// Unique identifier for this source (e.g., "hytale", "estrogen", "shipofyarn").
     /// </summary>
     string SourceId { get; }
 
@@ -45,6 +84,12 @@ public interface IVersionSource
     /// Official sources typically have priority 0, mirrors have higher numbers.
     /// </summary>
     int Priority { get; }
+
+    /// <summary>
+    /// Diagnostic description of where full builds and patches come from,
+    /// and how the source caches remote metadata.
+    /// </summary>
+    VersionSourceLayoutInfo LayoutInfo { get; }
 
     /// <summary>
     /// Whether this source uses diff-based patches for a specific branch.
@@ -91,8 +136,33 @@ public interface IVersionSource
         string os, string arch, string branch, int fromVersion, int toVersion, CancellationToken ct = default);
 
     /// <summary>
+    /// Gets the full patch chain for a branch (all patch steps from version 1+).
+    /// Used by VersionService for centralized patch caching alongside version caching.
+    /// </summary>
+    /// <param name="os">OS identifier.</param>
+    /// <param name="arch">Architecture.</param>
+    /// <param name="branch">Branch name.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>List of patch steps, or empty list if not available.</returns>
+    Task<List<CachedPatchStep>> GetPatchChainAsync(
+        string os, string arch, string branch, CancellationToken ct = default);
+
+    /// <summary>
     /// Pre-fetches/warms the cache for this source.
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
     Task PreloadAsync(CancellationToken ct = default);
+    
+    /// <summary>
+    /// Tests the speed and availability of this source.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Speed test result including ping, download speed, and availability.</returns>
+    Task<MirrorSpeedTestResult> TestSpeedAsync(CancellationToken ct = default);
+    
+    /// <summary>
+    /// Gets the cached speed test result if still valid.
+    /// </summary>
+    /// <returns>Cached speed test result, or null if expired/missing.</returns>
+    MirrorSpeedTestResult? GetCachedSpeedTest();
 }

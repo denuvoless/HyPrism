@@ -29,11 +29,22 @@ Access settings through the **Settings** page (gear icon in sidebar).
 | Setting | Description | Default |
 |---------|-------------|---------|
 | Resolution | Game window resolution | 1920x1080 |
-| RAM allocation | Memory for game (MB) | 4096 |
 | Sound | Game sound enabled | true |
 | GPU preference | Graphics adapter selection | auto |
 
 - **Optimization mods installer** now asks which instance should receive optimization mods before installation.
+
+### Java
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| Java runtime | Bundled Java or custom executable path | Bundled Java |
+| Max RAM | Graphical slider for Java max heap (`-Xmx`) | 4096 MB |
+| Initial RAM | Graphical slider for Java initial heap (`-Xms`) | 1024 MB |
+| Garbage collector | Auto profile or explicit G1GC profile | Auto |
+| Advanced JVM arguments | Optional extra JVM flags passed through JAVA_TOOL_OPTIONS (unsafe launch flags are filtered) | empty |
+
+- When custom Java is enabled, use the **Select** button to pick an executable and save only after path validation.
 
 #### GPU Preference Options
 
@@ -52,6 +63,23 @@ Access settings through the **Settings** page (gear icon in sidebar).
 | Pre-release | Receive pre-release updates | false |
 | Launcher branch | Release or pre-release channel | release |
 | Data directory | Custom data storage path | Platform default |
+| Download source | Managed automatically by launcher (official first, mirrors as fallback) | auto |
+| Launch after download | Automatically start the game after install/download completes | true |
+
+- Changing **Launcher branch** triggers an immediate launcher update check. If you switch between channels (release ↔ beta), HyPrism will offer the latest build from the selected channel and may reinstall or downgrade to match it.
+
+#### Download Source Strategy
+
+- HyPrism always tries official Hytale sources first.
+- If official download is unavailable, launcher automatically tests available mirrors and uses the best reachable one.
+- Mirror choice is not persisted as a user setting.
+- Mirrors are defined by JSON meta files in the `Mirrors/` folder (see [Custom Mirrors](#custom-mirrors) below).
+
+## Custom Mirrors
+
+HyPrism supports a data-driven mirror system. Mirrors are defined by `.mirror.json` files in the `Mirrors/` folder inside the launcher data directory. Default mirror definitions are auto-generated on first launch.
+
+For full documentation on mirror configuration — including schema reference, all source types, version discovery methods, URL placeholders, annotated examples of all built-in mirrors, and step-by-step tutorials for creating your own — see the **[Mirrors Guide](Mirrors.md)**.
 
 ## Instance Management
 
@@ -179,8 +207,9 @@ When one or more mods are selected in **Installed Mods**, bulk actions (like **E
 
 For non-official profiles using custom auth domains, HyPrism launches in **online authenticated mode**.
 
-- Only the client binary is patched for custom auth domains.
-- Server auth handling uses the DualAuth runtime agent (no `Server/HytaleServer.jar` rewrite).
+- **Legacy JAR patching (default):** Both the client binary and `Server/HytaleServer.jar` are statically patched to replace `hytale.com` with your custom auth domain. This is the stable, recommended approach.
+- **DualAuth (experimental):** Enabled via the `DualAuth (Experimental)` toggle in General settings. Only the client binary is patched; server authentication is handled by a runtime Java Agent downloaded from GitHub. May cause crashes — use at your own risk.
+- Switching between modes is safe: the launcher automatically manages `.original` backup files when toggling DualAuth on/off.
 - The auth domain is used as entered (for example `auth.example.com`); HyPrism no longer forces `sessions.` prefix.
 - For compatibility, if direct host fails, HyPrism also tries `sessions.<your-domain>` automatically.
 - Launch identity prefers auth-server profile name fields to reduce owner-name/token mismatch issues.

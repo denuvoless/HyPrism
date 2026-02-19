@@ -21,6 +21,8 @@ namespace HyPrism.Services.Game;
 /// </remarks>
 public class GameSessionService : IGameSessionService
 {
+    private const long MinValidPwrBytes = 1_048_576; // 1 MB
+
     private readonly IConfigService _configService;
     private readonly IInstanceService _instanceService;
     private readonly IVersionService _versionService;
@@ -100,18 +102,9 @@ public class GameSessionService : IGameSessionService
 
             #pragma warning disable CS0618 // Backward compatibility: VersionType and SelectedVersion kept for migration
             string branch = UtilityService.NormalizeVersionType(_config.VersionType);
-            _progressService.ReportDownloadProgress("preparing", 1, "launch.detail.checking_versions", null, 0, 0);
-            var versions = await _versionService.GetVersionListAsync(branch, cts.Token);
-            cts.Token.ThrowIfCancellationRequested();
-
-            if (versions.Count == 0)
-                return new DownloadProgress { Error = "No versions available for this branch" };
-
             bool isLatestInstance = _config.SelectedVersion == 0;
-            int targetVersion = _config.SelectedVersion > 0 ? _config.SelectedVersion : versions[0];
+            int targetVersion = _config.SelectedVersion;
             #pragma warning restore CS0618
-            if (!versions.Contains(targetVersion))
-                targetVersion = versions[0];
 
             string versionPath;
 
@@ -123,7 +116,7 @@ public class GameSessionService : IGameSessionService
             {
                 branch = UtilityService.NormalizeVersionType(selectedInstance.Branch);
                 isLatestInstance = selectedInstance.Version == 0;
-                targetVersion = isLatestInstance ? versions[0] : selectedInstance.Version;
+                targetVersion = selectedInstance.Version;
 
                 var selectedPath = _instanceService.GetInstancePathById(selectedInstance.Id);
                 if (!string.IsNullOrWhiteSpace(selectedPath))
@@ -150,11 +143,68 @@ public class GameSessionService : IGameSessionService
 
             bool gameIsInstalled = _instanceService.IsClientPresent(versionPath);
 
+            // OPTIMIZATION: If game is already installed and this is NOT a "latest" instance,
+            // skip version fetching entirely — no network calls needed, just launch.
+            if (gameIsInstalled && !isLatestInstance && targetVersion > 0)
+            {
+                Logger.Success("Download", $"Fast path: Game already installed at v{targetVersion}, skipping version check");
+                return await HandleInstalledGameFastAsync(versionPath, branch, cts.Token);
+            }
+
+            // For "latest" instances or fresh installs, we need to fetch version list
+            _progressService.ReportDownloadProgress("preparing", 1, "launch.detail.checking_versions", null, 0, 0);
+            var versions = await _versionService.GetVersionListAsync(branch, cts.Token);
+            cts.Token.ThrowIfCancellationRequested();
+
+            if (versions.Count == 0)
+                return new DownloadProgress { Error = "No versions available for this branch" };
+
+            // Resolve targetVersion from versions list
+            if (targetVersion <= 0 || !versions.Contains(targetVersion))
+                targetVersion = versions[0];
+
             Logger.Info("Download", $"=== INSTALL CHECK ===", false);
             Logger.Info("Download", $"Version path: {versionPath}", false);
             Logger.Info("Download", $"Is latest instance: {isLatestInstance}", false);
             Logger.Info("Download", $"Target version: {targetVersion}", false);
             Logger.Info("Download", $"Client exists (game installed): {gameIsInstalled}", false);
+
+            // Check for interrupted install/patch: if PendingVersion is set,
+            // a previous download or patch was interrupted and needs to be resumed.
+            var instanceMeta = _instanceService.GetInstanceMeta(versionPath);
+            if (instanceMeta != null && instanceMeta.PendingVersion > 0)
+            {
+                Logger.Warning("Download", $"Detected interrupted install: PendingVersion={instanceMeta.PendingVersion}, InstalledVersion={instanceMeta.InstalledVersion}");
+
+                if (gameIsInstalled && instanceMeta.InstalledVersion > 0 && instanceMeta.InstalledVersion < instanceMeta.PendingVersion)
+                {
+                    // Game is partially patched — resume differential update
+                    Logger.Info("Download", $"Resuming differential update from v{instanceMeta.InstalledVersion} to v{instanceMeta.PendingVersion}");
+                    try
+                    {
+                        await _patchManager.ApplyDifferentialUpdateAsync(
+                            versionPath, branch, instanceMeta.InstalledVersion, instanceMeta.PendingVersion, cts.Token);
+                        return await CompleteInstallAsync(versionPath, branch, isLatestInstance, instanceMeta.PendingVersion, launchAfterDownloadProvider, cts.Token);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        Logger.Warning("Download", $"Resume patching failed: {ex.Message}, falling through to normal flow");
+                    }
+                }
+                else if (!gameIsInstalled)
+                {
+                    // Client missing — full re-install needed, PendingVersion carries forward
+                    Logger.Info("Download", "Client not present despite PendingVersion, will re-install");
+                }
+            }
+
+            // Set PendingVersion before starting install/patch
+            if (instanceMeta != null)
+            {
+                instanceMeta.PendingVersion = targetVersion;
+                _instanceService.SaveInstanceMeta(versionPath, instanceMeta);
+            }
 
             if (gameIsInstalled)
             {
@@ -205,6 +255,31 @@ public class GameSessionService : IGameSessionService
         }
     }
 
+    /// <summary>
+    /// Fast path for launching an already-installed game with a specific version (not "latest").
+    /// Skips version list fetching entirely — no network calls needed.
+    /// </summary>
+    private async Task<DownloadProgress> HandleInstalledGameFastAsync(
+        string versionPath, string branch, CancellationToken ct)
+    {
+        Logger.Success("Download", "Fast path: Game is already installed, skipping version check");
+
+        await EnsureRuntimeDependenciesAsync(ct);
+
+        _progressService.ReportDownloadProgress("complete", 100, "launch.detail.launching_game", null, 0, 0);
+        try
+        {
+            await _gameLauncher.LaunchGameAsync(versionPath, branch, ct);
+            return new DownloadProgress { Success = true, Progress = 100 };
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("Game", $"Launch failed: {ex.Message}");
+            _progressService.ReportError("launch", "Failed to launch game", ex.ToString());
+            return new DownloadProgress { Error = $"Failed to launch game: {ex.Message}" };
+        }
+    }
+
     private async Task<DownloadProgress> HandleInstalledGameAsync(
         string versionPath, string branch, bool isLatestInstance,
         List<int> versions, CancellationToken ct)
@@ -250,9 +325,25 @@ public class GameSessionService : IGameSessionService
 
         if (installedVersion > 0 && installedVersion < latestVersion)
         {
+            // Set PendingVersion so interrupted updates can be resumed
+            var meta = _instanceService.GetInstanceMeta(versionPath);
+            if (meta != null)
+            {
+                meta.PendingVersion = latestVersion;
+                _instanceService.SaveInstanceMeta(versionPath, meta);
+            }
+
             try
             {
                 await _patchManager.ApplyDifferentialUpdateAsync(versionPath, branch, installedVersion, latestVersion, ct);
+
+                // Update completed: clear PendingVersion, set InstalledVersion
+                if (meta != null)
+                {
+                    meta.InstalledVersion = latestVersion;
+                    meta.PendingVersion = 0;
+                    _instanceService.SaveInstanceMeta(versionPath, meta);
+                }
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
@@ -351,6 +442,8 @@ public class GameSessionService : IGameSessionService
                 Logger.Error("Download", $"Mirror diff chain install failed: {ex.Message}");
                 return new DownloadProgress { Error = $"Failed to install game from mirror: {ex.Message}" };
             }
+
+            return await CompleteInstallAsync(versionPath, branch, isLatestInstance, targetVersion, launchAfterDownloadProvider, ct);
         }
         else
         {
@@ -393,25 +486,7 @@ public class GameSessionService : IGameSessionService
                 try
                 {
                     await _patchManager.ApplyDifferentialUpdateAsync(versionPath, branch, 0, targetVersion, ct);
-                    
-                    if (isLatestInstance)
-                        _instanceService.SaveLatestInfo(branch, targetVersion);
-
-                    _progressService.ReportDownloadProgress("complete", 95, "launch.detail.download_complete", null, 0, 0);
-
-                    await EnsureRuntimeDependenciesAsync(ct);
-                    ct.ThrowIfCancellationRequested();
-
-                    var launchAfterDiff = launchAfterDownloadProvider?.Invoke() ?? true;
-                    if (!launchAfterDiff)
-                    {
-                        _progressService.ReportDownloadProgress("complete", 100, "launch.detail.done", null, 0, 0);
-                        return new DownloadProgress { Success = true, Progress = 100 };
-                    }
-
-                    _progressService.ReportDownloadProgress("complete", 100, "launch.detail.launching_game", null, 0, 0);
-                    await _gameLauncher.LaunchGameAsync(versionPath, branch, ct);
-                    return new DownloadProgress { Success = true, Progress = 100 };
+                    return await CompleteInstallAsync(versionPath, branch, isLatestInstance, targetVersion, launchAfterDownloadProvider, ct);
                 }
                 catch (OperationCanceledException) { throw; }
                 catch (Exception ex)
@@ -419,6 +494,33 @@ public class GameSessionService : IGameSessionService
                     Logger.Error("Download", $"Mirror diff chain install failed: {ex.Message}");
                     return new DownloadProgress { Error = $"Failed to install game from mirror: {ex.Message}" };
                 }
+            }
+            catch (MirrorBootstrapRequiredException ex)
+            {
+                // Full pre-release file is unavailable/corrupted (often 0-byte placeholder).
+                // Try previous full build + patch to target.
+                if (!apiVersionType.Equals("pre-release", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new DownloadProgress { Error = ex.Message };
+                }
+
+                Logger.Warning("Download", $"Mirror full pre-release v{targetVersion} unavailable ({ex.Message}). Trying previous full build + patch...");
+
+                var installed = await TryInstallPreReleaseFromPreviousFullAsync(
+                    versionPath,
+                    branch,
+                    apiVersionType,
+                    osName,
+                    arch,
+                    targetVersion,
+                    ct);
+
+                if (!installed)
+                {
+                    return new DownloadProgress { Error = $"Failed to install pre-release v{targetVersion}: no valid base build + patch path found" };
+                }
+
+                return await CompleteInstallAsync(versionPath, branch, isLatestInstance, targetVersion, launchAfterDownloadProvider, ct);
             }
 
             // Extract PWR with Butler
@@ -442,8 +544,28 @@ public class GameSessionService : IGameSessionService
             }
         }
 
+        return await CompleteInstallAsync(versionPath, branch, isLatestInstance, targetVersion, launchAfterDownloadProvider, ct);
+    }
+
+    private async Task<DownloadProgress> CompleteInstallAsync(
+        string versionPath,
+        string branch,
+        bool isLatestInstance,
+        int targetVersion,
+        Func<bool>? launchAfterDownloadProvider,
+        CancellationToken ct)
+    {
         if (isLatestInstance)
             _instanceService.SaveLatestInfo(branch, targetVersion);
+
+        // Update instance meta: clear PendingVersion, set InstalledVersion
+        var meta = _instanceService.GetInstanceMeta(versionPath);
+        if (meta != null)
+        {
+            meta.InstalledVersion = targetVersion;
+            meta.PendingVersion = 0;
+            _instanceService.SaveInstanceMeta(versionPath, meta);
+        }
 
         _progressService.ReportDownloadProgress("complete", 95, "launch.detail.download_complete", null, 0, 0);
 
@@ -464,7 +586,6 @@ public class GameSessionService : IGameSessionService
         {
             await _gameLauncher.LaunchGameAsync(versionPath, branch, ct);
 
-            // Cleanup cache after successful launch
             var cacheDir = Path.Combine(_appDir, "Cache");
             if (Directory.Exists(cacheDir))
             {
@@ -480,6 +601,64 @@ public class GameSessionService : IGameSessionService
             _progressService.ReportError("launch", "Failed to launch game", ex.ToString());
             return new DownloadProgress { Error = $"Failed to launch game: {ex.Message}" };
         }
+    }
+
+    private async Task<bool> TryInstallPreReleaseFromPreviousFullAsync(
+        string versionPath,
+        string branch,
+        string apiBranch,
+        string os,
+        string arch,
+        int targetVersion,
+        CancellationToken ct)
+    {
+        if (targetVersion <= 1)
+            return false;
+
+        for (int baseVersion = targetVersion - 1; baseVersion >= 1; baseVersion--)
+        {
+            var bootstrapPath = Path.Combine(_appDir, "Cache", $"{branch}_bootstrap_{baseVersion}.pwr");
+            Directory.CreateDirectory(Path.GetDirectoryName(bootstrapPath)!);
+
+            try
+            {
+                Logger.Info("Download", $"Trying fallback base v{baseVersion} for target v{targetVersion}");
+
+                await DownloadPwrWithCachingAsync(
+                    downloadUrl: string.Empty,
+                    pwrPath: bootstrapPath,
+                    os: os,
+                    arch: arch,
+                    branch: apiBranch,
+                    version: baseVersion,
+                    skipOfficial: true,
+                    hasOfficialUrl: false,
+                    ct: ct);
+
+                _progressService.ReportDownloadProgress("install", 65, "launch.detail.installing_butler_pwr", null, 0, 0);
+
+                await _butlerService.ApplyPwrAsync(bootstrapPath, versionPath, (progress, message) =>
+                {
+                    int mappedProgress = 65 + (int)(progress * 0.15);
+                    _progressService.ReportDownloadProgress("install", mappedProgress, message, null, 0, 0);
+                }, ct);
+
+                await _patchManager.ApplyDifferentialUpdateAsync(versionPath, branch, baseVersion, targetVersion, ct);
+                Logger.Success("Download", $"Installed pre-release via fallback path: full v{baseVersion} + patches to v{targetVersion}");
+                return true;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (MirrorBootstrapRequiredException ex)
+            {
+                Logger.Warning("Download", $"Fallback base v{baseVersion} invalid: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("Download", $"Fallback path failed for base v{baseVersion}: {ex.Message}");
+            }
+        }
+
+        return false;
     }
 
     private async Task DownloadPwrWithCachingAsync(
@@ -502,7 +681,7 @@ public class GameSessionService : IGameSessionService
             if (remoteSize > 0)
             {
                 long localSize = new FileInfo(pwrPath).Length;
-                if (localSize == remoteSize)
+                if (localSize == remoteSize && localSize >= MinValidPwrBytes)
                 {
                     Logger.Info("Download", "Using cached PWR file.");
                     needDownload = false;
@@ -515,8 +694,17 @@ public class GameSessionService : IGameSessionService
             }
             else
             {
-                Logger.Info("Download", "Cannot verify remote size, using valid local cache entry.");
-                needDownload = false;
+                long localSize = new FileInfo(pwrPath).Length;
+                if (localSize >= MinValidPwrBytes)
+                {
+                    Logger.Info("Download", "Cannot verify remote size, using valid local cache entry.");
+                    needDownload = false;
+                }
+                else
+                {
+                    Logger.Warning("Download", $"Cached PWR is too small ({localSize} bytes). Deleting and redownloading.");
+                    try { File.Delete(pwrPath); } catch { }
+                }
             }
         }
 
@@ -608,6 +796,20 @@ public class GameSessionService : IGameSessionService
                 {
                     try
                     {
+                        try
+                        {
+                            var mirrorSize = await _downloadService.GetFileSizeAsync(mirrorUrl, ct);
+                            if (mirrorSize >= 0 && mirrorSize < MinValidPwrBytes)
+                            {
+                                throw new MirrorBootstrapRequiredException(version, $"Mirror returned tiny full build ({mirrorSize} bytes) for v{version}");
+                            }
+                        }
+                        catch (MirrorBootstrapRequiredException) { throw; }
+                        catch
+                        {
+                            // Ignore HEAD/size-check failures and try real download.
+                        }
+
                         Logger.Info("Download", $"Retrying from mirror: {mirrorUrl}");
                         _progressService.ReportDownloadProgress("download", 5, "launch.detail.downloading_mirror", null, 0, 0);
 
@@ -616,13 +818,29 @@ public class GameSessionService : IGameSessionService
                             int mappedProgress = 5 + (int)(progress * 0.60);
                             _progressService.ReportDownloadProgress("download", mappedProgress, "launch.detail.downloading_mirror", [progress], dl, total);
                         }, ct);
+
+                        long downloadedSize = File.Exists(partPath) ? new FileInfo(partPath).Length : 0;
+                        if (downloadedSize < MinValidPwrBytes)
+                        {
+                            throw new MirrorBootstrapRequiredException(version, $"Downloaded mirror full build is too small ({downloadedSize} bytes) for v{version}");
+                        }
+
                         downloaded = true;
                         Logger.Success("Download", "Downloaded from mirror successfully");
                     }
                     catch (OperationCanceledException) { throw; }
+                    catch (MirrorBootstrapRequiredException) { throw; }
                     catch (Exception mirrorEx)
                     {
                         Logger.Error("Download", $"Mirror download also failed: {mirrorEx.Message}");
+                        
+                        // If mirror returned 404, invalidate this version from cache
+                        // to prevent showing unavailable versions to users
+                        if (IsHttpNotFound(mirrorEx))
+                        {
+                            Logger.Warning("Download", $"Version v{version} not found on mirror, invalidating cache entry");
+                            _versionService.InvalidateVersionFromCache(branch, version);
+                        }
                     }
                 }
                 else if (_versionService.IsDiffBasedBranch(branch))
@@ -657,6 +875,19 @@ public class GameSessionService : IGameSessionService
         var message = ex.Message ?? string.Empty;
         return message.Contains("HTTP 403", StringComparison.OrdinalIgnoreCase)
             || message.Contains("403 Forbidden", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsHttpNotFound(Exception ex)
+    {
+        if (ex is HttpRequestException hre && hre.StatusCode == HttpStatusCode.NotFound)
+        {
+            return true;
+        }
+
+        var message = ex.Message ?? string.Empty;
+        return message.Contains("HTTP 404", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("404 NotFound", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not found", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task EnsureRuntimeDependenciesAsync(CancellationToken ct)
@@ -701,6 +932,16 @@ internal class MirrorDiffRequiredException : Exception
 {
     public int TargetVersion { get; }
     public MirrorDiffRequiredException(int targetVersion) : base("Mirror requires diff-based download for pre-release")
+    {
+        TargetVersion = targetVersion;
+    }
+}
+
+internal class MirrorBootstrapRequiredException : Exception
+{
+    public int TargetVersion { get; }
+
+    public MirrorBootstrapRequiredException(int targetVersion, string message) : base(message)
     {
         TargetVersion = targetVersion;
     }

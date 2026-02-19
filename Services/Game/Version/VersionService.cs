@@ -19,12 +19,16 @@ public class VersionService : IVersionService
 {
     private readonly string _appDir;
     private readonly IConfigService _configService;
+    private readonly HttpClient _httpClient;
     private readonly List<IVersionSource> _sources;
     private readonly SemaphoreSlim _versionFetchLock = new(1, 1);
 
     // Keep direct references for source-specific operations
     private readonly HytaleVersionSource? _hytaleSource;
-    private readonly MirrorVersionSource? _mirrorSource;
+    private readonly List<IVersionSource> _mirrorSources = new();
+    
+    // Selected mirror for downloads (set after speed test)
+    private IVersionSource? _selectedMirror;
 
     /// <summary>
     /// In-memory cache of the full snapshot.
@@ -37,11 +41,13 @@ public class VersionService : IVersionService
     public VersionService(
         string appDir,
         IConfigService configService,
+        HttpClient httpClient,
         HytaleVersionSource? hytaleSource = null,
-        MirrorVersionSource? mirrorSource = null)
+        IEnumerable<IVersionSource>? mirrorSources = null)
     {
         _appDir = appDir;
         _configService = configService;
+        _httpClient = httpClient;
         
         // Build source list
         _sources = new List<IVersionSource>();
@@ -52,14 +58,22 @@ public class VersionService : IVersionService
             _sources.Add(hytaleSource);
         }
         
-        if (mirrorSource != null)
+        if (mirrorSources != null)
         {
-            _mirrorSource = mirrorSource;
-            _sources.Add(mirrorSource);
+            foreach (var mirror in mirrorSources.Where(m => m.Type == VersionSourceType.Mirror))
+            {
+                _mirrorSources.Add(mirror);
+                _sources.Add(mirror);
+            }
         }
         
         // Sort by priority
         _sources.Sort((a, b) => a.Priority.CompareTo(b.Priority));
+
+        foreach (var source in _sources)
+        {
+            Logger.Debug("Version", $"Source {source.SourceId}: full={source.LayoutInfo.FullBuildLocation}; patch={source.LayoutInfo.PatchLocation}; cache={source.LayoutInfo.CachePolicy}");
+        }
     }
 
     /// <summary>
@@ -120,12 +134,26 @@ public class VersionService : IVersionService
             Data = new VersionsCacheData()
         };
 
+        snapshot = SanitizeSnapshot(snapshot);
+
         // Update OS/Arch in case they changed
         snapshot.Os = osName;
         snapshot.Arch = arch;
         snapshot.FetchedAtUtc = DateTime.UtcNow;
 
-        // Fetch from ALL sources using IVersionSource interface
+        // Load existing patch cache (same structure, saved alongside versions)
+        var patchSnapshot = LoadPatchCacheSnapshot() ?? new PatchesCacheSnapshot
+        {
+            Os = osName,
+            Arch = arch,
+            FetchedAtUtc = DateTime.UtcNow,
+            Data = new PatchesCacheData()
+        };
+        patchSnapshot.Os = osName;
+        patchSnapshot.Arch = arch;
+        patchSnapshot.FetchedAtUtc = DateTime.UtcNow;
+
+        // Fetch versions AND patches from ALL sources
         foreach (var source in _sources)
         {
             if (!source.IsAvailable)
@@ -169,10 +197,41 @@ public class VersionService : IVersionService
             {
                 Logger.Warning("Version", $"{source.SourceId} fetch failed for {normalizedBranch}: {ex.Message}");
             }
+
+            // Fetch patch chain from the same source (runs in sync, no fire-and-forget)
+            try
+            {
+                var patchSteps = await source.GetPatchChainAsync(osName, arch, normalizedBranch, ct);
+                if (patchSteps.Count > 0)
+                {
+                    if (source.Type == VersionSourceType.Official)
+                    {
+                        patchSnapshot.Data.Hytale ??= new Dictionary<string, List<CachedPatchStep>>();
+                        patchSnapshot.Data.Hytale[normalizedBranch] = patchSteps;
+                    }
+                    else
+                    {
+                        var mirrorPatch = patchSnapshot.Data.Mirrors.FirstOrDefault(m => m.MirrorId == source.SourceId);
+                        if (mirrorPatch == null)
+                        {
+                            mirrorPatch = new MirrorPatchCache { MirrorId = source.SourceId };
+                            patchSnapshot.Data.Mirrors.Add(mirrorPatch);
+                        }
+                        mirrorPatch.Branches[normalizedBranch] = patchSteps;
+                    }
+
+                    Logger.Success("Version", $"{source.SourceId} returned {patchSteps.Count} patch steps for {normalizedBranch}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug("Version", $"{source.SourceId} patch chain fetch failed for {normalizedBranch}: {ex.Message}");
+            }
         }
 
-        // Save updated cache
+        // Save both caches together
         SaveCacheSnapshot(snapshot);
+        SavePatchCacheSnapshot(patchSnapshot);
         _memoryCache = snapshot;
 
         // Return merged version list
@@ -469,13 +528,100 @@ public class VersionService : IVersionService
     }
 
     /// <summary>
+    /// Removes a specific version from the cache for a given mirror/source.
+    /// Call this when a download fails with 404 to prevent showing unavailable versions.
+    /// </summary>
+    /// <param name="branch">Branch name (e.g., "release", "pre-release").</param>
+    /// <param name="version">Version number to invalidate.</param>
+    /// <param name="sourceId">Source ID (mirror ID or "official"). If null, removes from all sources.</param>
+    public void InvalidateVersionFromCache(string branch, int version, string? sourceId = null)
+    {
+        var normalizedBranch = NormalizeBranch(branch);
+        var snapshot = _memoryCache ?? LoadCacheSnapshot();
+        if (snapshot == null) return;
+
+        bool modified = false;
+
+        // Remove from official source if applicable
+        if (sourceId == null || sourceId.Equals("official", StringComparison.OrdinalIgnoreCase))
+        {
+            if (snapshot.Data.Hytale?.Branches.TryGetValue(normalizedBranch, out var officialVersions) == true)
+            {
+                var removed = officialVersions.RemoveAll(v => v.Version == version);
+                if (removed > 0)
+                {
+                    Logger.Info("Version", $"Invalidated v{version} from official cache for {normalizedBranch}");
+                    modified = true;
+                }
+            }
+        }
+
+        // Remove from mirror sources
+        foreach (var mirror in snapshot.Data.Mirrors)
+        {
+            if (sourceId != null && !mirror.MirrorId.Equals(sourceId, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (mirror.Branches.TryGetValue(normalizedBranch, out var mirrorVersions))
+            {
+                var removed = mirrorVersions.RemoveAll(v => v.Version == version);
+                if (removed > 0)
+                {
+                    Logger.Info("Version", $"Invalidated v{version} from {mirror.MirrorId} cache for {normalizedBranch}");
+                    modified = true;
+                }
+            }
+        }
+
+        // Also invalidate from patch cache
+        var patchSnapshot = LoadPatchCacheSnapshot();
+        if (patchSnapshot != null)
+        {
+            bool patchModified = false;
+
+            if (sourceId == null || sourceId.Equals("official", StringComparison.OrdinalIgnoreCase))
+            {
+                if (patchSnapshot.Data.Hytale?.TryGetValue(normalizedBranch, out var officialPatches) == true)
+                {
+                    var removed = officialPatches.RemoveAll(p => p.To == version);
+                    if (removed > 0) patchModified = true;
+                }
+            }
+
+            foreach (var mirror in patchSnapshot.Data.Mirrors)
+            {
+                if (sourceId != null && !mirror.MirrorId.Equals(sourceId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (mirror.Branches.TryGetValue(normalizedBranch, out var patches))
+                {
+                    var removed = patches.RemoveAll(p => p.To == version);
+                    if (removed > 0) patchModified = true;
+                }
+            }
+
+            if (patchModified)
+            {
+                SavePatchCacheSnapshot(patchSnapshot);
+            }
+        }
+
+        if (modified)
+        {
+            _memoryCache = snapshot;
+            SaveCacheSnapshot(snapshot);
+        }
+    }
+
+    /// <summary>
     /// Returns true if the specified branch uses diff-based patching (mirrors only).
     /// Pre-release branch uses diffs, release uses full copies.
     /// </summary>
     public bool IsDiffBasedBranch(string branch)
     {
         var normalizedBranch = NormalizeBranch(branch);
-        return _mirrorSource?.IsDiffBasedBranch(normalizedBranch) ?? false;
+        return _selectedMirror?.IsDiffBasedBranch(normalizedBranch) ?? 
+               _mirrorSources.FirstOrDefault()?.IsDiffBasedBranch(normalizedBranch) ?? false;
     }
 
     /// <summary>
@@ -486,7 +632,31 @@ public class VersionService : IVersionService
         string os, string arch, string branch, int version, CancellationToken ct = default)
     {
         var normalizedBranch = NormalizeBranch(branch);
-        return await _mirrorSource?.GetDownloadUrlAsync(os, arch, normalizedBranch, version, ct)!;
+
+        var candidates = await GetMirrorCandidatesAsync(ct);
+        foreach (var mirror in candidates)
+        {
+            try
+            {
+                var url = await mirror.GetDownloadUrlAsync(os, arch, normalizedBranch, version, ct);
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    if (!ReferenceEquals(_selectedMirror, mirror))
+                    {
+                        _selectedMirror = mirror;
+                        Logger.Info("Version", $"Switched active mirror to {mirror.SourceId} for {normalizedBranch} v{version}");
+                    }
+
+                    return url;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("Version", $"Mirror {mirror.SourceId} failed for {normalizedBranch} v{version}: {ex.Message}");
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -496,7 +666,52 @@ public class VersionService : IVersionService
         string os, string arch, string branch, int fromVersion, int toVersion, CancellationToken ct = default)
     {
         var normalizedBranch = NormalizeBranch(branch);
-        return await _mirrorSource?.GetDiffUrlAsync(os, arch, normalizedBranch, fromVersion, toVersion, ct)!;
+
+        var candidates = await GetMirrorCandidatesAsync(ct);
+        foreach (var mirror in candidates)
+        {
+            try
+            {
+                var url = await mirror.GetDiffUrlAsync(os, arch, normalizedBranch, fromVersion, toVersion, ct);
+                if (!string.IsNullOrWhiteSpace(url))
+                {
+                    if (!ReferenceEquals(_selectedMirror, mirror))
+                    {
+                        _selectedMirror = mirror;
+                        Logger.Info("Version", $"Switched active mirror to {mirror.SourceId} for {normalizedBranch} v{fromVersion}~{toVersion}");
+                    }
+
+                    return url;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("Version", $"Mirror {mirror.SourceId} failed for {normalizedBranch} v{fromVersion}~{toVersion}: {ex.Message}");
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<List<IVersionSource>> GetMirrorCandidatesAsync(CancellationToken ct)
+    {
+        var candidates = new List<IVersionSource>();
+
+        var preferred = _selectedMirror ?? await SelectBestMirrorAsync(ct);
+        if (preferred != null)
+        {
+            candidates.Add(preferred);
+        }
+
+        foreach (var mirror in _mirrorSources)
+        {
+            if (!candidates.Contains(mirror))
+            {
+                candidates.Add(mirror);
+            }
+        }
+
+        return candidates;
     }
 
     /// <summary>
@@ -711,7 +926,13 @@ public class VersionService : IVersionService
             var json = File.ReadAllText(path);
             if (string.IsNullOrWhiteSpace(json)) return null;
 
-            return JsonSerializer.Deserialize<VersionsCacheSnapshot>(json);
+            var snapshot = JsonSerializer.Deserialize<VersionsCacheSnapshot>(json);
+            if (snapshot == null)
+            {
+                return null;
+            }
+
+            return SanitizeSnapshot(snapshot);
         }
         catch (Exception ex)
         {
@@ -724,6 +945,8 @@ public class VersionService : IVersionService
     {
         try
         {
+            snapshot = SanitizeSnapshot(snapshot);
+
             var path = GetCacheSnapshotPath();
             var directory = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(directory))
@@ -741,5 +964,282 @@ public class VersionService : IVersionService
             Logger.Warning("Version", $"Failed to save versions cache: {ex.Message}");
         }
     }
-}
 
+    private VersionsCacheSnapshot SanitizeSnapshot(VersionsCacheSnapshot snapshot)
+    {
+        snapshot.Data ??= new VersionsCacheData();
+        snapshot.Data.Mirrors ??= new List<MirrorSourceCache>();
+
+        var allowedMirrorIds = _mirrorSources
+            .Select(m => m.SourceId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var filtered = snapshot.Data.Mirrors
+            .Where(m => !string.IsNullOrWhiteSpace(m.MirrorId) && allowedMirrorIds.Contains(m.MirrorId))
+            .GroupBy(m => m.MirrorId, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Last())
+            .ToList();
+
+        if (filtered.Count != snapshot.Data.Mirrors.Count)
+        {
+            Logger.Debug("Version", $"Sanitized mirror cache list: {snapshot.Data.Mirrors.Count} -> {filtered.Count}");
+        }
+
+        snapshot.Data.Mirrors = filtered;
+        return snapshot;
+    }
+
+    private string GetPatchCacheSnapshotPath()
+        => Path.Combine(_appDir, "Cache", "Game", "patches.json");
+
+    private PatchesCacheSnapshot? LoadPatchCacheSnapshot()
+    {
+        try
+        {
+            var path = GetPatchCacheSnapshotPath();
+            if (!File.Exists(path)) return null;
+
+            var json = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(json)) return null;
+
+            var snapshot = JsonSerializer.Deserialize<PatchesCacheSnapshot>(json);
+            if (snapshot == null) return null;
+
+            // Sanitize mirrors list: remove mirrors that are no longer registered
+            snapshot.Data ??= new PatchesCacheData();
+            snapshot.Data.Mirrors ??= new List<MirrorPatchCache>();
+
+            var allowedMirrorIds = _mirrorSources
+                .Select(m => m.SourceId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            snapshot.Data.Mirrors = snapshot.Data.Mirrors
+                .Where(m => !string.IsNullOrWhiteSpace(m.MirrorId) && allowedMirrorIds.Contains(m.MirrorId))
+                .GroupBy(m => m.MirrorId, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.Last())
+                .ToList();
+
+            return snapshot;
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Version", $"Failed to deserialize patches cache: {ex.Message}");
+            return null;
+        }
+    }
+
+    private void SavePatchCacheSnapshot(PatchesCacheSnapshot snapshot)
+    {
+        try
+        {
+            var path = GetPatchCacheSnapshotPath();
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(path, json);
+
+            var totalSteps = (snapshot.Data.Hytale?.Values.Sum(v => v.Count) ?? 0)
+                + snapshot.Data.Mirrors.Sum(m => m.Branches.Values.Sum(v => v.Count));
+            Logger.Debug("Version", $"Saved patches cache ({totalSteps} total steps) to {path}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Warning("Version", $"Failed to save patches cache: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// Tests the speed and availability of a mirror by ID.
+    /// </summary>
+    public async Task<MirrorSpeedTestResult> TestMirrorSpeedAsync(string mirrorId, bool forceRefresh = false, CancellationToken ct = default)
+    {
+        var mirror = _mirrorSources.FirstOrDefault(m => m.SourceId.Equals(mirrorId, StringComparison.OrdinalIgnoreCase));
+        
+        if (mirror == null)
+        {
+            Logger.Warning("Version", $"TestMirrorSpeedAsync: mirror '{mirrorId}' not found in {_mirrorSources.Count} loaded sources");
+            return new MirrorSpeedTestResult
+            {
+                MirrorId = mirrorId,
+                MirrorName = mirrorId,
+                PingMs = -1,
+                SpeedMBps = 0,
+                IsAvailable = false,
+                TestedAt = DateTime.UtcNow
+            };
+        }
+        
+        Logger.Debug("Version", $"TestMirrorSpeedAsync: testing mirror '{mirrorId}' (forceRefresh={forceRefresh})");
+        
+        if (!forceRefresh)
+        {
+            var cached = mirror.GetCachedSpeedTest();
+            if (cached != null)
+            {
+                Logger.Debug("Version", $"TestMirrorSpeedAsync: returning cached result for '{mirrorId}'");
+                return cached;
+            }
+        }
+        
+        return await mirror.TestSpeedAsync(ct);
+    }
+    
+    /// <summary>
+    /// Tests the speed and availability of the official Hytale CDN.
+    /// </summary>
+    public async Task<MirrorSpeedTestResult> TestOfficialSpeedAsync(bool forceRefresh = false, CancellationToken ct = default)
+    {
+        if (_hytaleSource == null || !_hytaleSource.IsAvailable)
+        {
+            return new MirrorSpeedTestResult
+            {
+                MirrorId = "official",
+                MirrorName = "Hytale",
+                MirrorUrl = "https://cdn.hytale.com",
+                PingMs = -1,
+                SpeedMBps = 0,
+                IsAvailable = false,
+                TestedAt = DateTime.UtcNow
+            };
+        }
+        
+        if (!forceRefresh)
+        {
+            var cached = _hytaleSource.GetCachedSpeedTest();
+            if (cached != null)
+            {
+                return cached;
+            }
+        }
+        
+        return await _hytaleSource.TestSpeedAsync(ct);
+    }
+    
+    /// <summary>
+    /// Gets all available mirrors.
+    /// </summary>
+    public List<(string Id, string Name)> GetAvailableMirrors()
+    {
+        return _mirrorSources.Select(m => (m.SourceId, m.GetCachedSpeedTest()?.MirrorName ?? m.SourceId)).ToList();
+    }
+    
+    /// <summary>
+    /// Selects the best mirror based on speed tests.
+    /// Only called when official source is not available.
+    /// </summary>
+    public async Task<IVersionSource?> SelectBestMirrorAsync(CancellationToken ct = default)
+    {
+        if (_mirrorSources.Count == 0)
+        {
+            Logger.Warning("Version", "No mirrors available for selection");
+            return null;
+        }
+        
+        // If only one mirror, use it
+        if (_mirrorSources.Count == 1)
+        {
+            _selectedMirror = _mirrorSources[0];
+            Logger.Info("Version", $"Only one mirror available: {_selectedMirror.SourceId}");
+            return _selectedMirror;
+        }
+        
+        Logger.Info("Version", $"Testing {_mirrorSources.Count} mirrors to select the best one...");
+        
+        var results = new List<(IVersionSource Source, MirrorSpeedTestResult Result)>();
+        
+        // Test all mirrors concurrently
+        var tasks = _mirrorSources.Select(async mirror =>
+        {
+            try
+            {
+                var result = await mirror.TestSpeedAsync(ct);
+                return (Source: mirror, Result: result);
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("Version", $"Mirror {mirror.SourceId} speed test failed: {ex.Message}");
+                return (Source: mirror, Result: new MirrorSpeedTestResult
+                {
+                    MirrorId = mirror.SourceId,
+                    MirrorName = mirror.SourceId,
+                    IsAvailable = false,
+                    PingMs = -1,
+                    SpeedMBps = 0
+                });
+            }
+        });
+        
+        var testResults = await Task.WhenAll(tasks);
+        results.AddRange(testResults);
+        
+        // Filter available mirrors and sort by speed (descending)
+        var availableMirrors = results
+            .Where(r => r.Result.IsAvailable && r.Result.SpeedMBps > 0)
+            .OrderByDescending(r => r.Result.SpeedMBps)
+            .ThenBy(r => r.Result.PingMs)
+            .ToList();
+        
+        if (availableMirrors.Count == 0)
+        {
+            Logger.Warning("Version", "No mirrors passed speed test, using first available");
+            _selectedMirror = _mirrorSources[0];
+            return _selectedMirror;
+        }
+        
+        var best = availableMirrors[0];
+        _selectedMirror = best.Source;
+        Logger.Success("Version", $"Selected mirror: {best.Source.SourceId} ({best.Result.SpeedMBps:F2} MB/s, {best.Result.PingMs}ms ping)");
+        
+        return _selectedMirror;
+    }
+    
+    /// <summary>
+    /// Gets the currently selected mirror, or selects one if not yet selected.
+    /// </summary>
+    public async Task<IVersionSource?> GetSelectedMirrorAsync(CancellationToken ct = default)
+    {
+        if (_selectedMirror != null)
+            return _selectedMirror;
+        
+        return await SelectBestMirrorAsync(ct);
+    }
+    
+    /// <inheritdoc/>
+    public void ReloadMirrorSources()
+    {
+        Logger.Info("Version", "Reloading mirror sources from disk...");
+        
+        // Remove old mirrors from sources
+        foreach (var oldMirror in _mirrorSources)
+        {
+            _sources.Remove(oldMirror);
+        }
+        _mirrorSources.Clear();
+        
+        // Reset selected mirror
+        _selectedMirror = null;
+        
+        // Load fresh mirrors from disk
+        var freshMirrors = MirrorLoaderService.LoadAll(_appDir, _httpClient);
+        
+        foreach (var mirror in freshMirrors.Where(m => m.Type == VersionSourceType.Mirror))
+        {
+            _mirrorSources.Add(mirror);
+            _sources.Add(mirror);
+        }
+        
+        // Re-sort by priority
+        _sources.Sort((a, b) => a.Priority.CompareTo(b.Priority));
+        
+        Logger.Success("Version", $"Reloaded {_mirrorSources.Count} mirror sources");
+        
+        foreach (var source in _mirrorSources)
+        {
+            Logger.Debug("Version", $"Mirror {source.SourceId}: priority={source.Priority}");
+        }
+    }
+}
