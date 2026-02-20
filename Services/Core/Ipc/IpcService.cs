@@ -1703,7 +1703,7 @@ public class IpcService
             }
         });
 
-        // @ipc invoke hyprism:settings:addMirror -> { success: boolean; error?: string; mirror?: MirrorInfo; }
+        // @ipc invoke hyprism:settings:addMirror -> { success: boolean; error?: string; mirror?: MirrorInfo; } 0
         Electron.IpcMain.On("hyprism:settings:addMirror", async (args) =>
         {
             try
