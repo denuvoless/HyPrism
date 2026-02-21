@@ -17,6 +17,7 @@ using HyPrism.Services.Core.App;
 using HyPrism.Services.Core.Integration;
 using HyPrism.Services.Core.Platform;
 using HyPrism.Services.Game;
+using HyPrism.Services.Game.Butler;
 using HyPrism.Services.Game.Instance;
 using HyPrism.Services.Game.Launch;
 using HyPrism.Services.Game.Mod;
@@ -893,85 +894,38 @@ public class IpcService
             }
         });
 
-        // Import instance from zip (using file dialog service)
+        // Import instance from zip or pwr file (using file dialog service)
         Electron.IpcMain.On("hyprism:instance:import", async (_) =>
         {
             try
             {
                 var fileDialog = _services.GetRequiredService<IFileDialogService>();
-                // Show file picker for zip files
-                var zipPath = await fileDialog.BrowseZipFileAsync();
+                // Show file picker for zip/pwr files
+                var filePath = await fileDialog.BrowseInstanceArchiveAsync();
                 
-                if (string.IsNullOrEmpty(zipPath) || !File.Exists(zipPath))
+                if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
                 {
                     Logger.Info("IPC", "Import cancelled or file not found");
                     Reply("hyprism:instance:import:reply", false);
                     return;
                 }
                 
-                Logger.Info("IPC", $"Importing instance from: {zipPath}");
+                Logger.Info("IPC", $"Importing instance from: {filePath}");
                 
-                // Extract to a temp location first to check structure
-                var tempDir = Path.Combine(Path.GetTempPath(), $"hyprism-import-{Guid.NewGuid()}");
-                Directory.CreateDirectory(tempDir);
+                var extension = Path.GetExtension(filePath).ToLowerInvariant();
                 
-                ZipFile.ExtractToDirectory(zipPath, tempDir, true);
-                
-                // Determine target path - check if zip has meta.json metadata
-                var metaPath = Path.Combine(tempDir, "meta.json");
-                var branch = "release";
-                var version = 0; // Latest
-                string? existingId = null;
-
-                if (File.Exists(metaPath))
+                if (extension == ".pwr")
                 {
-                    var meta = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(metaPath), JsonOpts);
-                    branch = meta?.TryGetValue("branch", out var b) == true ? b.GetString() ?? "release" : "release";
-                    if (meta?.TryGetValue("version", out var v) == true) version = v.GetInt32();
-                    if (meta?.TryGetValue("id", out var idEl) == true) existingId = idEl.GetString();
+                    // Handle PWR file import using Butler
+                    await ImportPwrFileAsync(filePath, instanceService);
+                }
+                else
+                {
+                    // Handle ZIP file import (existing logic)
+                    await ImportZipFileAsync(filePath, instanceService);
                 }
                 
-                // Check if instance with this ID already exists
-                var existingInstances = instanceService.GetInstalledInstances();
-                var idAlreadyExists = !string.IsNullOrEmpty(existingId) && 
-                    existingInstances.Any(i => i.Id == existingId);
-                
-                // Generate new ID if existing one conflicts or doesn't exist
-                var newInstanceId = idAlreadyExists || string.IsNullOrEmpty(existingId) 
-                    ? Guid.NewGuid().ToString() 
-                    : existingId;
-                
-                var targetPath = instanceService.CreateInstanceDirectory(branch, newInstanceId);
-                
-                // Update meta.json with new ID if it was changed
-                if (File.Exists(metaPath) && (idAlreadyExists || string.IsNullOrEmpty(existingId)))
-                {
-                    var metaContent = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(metaPath), JsonOpts);
-                    if (metaContent != null)
-                    {
-                        metaContent["id"] = newInstanceId;
-                        File.WriteAllText(metaPath, JsonSerializer.Serialize(metaContent, JsonOpts));
-                        Logger.Info("IPC", $"Updated instance ID from '{existingId}' to '{newInstanceId}'");
-                    }
-                }
-                
-                // Move contents from temp to target
-                foreach (var file in Directory.GetFiles(tempDir))
-                {
-                    var destFile = Path.Combine(targetPath, Path.GetFileName(file));
-                    File.Move(file, destFile, true);
-                }
-                foreach (var dir in Directory.GetDirectories(tempDir))
-                {
-                    var destDir = Path.Combine(targetPath, Path.GetFileName(dir));
-                    if (Directory.Exists(destDir)) Directory.Delete(destDir, true);
-                    Directory.Move(dir, destDir);
-                }
-                
-                // Clean up temp directory
-                try { Directory.Delete(tempDir, true); } catch { /* ignore */ }
-                
-                Logger.Success("IPC", $"Imported instance to: {targetPath}");
+                Logger.Success("IPC", $"Instance imported successfully");
                 Reply("hyprism:instance:import:reply", true);
             }
             catch (Exception ex)
@@ -3160,6 +3114,144 @@ public class IpcService
         }
 
         return headers;
+    }
+
+    /// <summary>
+    /// Imports a ZIP file as a new instance.
+    /// </summary>
+    private async Task ImportZipFileAsync(string zipPath, IInstanceService instanceService)
+    {
+        // Extract to a temp location first to check structure
+        var tempDir = Path.Combine(Path.GetTempPath(), $"hyprism-import-{Guid.NewGuid()}");
+        Directory.CreateDirectory(tempDir);
+        
+        await Task.Run(() => ZipFile.ExtractToDirectory(zipPath, tempDir, true));
+        
+        // Determine target path - check if zip has meta.json metadata
+        var metaPath = Path.Combine(tempDir, "meta.json");
+        var branch = "release";
+        var version = 0;
+        string? existingId = null;
+
+        if (File.Exists(metaPath))
+        {
+            var meta = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(metaPath), JsonOpts);
+            branch = meta?.TryGetValue("branch", out var b) == true ? b.GetString() ?? "release" : "release";
+            if (meta?.TryGetValue("version", out var v) == true) version = v.GetInt32();
+            if (meta?.TryGetValue("id", out var idEl) == true) existingId = idEl.GetString();
+        }
+        
+        // Check if instance with this ID already exists
+        var existingInstances = instanceService.GetInstalledInstances();
+        var idAlreadyExists = !string.IsNullOrEmpty(existingId) && 
+            existingInstances.Any(i => i.Id == existingId);
+        
+        // Generate new ID if existing one conflicts or doesn't exist
+        var newInstanceId = idAlreadyExists || string.IsNullOrEmpty(existingId) 
+            ? Guid.NewGuid().ToString() 
+            : existingId;
+        
+        var targetPath = instanceService.CreateInstanceDirectory(branch, newInstanceId);
+        
+        // Update meta.json with new ID if it was changed
+        if (File.Exists(metaPath) && (idAlreadyExists || string.IsNullOrEmpty(existingId)))
+        {
+            var metaContent = JsonSerializer.Deserialize<Dictionary<string, object>>(File.ReadAllText(metaPath), JsonOpts);
+            if (metaContent != null)
+            {
+                metaContent["id"] = newInstanceId;
+                File.WriteAllText(metaPath, JsonSerializer.Serialize(metaContent, JsonOpts));
+                Logger.Info("IPC", $"Updated instance ID from '{existingId}' to '{newInstanceId}'");
+            }
+        }
+        
+        // Move contents from temp to target
+        foreach (var file in Directory.GetFiles(tempDir))
+        {
+            var destFile = Path.Combine(targetPath, Path.GetFileName(file));
+            File.Move(file, destFile, true);
+        }
+        foreach (var dir in Directory.GetDirectories(tempDir))
+        {
+            var destDir = Path.Combine(targetPath, Path.GetFileName(dir));
+            if (Directory.Exists(destDir)) Directory.Delete(destDir, true);
+            Directory.Move(dir, destDir);
+        }
+        
+        // Clean up temp directory
+        try { Directory.Delete(tempDir, true); } catch { /* ignore */ }
+        
+        Logger.Success("IPC", $"Imported ZIP instance to: {targetPath}");
+    }
+
+    /// <summary>
+    /// Imports a PWR file as a new instance using Butler.
+    /// </summary>
+    private async Task ImportPwrFileAsync(string pwrPath, IInstanceService instanceService)
+    {
+        var butlerService = _services.GetRequiredService<IButlerService>();
+        
+        // Try to parse version info from the filename
+        // Common patterns: v{version}-{os}-{arch}.pwr, 0_to_{version}.pwr, {version}.pwr
+        var fileName = Path.GetFileNameWithoutExtension(pwrPath);
+        var version = TryParseVersionFromPwrFilename(fileName);
+        var branch = "release"; // Default to release branch
+        
+        // Generate a new instance ID
+        var newInstanceId = Guid.NewGuid().ToString();
+        var targetPath = instanceService.CreateInstanceDirectory(branch, newInstanceId);
+        
+        Logger.Info("IPC", $"Importing PWR to new instance: {targetPath} (detected version: {version})");
+        
+        // Apply the PWR file using Butler
+        await butlerService.ApplyPwrAsync(pwrPath, targetPath, (progress, message) =>
+        {
+            Logger.Debug("IPC", $"Import progress: {progress}% - {message}");
+        });
+        
+        // Create meta.json for the new instance
+        var meta = new InstanceMeta
+        {
+            Id = newInstanceId,
+            Name = $"Imported {(version > 0 ? $"v{version}" : "Game")}",
+            Branch = branch,
+            Version = version,
+            InstalledVersion = version,
+            CreatedAt = DateTime.UtcNow,
+            IsLatest = false
+        };
+        
+        instanceService.SaveInstanceMeta(targetPath, meta);
+        
+        Logger.Success("IPC", $"Imported PWR instance to: {targetPath}");
+    }
+
+    /// <summary>
+    /// Tries to parse version number from PWR filename.
+    /// Supports patterns: v{version}-{os}-{arch}, 0_to_{version}, {version}, etc.
+    /// </summary>
+    private static int TryParseVersionFromPwrFilename(string filename)
+    {
+        // Pattern: v{version}-{os}-{arch} (e.g., v123-linux-x64)
+        var versionMatch = System.Text.RegularExpressions.Regex.Match(filename, @"^v(\d+)");
+        if (versionMatch.Success && int.TryParse(versionMatch.Groups[1].Value, out var v1))
+            return v1;
+        
+        // Pattern: 0_to_{version} or {from}_to_{version} (e.g., 0_to_456)
+        var patchMatch = System.Text.RegularExpressions.Regex.Match(filename, @"_to_(\d+)");
+        if (patchMatch.Success && int.TryParse(patchMatch.Groups[1].Value, out var v2))
+            return v2;
+        
+        // Pattern: just a number (e.g., 123)
+        if (int.TryParse(filename, out var v3))
+            return v3;
+        
+        // Pattern: number at start (e.g., 123-something)
+        var startMatch = System.Text.RegularExpressions.Regex.Match(filename, @"^(\d+)");
+        if (startMatch.Success && int.TryParse(startMatch.Groups[1].Value, out var v4))
+            return v4;
+        
+        return 0; // Unknown version
     }
 
     // #endregion

@@ -277,7 +277,7 @@
       "launchBranch": "起動ブランチ",
       "userData": "ユーザーデータ",
       "empty": "まだ何もダウンロードしていないようです。",
-      "dropZipImport": "ZIPをドロップしてインスタンスをインポート",
+      "dropZipImport": "ZIPまたはPWRをドロップしてインスタンスをインポート",
       "noInstances": "インスタンスがインストールされていません",
       "installHytale": "Hytaleをインストールしてインスタンスを作成",
       "notPlayed": "未プレイ",

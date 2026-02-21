@@ -313,7 +313,7 @@
       "launchBranch": "실행 브랜치",
       "userData": "사용자 데이터",
       "empty": "아직 아무것도 다운로드하지 않은 것 같습니다",
-      "dropZipImport": "ZIP을 드롭하여 인스턴스 가져오기",
+      "dropZipImport": "ZIP 또는 PWR을 드롭하여 인스턴스 가져오기",
       "noInstances": "설치된 인스턴스 없음",
       "installHytale": "Hytale을 설치하여 인스턴스 생성",
       "notPlayed": "플레이하지 않음",

@@ -313,7 +313,7 @@
       "launchBranch": "Başlatma dalı",
       "userData": "Kullanıcı verileri",
       "empty": "Görünüşe göre henüz hiçbir şey indirmediniz",
-      "dropZipImport": "Örnek içe aktarmak için ZIP bırakın",
+      "dropZipImport": "Örnek içe aktarmak için ZIP veya PWR bırakın",
       "noInstances": "Yüklü örnek yok",
       "installHytale": "Örnek oluşturmak için Hytale'ı yükleyin",
       "notPlayed": "Oynanmadı",

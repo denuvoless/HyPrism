@@ -313,7 +313,7 @@
       "launchBranch": "Branche de Lancement",
       "userData": "Données Utilisateur",
       "empty": "On dirait que tu n'as encore rien téléchargé",
-      "dropZipImport": "Dépose un ZIP pour importer une instance",
+      "dropZipImport": "Dépose un ZIP ou PWR pour importer une instance",
       "noInstances": "Aucune instance installée",
       "installHytale": "Installe Hytale pour créer une instance",
       "notPlayed": "Non joué",

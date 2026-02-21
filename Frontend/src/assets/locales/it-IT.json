@@ -314,7 +314,7 @@
       "launchBranch": "Ramo di avvio",
       "userData": "Dati utente",
       "empty": "Sembra che tu non abbia ancora scaricato nulla",
-      "dropZipImport": "Trascina un file ZIP per importare un'istanza",
+      "dropZipImport": "Trascina un file ZIP o PWR per importare un'istanza",
       "noInstances": "Nessuna istanza installata",
       "installHytale": "Installa Hytale per creare un'istanza",
       "notPlayed": "Non giocato",

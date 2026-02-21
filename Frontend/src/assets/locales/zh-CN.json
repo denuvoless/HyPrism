@@ -313,7 +313,7 @@
       "launchBranch": "启动分支",
       "userData": "用户数据",
       "empty": "看起来您还没有下载任何内容",
-      "dropZipImport": "拖放 ZIP 以导入实例",
+      "dropZipImport": "拖放 ZIP 或 PWR 以导入实例",
       "noInstances": "未安装实例",
       "installHytale": "安装 Hytale 以创建实例",
       "notPlayed": "未游玩",

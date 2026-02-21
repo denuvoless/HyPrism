@@ -323,7 +323,7 @@
       "launchBranch": "Launch branch",
       "userData": "User data",
       "empty": "Seems like you haven't downloaded anything yet",
-      "dropZipImport": "Drop ZIP to import instance",
+      "dropZipImport": "Drop ZIP or PWR to import instance",
       "noInstances": "No instances installed",
       "installHytale": "Install Hytale to create an instance",
       "notPlayed": "Not played",

@@ -313,7 +313,7 @@
       "launchBranch": "Start-Branch",
       "userData": "Benutzerdaten",
       "empty": "Sieht so aus, als hättest du noch nichts heruntergeladen",
-      "dropZipImport": "ZIP zum Importieren ablegen",
+      "dropZipImport": "ZIP oder PWR zum Importieren ablegen",
       "noInstances": "Keine Instanzen installiert",
       "installHytale": "Hytale installieren, um eine Instanz zu erstellen",
       "notPlayed": "Nicht gespielt",
