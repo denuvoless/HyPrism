@@ -335,6 +335,15 @@ export interface LauncherUpdateProgress {
   hasDownloadedFile?: boolean;
 }
 
+export interface AuthServerPingResult {
+  isAvailable: boolean;
+  pingMs: number;
+  authDomain: string;
+  error?: string;
+  checkedAt: string;
+  isOfficial: boolean;
+}
+
 // #endregion
 
 // #region Typed IPC API (from @ipc annotations)
@@ -420,6 +429,10 @@ const _settings = {
   setInstanceDir: (data?: unknown) => invoke<{ success: boolean, path: string, noop?: boolean, reason?: string, error?: string }>('hyprism:settings:setInstanceDir', data, 300000),
 };
 
+const _network = {
+  pingAuthServer: (data?: unknown) => invoke<AuthServerPingResult>('hyprism:network:pingAuthServer', data),
+};
+
 const _i18n = {
   get: () => invoke<Record<string, string>>('hyprism:i18n:get'),
   current: () => invoke<string>('hyprism:i18n:current'),
@@ -492,6 +505,7 @@ export const ipc = {
   profile: _profile,
   auth: _auth,
   settings: _settings,
+  network: _network,
   i18n: _i18n,
   windowCtl: _window,
   browser: _browser,

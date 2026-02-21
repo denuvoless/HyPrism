@@ -255,7 +255,16 @@
       "authCustomHint": "Enter your own auth server address",
       "currentServer": "Current server",
       "officialProfileNote": "Official accounts can only use official Hytale authentication.",
-      "unofficialProfileNote": "Unofficial accounts cannot use official Hytale authentication."
+      "unofficialProfileNote": "Unofficial accounts cannot use official Hytale authentication.",
+      "authServerStatus": "Auth Server Status",
+      "authServerStatusHint": "Check if the authentication server is reachable.",
+      "authServerOnline": "Online",
+      "authServerOffline": "Offline",
+      "authServerChecking": "Checking...",
+      "authServerPing": "{{ping}}ms",
+      "authServerCheckNow": "Check Now",
+      "authServerOfflineWarning": "Auth server is unreachable. Online mode is temporarily disabled.",
+      "authServerOfficialNote": "Official servers are always considered available."
     },
     "graphicsSettings": {
       "title": "Graphics Settings",

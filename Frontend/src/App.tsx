@@ -56,12 +56,21 @@ async function GetUUID(): Promise<string> { return (await ipc.profile.get()).uui
 // Game actions
 function LaunchGame(data?: unknown): void { ipc.game.launch(data); }
 
-// TODO: These need dedicated IPC channels in IpcService.cs
-const stub = <T,>(name: string, fallback: T) => async (..._args: any[]): Promise<T> => {
+// Get recent logs from backend
+async function GetRecentLogs(_count: number = 10): Promise<string[]> {
+  try {
+    return await ipc.logs.get();
+  } catch (e) {
+    console.error('[IPC] GetRecentLogs failed:', e);
+    return [];
+  }
+}
+
+// Stub for functions that don't have IPC channels yet
+const stub = <T,>(name: string, fallback: T) => async (..._args: unknown[]): Promise<T> => {
   console.warn(`[IPC] ${name}: no IPC channel yet`);
   return fallback;
 };
-const GetRecentLogs = stub<string[]>('GetRecentLogs', []);
 
 // Real IPC call to check if game is running
 async function IsGameRunning(): Promise<boolean> {
@@ -625,11 +634,14 @@ const App: React.FC = () => {
         if (exitCode !== undefined && exitCode !== null && exitCode !== 0) {
           try {
             const logs = await GetRecentLogs(10);
+            // Clear any concurrent error to avoid showing two error modals
+            setError(null);
             setLaunchTimeoutError({
               message: t('app.gameCrashed', { code: exitCode }),
               logs: logs || []
             });
           } catch {
+            setError(null);
             setLaunchTimeoutError({
               message: t('app.gameCrashed', { code: exitCode }),
               logs: []
@@ -657,6 +669,8 @@ const App: React.FC = () => {
     });
 
     const unsubError = EventsOn('error', (err: any) => {
+      // Clear any concurrent launch timeout error to avoid showing two error modals
+      setLaunchTimeoutError(null);
       setError(err);
       clearDownloadState();
       setProgress(0);

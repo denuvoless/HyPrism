@@ -255,7 +255,16 @@
       "authCustomHint": "Введите адрес своего сервера авторизации",
       "currentServer": "Текущий сервер",
       "officialProfileNote": "Официальные аккаунты могут использовать только официальную авторизацию Hytale.",
-      "unofficialProfileNote": "Неофициальные аккаунты не могут использовать официальную авторизацию Hytale."
+      "unofficialProfileNote": "Неофициальные аккаунты не могут использовать официальную авторизацию Hytale.",
+      "authServerStatus": "Статус сервера авторизации",
+      "authServerStatusHint": "Проверить доступность сервера авторизации.",
+      "authServerOnline": "Онлайн",
+      "authServerOffline": "Недоступен",
+      "authServerChecking": "Проверка...",
+      "authServerPing": "{{ping}}мс",
+      "authServerCheckNow": "Проверить",
+      "authServerOfflineWarning": "Сервер авторизации недоступен. Онлайн-режим временно отключён.",
+      "authServerOfficialNote": "Официальные серверы всегда считаются доступными."
     },
     "graphicsSettings": {
       "title": "Настройки графики",

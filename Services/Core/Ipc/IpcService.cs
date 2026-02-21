@@ -68,6 +68,7 @@ namespace HyPrism.Services.Core.Ipc;
 /// @type VersionListResponse { versions: VersionInfo[]; hasOfficialAccount: boolean; officialSourceAvailable: boolean; }
 /// @type LauncherUpdateInfo { currentVersion: string; latestVersion: string; changelog?: string; downloadUrl?: string; assetName?: string; releaseUrl?: string; isBeta?: boolean; }
 /// @type LauncherUpdateProgress { stage: string; progress: number; message: string; downloadedBytes?: number; totalBytes?: number; downloadedFilePath?: string; hasDownloadedFile?: boolean; }
+/// @type AuthServerPingResult { isAvailable: boolean; pingMs: number; authDomain: string; error?: string; checkedAt: string; isOfficial: boolean; }
 public class IpcService
 {
     private readonly IServiceProvider _services;
@@ -1813,6 +1814,125 @@ public class IpcService
                 Reply("hyprism:settings:toggleMirror:reply", new { success = false, error = ex.Message });
             }
         });
+
+        // @ipc invoke hyprism:network:pingAuthServer -> AuthServerPingResult
+        Electron.IpcMain.On("hyprism:network:pingAuthServer", async (args) =>
+        {
+            try
+            {
+                var json = ArgsToJson(args);
+                var request = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+                var authDomainOverride = request?.TryGetValue("authDomain", out var domainEl) == true 
+                    && domainEl.ValueKind == JsonValueKind.String
+                    ? domainEl.GetString() : null;
+                
+                var settingsSvc = _services.GetRequiredService<ISettingsService>();
+                var authDomain = !string.IsNullOrWhiteSpace(authDomainOverride) 
+                    ? authDomainOverride 
+                    : settingsSvc.GetAuthDomain();
+                
+                if (string.IsNullOrWhiteSpace(authDomain))
+                {
+                    authDomain = "sessions.sanasol.ws";
+                }
+                
+                var isOfficial = IsOfficialAuthDomain(authDomain);
+                
+                // Official auth servers are always considered available (no ping needed)
+                if (isOfficial)
+                {
+                    Reply("hyprism:network:pingAuthServer:reply", new
+                    {
+                        isAvailable = true,
+                        pingMs = 0L,
+                        authDomain = authDomain,
+                        checkedAt = DateTime.UtcNow.ToString("o"),
+                        isOfficial = true
+                    });
+                    return;
+                }
+                
+                // Build ping URL for custom auth server
+                var pingUrl = BuildAuthPingUrl(authDomain);
+                var httpClient = _services.GetRequiredService<HttpClient>();
+                
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    using var response = await httpClient.GetAsync(pingUrl, cts.Token);
+                    sw.Stop();
+                    
+                    // Consider 2xx and some 4xx as "server is reachable"
+                    var isAvailable = response.IsSuccessStatusCode || 
+                        (int)response.StatusCode == 404 || 
+                        (int)response.StatusCode == 401 ||
+                        (int)response.StatusCode == 403;
+                    
+                    Reply("hyprism:network:pingAuthServer:reply", new
+                    {
+                        isAvailable,
+                        pingMs = sw.ElapsedMilliseconds,
+                        authDomain = authDomain,
+                        checkedAt = DateTime.UtcNow.ToString("o"),
+                        isOfficial = false
+                    });
+                }
+                catch (Exception pingEx)
+                {
+                    sw.Stop();
+                    Logger.Warning("IPC", $"Auth server ping failed for {authDomain}: {pingEx.Message}");
+                    Reply("hyprism:network:pingAuthServer:reply", new
+                    {
+                        isAvailable = false,
+                        pingMs = sw.ElapsedMilliseconds,
+                        authDomain = authDomain,
+                        error = pingEx.Message,
+                        checkedAt = DateTime.UtcNow.ToString("o"),
+                        isOfficial = false
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("IPC", $"Auth server ping failed: {ex.Message}");
+                Reply("hyprism:network:pingAuthServer:reply", new
+                {
+                    isAvailable = false,
+                    pingMs = -1L,
+                    authDomain = "",
+                    error = ex.Message,
+                    checkedAt = DateTime.UtcNow.ToString("o"),
+                    isOfficial = false
+                });
+            }
+        });
+    }
+
+    private static bool IsOfficialAuthDomain(string domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain)) return false;
+        var normalized = domain.Trim().ToLowerInvariant();
+        // Remove scheme if present
+        if (normalized.StartsWith("https://")) normalized = normalized[8..];
+        if (normalized.StartsWith("http://")) normalized = normalized[7..];
+        normalized = normalized.TrimEnd('/');
+        
+        return normalized == "sessions.hytale.com" || 
+               normalized.EndsWith(".hytale.com") ||
+               normalized == "hytale.com";
+    }
+
+    private static string BuildAuthPingUrl(string authDomain)
+    {
+        var normalized = authDomain.Trim().TrimEnd('/');
+        if (!normalized.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = $"https://{normalized}";
+        }
+        // Ping the health/status endpoint or just the root
+        return $"{normalized}/health";
     }
 
     private static string GetMirrorHostname(MirrorMeta mirror)
