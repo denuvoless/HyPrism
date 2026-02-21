@@ -19,7 +19,7 @@ Downloads are available in [Releases](https://github.com/yyyumeniku/HyPrism/rele
 
 > We are also here! https://gitlab.com/yyyumeniku/HyPrism
 > 
-> And here: https://git.sanhost.net/freakdaniel/HyPrism
+> And here: https://git.sanhost.net/HyprismTeam/HyPrism
 
 ## Build Instructions
 
