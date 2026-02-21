@@ -1051,6 +1051,7 @@ const App: React.FC = () => {
               onCancelDownload={handleCancelDownload}
               onLaunchInstance={handleLaunchFromInstances}
               officialServerBlocked={officialServerBlocked}
+              hasDownloadSources={hasDownloadSources}
             />
           )}
 

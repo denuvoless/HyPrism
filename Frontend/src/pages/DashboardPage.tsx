@@ -173,7 +173,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = memo((props) => {
         />
       );
     }
-    const versionLabel = inst.version === 0 ? '★' : `${inst.version}`;
+    const versionLabel = inst.version > 0 ? `${inst.version}` : '?';
     return (
       <span className="font-bold" style={{ color: accentColor, fontSize: full ? 20 : size * 0.5 }}>
         {versionLabel}

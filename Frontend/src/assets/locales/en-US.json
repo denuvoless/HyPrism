@@ -36,7 +36,8 @@
     "Latest": "Latest",
     "refresh": "Refresh",
     "unknown": "Unknown",
-    "clear": "Clear"
+    "clear": "Clear",
+    "selectVersion": "Select version"
   },
   "app": {
     "title": "HyPrism",
@@ -855,6 +856,14 @@
       "error": "An error occurred during authentication.",
       "noHytaleProfile": "Your account doesn't have access to Hytale yet. You can purchase the game on the official website.",
       "createFailed": "Failed to create profile from Hytale account."
+    },
+    "warning": {
+      "title": "No Download Sources",
+      "description": "Without a Hytale account, you cannot download game files from official servers.",
+      "noSources": "No web resources available for download",
+      "noSourcesHint": "To download the game, you will need to add a mirror in Settings → Downloads, or log in with your Hytale account later.",
+      "continue": "Continue",
+      "back": "Go Back to Login"
     }
   },
   "languageSelector": {

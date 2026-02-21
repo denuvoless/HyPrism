@@ -394,7 +394,7 @@ export const EditInstanceModal: React.FC<EditInstanceModalProps> = ({
                             <div className="flex items-center gap-2">
                               {selectedVersion === versionInfo.version && <Check size={12} style={{ color: accentColor }} strokeWidth={3} />}
                               <span className={selectedVersion === versionInfo.version ? '' : 'ml-[18px]'}>
-                                {versionInfo.version === 0 ? t('main.latest') : `v${versionInfo.version}`}
+                                v{versionInfo.version}
                               </span>
                             </div>
                             <span className="text-[10px] text-white/30 uppercase tracking-wider">
